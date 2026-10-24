@@ -301,14 +301,18 @@ toast.error(
   // =====================================================
   // ROOT ROLE SELECTION
   // =====================================================
-  const toggleRole = (roleId) => {
-    setForm((previous) => ({
-      ...previous,
-      roleAccess: previous.roleAccess.includes(roleId)
-        ? previous.roleAccess.filter((id) => id !== roleId)
-        : [...previous.roleAccess, roleId],
-    }));
-  };
+
+const toggleRole = (roleId) => {
+  if (saving) return;
+
+  setForm((previous) => ({
+    ...previous,
+    roleAccess: previous.roleAccess.includes(roleId)
+      ? previous.roleAccess.filter((id) => id !== roleId)
+      : [...previous.roleAccess, roleId],
+  }));
+};
+
 
   const toggleAllRoles = () => {
     const visibleIds = roles
@@ -336,95 +340,99 @@ toast.error(
   // =====================================================
   // CREATE / UPDATE PROJECT
   // =====================================================
-  const saveProject = async (event) => {
-    event.preventDefault();
+const saveProject = async (event) => {
+  event.preventDefault();
 
-    if (
-      !form.projectName.trim() ||
-      !form.clientName.trim()
-    ) {
-      toast.error(
-        "Project name and client name are required."
-      );
-      return;
-    }
+  if (saving) return;
 
-    if (!form.companyId) {
-      toast.error( "Please select a company.");
-      return;
-    }
-
+  try {
     setSaving(true);
 
-    try {
-      if (modal === "create") {
-        const payload = {
-          projectName: form.projectName.trim(),
-          projectCode: form.projectCode.trim(),
-          clientName: form.clientName.trim(),
-          projectDetails: form.projectDetails.trim(),
-          projectDescription: form.projectDescription.trim(),
-          remarks: form.remarks.trim(),
-          companyId: form.companyId,
-          roleAccess: form.roleAccess,
-          modules: form.modules
-            .map((module) => ({
-              moduleName:
-                typeof module === "string"
-                  ? module.trim()
-                  : module.moduleName?.trim(),
-              ...(module.status
-                ? { status: module.status }
-                : {}),
-            }))
-            .filter((module) => module.moduleName),
-        };
+    if (!form.projectName.trim() || !form.clientName.trim()) {
+      toast.error("Project name and client name are required");
+      return;
+    }
 
-        await api.post("/projects", payload);
+    // CREATE PROJECT
+    if (modal === "create") {
+      await api.post("/projects", {
+        ...form,
+        projectName: form.projectName.trim(),
+        clientName: form.clientName.trim(),
+        companyId: form.companyId,
+        roleAccess: form.roleAccess,
+        modules: form.modules,
+      });
 
-        toast.success("Project created successfully.");
-      } else {
-        const payload = {
-          projectName: form.projectName.trim(),
-          clientName: form.clientName.trim(),
-          projectDetails: form.projectDetails.trim(),
-          projectDescription: form.projectDescription.trim(),
-          remarks: form.remarks.trim(),
-          status: form.status,
-        };
+      toast.success("Project created successfully");
+    }
 
-        await api.put(
-          `/projects/${idOf(selectedProject)}`,
-          payload
-        );
+    // UPDATE PROJECT
+    else if (modal === "edit" && selectedProject) {
+      const projectId = idOf(selectedProject);
 
-        // Add newly selected root roles.
-        const existingIds = (
-          selectedProject.roleAccess || []
-        ).map(idOf);
+      // Update project details
+      await api.put(`/projects/${projectId}`, {
+        projectName: form.projectName.trim(),
+        clientName: form.clientName.trim(),
+        projectDetails: form.projectDetails,
+        projectDescription: form.projectDescription,
+        remarks: form.remarks,
+        status: form.status,
+      });
 
-        const newRoleIds = form.roleAccess.filter(
-          (id) => !existingIds.includes(id)
-        );
+      const originalRoleIds = [
+        ...new Set(
+          (selectedProject.roleAccess || [])
+            .map(idOf)
+            .filter(Boolean)
+        ),
+      ];
 
-        if (newRoleIds.length) {
-          await api.put(
-            `/projects/${idOf(selectedProject)}/root-roles`,
-            { roleIds: newRoleIds }
-          );
-        }
+      const selectedRoleIds = [
+        ...new Set(
+          (form.roleAccess || [])
+            .map(idOf)
+            .filter(Boolean)
+        ),
+      ];
 
-        toast.success( "Project updated successfully.");
+      // Newly selected roles
+      const rolesToAssign = selectedRoleIds.filter(
+        (roleId) => !originalRoleIds.includes(roleId)
+      );
+
+      // Previously assigned roles that were unchecked
+      const rolesToRevoke = originalRoleIds.filter(
+        (roleId) => !selectedRoleIds.includes(roleId)
+      );
+
+      // Add newly selected roles
+      if (rolesToAssign.length > 0) {
+        await api.put(`/projects/${projectId}/root-roles`, {
+          roleIds: rolesToAssign,
+        });
       }
 
-      setModal(null);
-      await fetchProjects();
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    } finally {
-      setSaving(false);
+      // Revoke unchecked roles
+      for (const roleId of rolesToRevoke) {
+        await api.delete(
+          `/projects/${projectId}/access/${roleId}/super-admin`
+        );
+      }
+
+      toast.success("Project updated successfully");
     }
-  };
+
+    setModal(null);
+    await fetchProjects();
+  } catch (error) {
+    console.error("Save Project Error:", error);
+    toast.error(getErrorMessage(error));
+  } finally {
+    setSaving(false);
+  }
+};
 
   // =====================================================
   // DELETE PROJECT
@@ -1108,11 +1116,12 @@ toast.error(
                           className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-200 p-3 hover:bg-slate-50"
                         >
                           <input
-                            type="checkbox"
-                            checked={form.roleAccess.includes(idOf(role))}
-                            onChange={() => toggleRole(idOf(role))}
-                            className="h-4 w-4 accent-indigo-600"
-                          />
+  type="checkbox"
+  checked={form.roleAccess.includes(idOf(role))}
+  onChange={() => toggleRole(idOf(role))}
+  disabled={saving}
+  className="h-4 w-4 accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+/>
 
                           <span className="text-sm font-medium">
                             {role.roleName}

@@ -1138,9 +1138,6 @@ export const grantProjectAccess = async (req, res) => {
 // REVOKE PROJECT ACCESS FROM A DIRECT CHILD ROLE
 // Also removes access from descendants in that branch.
 // =====================================================
-// =====================================================
-// REVOKE PROJECT ACCESS — EMPLOYEE
-// =====================================================
 export const revokeProjectAccess = async (req, res) => {
   try {
     const employee = req.user;
@@ -1232,7 +1229,7 @@ export const revokeProjectAccess = async (req, res) => {
       error: error.message,
     });
   }
-};
+}; 
 
 // =====================================================
 // GET MY GRANTED PROJECT ACCESS — EMPLOYEE
@@ -1352,6 +1349,109 @@ export const getMyAccessibleProjects = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to get accessible projects",
+      error: error.message,
+    });
+  }
+};
+
+
+/**
+ * REVOKE PROJECT ACCESS — SUPER ADMIN ONLY
+ * Removes access from the selected root role and all descendant roles.
+ */
+export const revokeProjectAccessBySuperAdmin = async (req, res) => {
+  try {
+    const { projectId, roleId } = req.params;
+    const user = req.user;
+
+    // Only Super Admin can use this controller.
+    if (user?.role !== "superadmin") {
+      return res.status(403).json({
+        success: false,
+        message: "Only Super Admin can revoke project access",
+      });
+    }
+
+    if (!isValidId(projectId) || !isValidId(roleId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid project ID or role ID",
+      });
+    }
+
+    // Find the project created by this Super Admin.
+    const project = await Project.findOne({
+      _id: projectId,
+      createdBy: user.id,
+    });
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found or access denied",
+      });
+    }
+
+    // The selected role must belong to this project's company.
+    const selectedRole = await Role.findOne({
+      _id: roleId,
+      companyId: project.companyId,
+    });
+
+    if (!selectedRole) {
+      return res.status(404).json({
+        success: false,
+        message: "Role not found in this project's company",
+      });
+    }
+
+    // Get the selected role and all roles under its hierarchy.
+    const branchIds = await getRoleBranchIds(
+      project.companyId,
+      selectedRole._id
+    );
+
+    const branchIdSet = new Set(branchIds.map(String));
+
+    // Remove access from the entire role branch.
+    const previousAccessIds = project.roleAccess.map(String);
+
+    project.roleAccess = project.roleAccess.filter(
+      (id) => !branchIdSet.has(id.toString())
+    );
+
+    const removedRoleIds = previousAccessIds.filter(
+      (id) => branchIdSet.has(id)
+    );
+
+    // If no access was removed, return a clear response.
+    if (removedRoleIds.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "The selected role and its descendants do not have project access",
+      });
+    }
+
+    await project.save();
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Project access revoked from the selected role and all descendants",
+      projectId: project._id,
+      revokedRoleIds: removedRoleIds,
+      project,
+    });
+  } catch (error) {
+    console.error(
+      "Super Admin Revoke Project Access Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to revoke project access",
       error: error.message,
     });
   }

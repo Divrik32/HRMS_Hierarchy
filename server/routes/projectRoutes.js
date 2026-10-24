@@ -17,6 +17,7 @@ import {
   getMyAccessibleProjects,
   getProjectModules,
   updateProjectModule,
+  revokeProjectAccessBySuperAdmin,
 } from "../controllers/projectController.js";
 import superAdminAuth from "../middleware/superAdminAuth.js";
 import employeeOrSuperAdminAuth from "../middleware/employeeOrSuperAdminAuth.js";
@@ -62,6 +63,12 @@ router.delete(
   "/:projectId/access/:roleId",
   employeeAuth,
   revokeProjectAccess
+);
+
+router.delete(
+  "/:projectId/access/:roleId/super-admin",
+  superAdminAuth,
+  revokeProjectAccessBySuperAdmin
 );
 
 router.get(
