@@ -61,9 +61,12 @@ const idOf = (value) =>
 const Projects = () => {
   const { companyId } = useParams();
 
-  const [projects, setProjects] = useState([]);
-  const [companies, setCompanies] = useState([]);
-  const [roles, setRoles] = useState([]);
+const [projects, setProjects] = useState([]);
+const [companies, setCompanies] = useState([]);
+const [roles, setRoles] = useState([]);
+
+const [deletedProjects, setDeletedProjects] = useState([]);
+const [deletedLoading, setDeletedLoading] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -111,6 +114,28 @@ const Projects = () => {
       setLoading(false);
     }
   }, [companyId]);
+
+  // =====================================================
+// FETCH DELETED PROJECTS
+// GET /projects/deleted?companyId=...
+// =====================================================
+const fetchDeletedProjects = useCallback(async () => {
+  setDeletedLoading(true);
+
+  try {
+    const response = await api.get("/projects/deleted", {
+      params: companyId ? { companyId } : {},
+    });
+
+    setDeletedProjects(getList(response, "projects"));
+  } catch (error) {
+    toast.error(
+      `Could not load deleted projects: ${getErrorMessage(error)}`
+    );
+  } finally {
+    setDeletedLoading(false);
+  }
+}, [companyId]);
 
   // =====================================================
   // FETCH COMPANIES
@@ -434,34 +459,93 @@ const saveProject = async (event) => {
   }
 };
 
-  // =====================================================
-  // DELETE PROJECT
-  // =====================================================
-  const deleteProject = async (project) => {
-    const confirmed = window.confirm(
-      `Delete project "${project.projectName}" permanently?`
+
+// =====================================================
+// MOVE PROJECT TO DELETED PROJECTS
+// DELETE /projects/:projectId
+// =====================================================
+const deleteProject = async (project) => {
+  const confirmed = window.confirm(
+    `Move project "${project.projectName}" to Deleted Projects?\n\nYou can restore it later.`
+  );
+
+  if (!confirmed) return;
+
+  try {
+    await api.delete(`/projects/${idOf(project)}`);
+
+    toast.success("Project moved to Deleted Projects.");
+
+    if (
+      selectedProject &&
+      idOf(selectedProject) === idOf(project)
+    ) {
+      setSelectedProject(null);
+      setModal(null);
+    }
+
+    await fetchProjects();
+  } catch (error) {
+    toast.error(getErrorMessage(error));
+  }
+};
+
+// =====================================================
+// RESTORE DELETED PROJECT
+// POST /projects/deleted/:deletedProjectId/restore
+// =====================================================
+const restoreProject = async (deletedProject) => {
+  const deletedProjectId = idOf(deletedProject);
+
+  const confirmed = window.confirm(
+    `Restore project "${deletedProject.projectName}"?\n\nThe project will return to the active Projects list.`
+  );
+
+  if (!confirmed) return;
+
+  try {
+    await api.post(
+      `/projects/deleted/${deletedProjectId}/restore`
     );
 
-    if (!confirmed) return;
+    toast.success("Project restored successfully.");
 
-    try {
-      await api.delete(`/projects/${idOf(project)}`);
+    await Promise.all([
+      fetchProjects(),
+      fetchDeletedProjects(),
+    ]);
+  } catch (error) {
+    toast.error(
+      `Could not restore project: ${getErrorMessage(error)}`
+    );
+  }
+};
 
-      toast.success( "Project deleted successfully.");
+// =====================================================
+// PERMANENTLY DELETE ARCHIVED PROJECT
+// DELETE /projects/deleted/:deletedProjectId/permanent
+// =====================================================
+const permanentlyDeleteProject = async (deletedProject) => {
+  const confirmed = window.confirm(
+    `Permanently delete "${deletedProject.projectName}"?\n\nThis action cannot be undone. The project will not be recoverable.`
+  );
 
-      if (
-        selectedProject &&
-        idOf(selectedProject) === idOf(project)
-      ) {
-        setSelectedProject(null);
-        setModal(null);
-      }
+  if (!confirmed) return;
 
-      await fetchProjects();
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    }
-  };
+  try {
+    await api.delete(
+      `/projects/deleted/${idOf(deletedProject)}/permanent`
+    );
+
+    toast.success("Project permanently deleted.");
+
+    await fetchDeletedProjects();
+  } catch (error) {
+    toast.error(
+      `Could not permanently delete project: ${getErrorMessage(error)}`
+    );
+  }
+};
 
   // =====================================================
   // REFRESH PROJECT MODULES
@@ -657,25 +741,42 @@ const saveProject = async (event) => {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={fetchProjects}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium hover:bg-slate-100"
-            >
-              <RefreshCw size={16} />
-              Refresh
-            </button>
+<div className="flex flex-wrap gap-2">
+  <button
+    type="button"
+    onClick={() => {
+      fetchProjects();
+      if (modal === "deleted") {
+        fetchDeletedProjects();
+      }
+    }}
+    className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium hover:bg-slate-100"
+  >
+    <RefreshCw size={16} />
+    Refresh
+  </button>
 
-            <button
-              type="button"
-              onClick={openCreate}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
-            >
-              <Plus size={17} />
-              Create Project
-            </button>
-          </div>
+  <button
+    type="button"
+    onClick={async () => {
+      setModal("deleted");
+      await fetchDeletedProjects();
+    }}
+    className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 hover:bg-amber-100"
+  >
+    <Trash2 size={17} />
+    Deleted Projects
+  </button>
+
+  <button
+    type="button"
+    onClick={openCreate}
+    className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+  >
+    <Plus size={17} />
+    Create Project
+  </button>
+</div>
         </div>
 
         {/* SUMMARY CARDS */}
@@ -1133,9 +1234,8 @@ const saveProject = async (event) => {
 
                 {modal === "edit" && (
                   <p className="mt-3 text-xs leading-5 text-amber-700">
-                    Existing role assignments are preserved. Selecting
-                    additional roles adds them to project access; this
-                    screen does not remove previously assigned roles.
+                    Select or deselect root roles to update project access.
+                    Changes will be applied when you save the project.
                   </p>
                 )}
               </div>
@@ -1519,6 +1619,192 @@ const saveProject = async (event) => {
           </div>
         </div>
       )}
+
+      {/* DELETED PROJECTS MODAL */}
+{modal === "deleted" && (
+  <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-950/50 p-3 sm:p-6">
+    <div className="my-auto max-h-[95vh] w-full max-w-6xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+      {/* HEADER */}
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:px-6">
+        <div>
+          <h2 className="text-lg font-bold text-slate-800">
+            Deleted Projects
+          </h2>
+
+          <p className="mt-1 text-sm text-slate-500">
+            Restore archived projects or permanently delete them.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={fetchDeletedProjects}
+            disabled={deletedLoading}
+            title="Refresh deleted projects"
+            className="rounded-lg border border-slate-300 p-2 text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+          >
+            <RefreshCw
+              size={17}
+              className={deletedLoading ? "animate-spin" : ""}
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={closeModal}
+            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+          >
+            <X size={20} />
+          </button>
+        </div>
+      </div>
+
+      {/* CONTENT */}
+      <div className="max-h-[calc(95vh-85px)] overflow-y-auto p-4 sm:p-6">
+        {deletedLoading ? (
+          <div className="flex items-center justify-center gap-3 py-20 text-sm text-slate-500">
+            <RefreshCw className="animate-spin" size={18} />
+            Loading deleted projects...
+          </div>
+        ) : deletedProjects.length === 0 ? (
+          <div className="py-16 text-center">
+            <Trash2
+              size={36}
+              className="mx-auto mb-3 text-slate-300"
+            />
+
+            <h3 className="font-semibold text-slate-800">
+              No deleted projects
+            </h3>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Projects moved to Deleted Projects will appear here.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full min-w-[850px] text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">
+                    Project
+                  </th>
+
+                  <th className="px-4 py-3 font-semibold">
+                    Company
+                  </th>
+
+                  <th className="px-4 py-3 font-semibold">
+                    Client
+                  </th>
+
+                  <th className="px-4 py-3 font-semibold">
+                    Modules
+                  </th>
+
+                  <th className="px-4 py-3 font-semibold">
+                    Deleted At
+                  </th>
+
+                  <th className="px-4 py-3 text-right font-semibold">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100">
+                {deletedProjects.map((project) => {
+                  const deletedCompanyName =
+                    typeof project.companyId === "object"
+                      ? project.companyId?.companyName
+                      : companies.find(
+                          (company) =>
+                            idOf(company) === idOf(project.companyId)
+                        )?.companyName;
+
+                  return (
+                    <tr
+                      key={idOf(project)}
+                      className="hover:bg-slate-50"
+                    >
+                      <td className="px-4 py-4">
+                        <p className="font-semibold text-slate-800">
+                          {project.projectName || "Unnamed project"}
+                        </p>
+
+                        <p className="mt-1 text-xs text-slate-500">
+                          {project.projectCode || "No project code"}
+                        </p>
+                      </td>
+
+                      <td className="px-4 py-4">
+                        {deletedCompanyName || "Unknown company"}
+                      </td>
+
+                      <td className="px-4 py-4">
+                        {project.clientName || "—"}
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700">
+                          <Layers size={13} />
+                          {project.modules?.length || 0}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-4">
+                        {project.deletedAt
+                          ? new Date(
+                              project.deletedAt
+                            ).toLocaleString()
+                          : "—"}
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => restoreProject(project)}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                          >
+                            <RefreshCw size={14} />
+                            Restore
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              permanentlyDeleteProject(project)
+                            }
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100"
+                          >
+                            <Trash2 size={14} />
+                            Delete Forever
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="mt-4 flex justify-end border-t border-slate-100 pt-4">
+          <button
+            type="button"
+            onClick={closeModal}
+            className="rounded-lg border border-slate-300 px-5 py-2.5 text-sm font-medium hover:bg-slate-50"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 };

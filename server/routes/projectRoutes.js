@@ -18,6 +18,9 @@ import {
   getProjectModules,
   updateProjectModule,
   revokeProjectAccessBySuperAdmin,
+  getDeletedProjects,
+  restoreDeletedProject,
+  permanentlyDeleteProject,
 } from "../controllers/projectController.js";
 import superAdminAuth from "../middleware/superAdminAuth.js";
 import employeeOrSuperAdminAuth from "../middleware/employeeOrSuperAdminAuth.js";
@@ -81,6 +84,21 @@ router.get("/my-accessible-projects", employeeAuth, getMyAccessibleProjects);
 
 // Role access details
 router.get("/:projectId/role-access", employeeOrSuperAdminAuth, getProjectRoleAccess);
+
+
+router.get("/deleted", superAdminAuth, getDeletedProjects);
+
+router.post(
+  "/deleted/:deletedProjectId/restore",
+  superAdminAuth,
+  restoreDeletedProject
+);
+
+router.delete(
+  "/deleted/:deletedProjectId/permanent",
+  superAdminAuth,
+  permanentlyDeleteProject
+);
 
 // Project details
 router.get("/:projectId", employeeOrSuperAdminAuth, getProjectById);

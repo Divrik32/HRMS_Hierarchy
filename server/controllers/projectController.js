@@ -1,7 +1,8 @@
-
 import Project from "../models/Project.js";
 import Role from "../models/Role.js";
 import Company from "../models/Company.js";
+import DeletedProject from "../models/DeletedProject.js";
+
 
 import {
   isValidId,
@@ -432,9 +433,7 @@ export const updateProject = async (req, res) => {
 // =====================================================
 // DELETE PROJECT — SUPER ADMIN ONLY
 // =====================================================
-// =====================================================
-// DELETE PROJECT — SUPER ADMIN ONLY
-// =====================================================
+
 export const deleteProject = async (req, res) => {
   try {
     const { projectId } = req.params;
@@ -446,7 +445,7 @@ export const deleteProject = async (req, res) => {
       });
     }
 
-    const project = await Project.findByIdAndDelete(projectId);
+    const project = await Project.findById(projectId);
 
     if (!project) {
       return res.status(404).json({
@@ -455,20 +454,247 @@ export const deleteProject = async (req, res) => {
       });
     }
 
+    // Save the complete project before removing it.
+    await DeletedProject.create({
+      originalProjectId: project._id,
+      projectName: project.projectName,
+      projectCode: project.projectCode,
+      clientName: project.clientName,
+      projectDetails: project.projectDetails,
+      remarks: project.remarks,
+      projectDescription: project.projectDescription,
+      companyId: project.companyId,
+      createdBy: project.createdBy,
+      roleAccess: project.roleAccess,
+      modules: project.modules.map((module) => ({
+        _id: module._id,
+        moduleName: module.moduleName,
+        status: module.status,
+        createdAt: module.createdAt,
+        updatedAt: module.updatedAt,
+      })),
+      status: project.status,
+      originalCreatedAt: project.createdAt,
+      originalUpdatedAt: project.updatedAt,
+      deletedBy: req.user.id,
+      deletedAt: new Date(),
+    });
+
+    await Project.findByIdAndDelete(projectId);
+
     return res.status(200).json({
       success: true,
-      message: "Project deleted successfully",
+      message: "Project moved to Deleted Projects successfully",
     });
   } catch (error) {
     console.error("Delete Project Error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Failed to delete project",
+      message: "Failed to move project to Deleted Projects",
       error: error.message,
     });
   }
 };
+
+
+/* =====================================================
+   GET DELETED PROJECTS — SUPER ADMIN ONLY
+===================================================== */
+export const getDeletedProjects = async (req, res) => {
+  try {
+    const filter = {};
+
+    if (req.query.companyId) {
+      if (!isValidId(req.query.companyId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid company ID",
+        });
+      }
+
+      filter.companyId = req.query.companyId;
+    }
+
+    const deletedProjects = await DeletedProject.find(filter)
+      .populate("companyId", "companyName")
+      .populate("roleAccess", "roleName parentRoleId")
+      .populate("createdBy", "name email")
+      .populate("deletedBy", "name email")
+      .sort({ deletedAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: deletedProjects.length,
+      projects: deletedProjects,
+    });
+  } catch (error) {
+    console.error("Get Deleted Projects Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get deleted projects",
+      error: error.message,
+    });
+  }
+};
+
+
+/* =====================================================
+   RESTORE DELETED PROJECT — SUPER ADMIN ONLY
+   Uses the original project ID.
+===================================================== */
+export const restoreDeletedProject = async (req, res) => {
+  try {
+    const { deletedProjectId } = req.params;
+
+    if (!isValidId(deletedProjectId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid deleted project ID",
+      });
+    }
+
+    const archivedProject =
+      await DeletedProject.findById(deletedProjectId);
+
+    if (!archivedProject) {
+      return res.status(404).json({
+        success: false,
+        message: "Deleted project not found",
+      });
+    }
+
+    // Check whether a project with the original ID already exists.
+    const existingId = await Project.findById(
+      archivedProject.originalProjectId
+    );
+
+    if (existingId) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "A project with this original ID already exists. Resolve the conflict before restoring.",
+      });
+    }
+
+    // Check unique company + project name constraint.
+    const existingName = await Project.findOne({
+      companyId: archivedProject.companyId,
+      projectName: archivedProject.projectName,
+    });
+
+    if (existingName) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "A project with this name already exists in this company. Rename the existing project before restoring.",
+      });
+    }
+
+    // Check globally unique project code constraint.
+    const existingCode = await Project.findOne({
+      projectCode: archivedProject.projectCode,
+    });
+
+    if (existingCode) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "This project code is already in use. Resolve the conflict before restoring.",
+      });
+    }
+
+    const restoredProject = await Project.create({
+      _id: archivedProject.originalProjectId,
+      projectName: archivedProject.projectName,
+      projectCode: archivedProject.projectCode,
+      clientName: archivedProject.clientName,
+      projectDetails: archivedProject.projectDetails,
+      remarks: archivedProject.remarks,
+      projectDescription: archivedProject.projectDescription,
+      companyId: archivedProject.companyId,
+      createdBy: archivedProject.createdBy,
+      roleAccess: archivedProject.roleAccess,
+      modules: archivedProject.modules.map((module) => ({
+        _id: module._id,
+        moduleName: module.moduleName,
+        status: module.status,
+        createdAt: module.createdAt,
+        updatedAt: module.updatedAt,
+      })),
+      status: archivedProject.status,
+      createdAt: archivedProject.originalCreatedAt,
+      updatedAt: archivedProject.originalUpdatedAt,
+    });
+
+    // Remove the archive only after restoring successfully.
+    await DeletedProject.findByIdAndDelete(archivedProject._id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Project restored successfully",
+      project: restoredProject,
+    });
+  } catch (error) {
+    console.error("Restore Deleted Project Error:", error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "A project with the same unique field already exists. Resolve the conflict before restoring.",
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to restore project",
+      error: error.message,
+    });
+  }
+};
+
+
+/* =====================================================
+   PERMANENTLY DELETE ARCHIVED PROJECT — SUPER ADMIN ONLY
+===================================================== */
+export const permanentlyDeleteProject = async (req, res) => {
+  try {
+    const { deletedProjectId } = req.params;
+
+    if (!isValidId(deletedProjectId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid deleted project ID",
+      });
+    }
+
+    const deletedProject =
+      await DeletedProject.findByIdAndDelete(deletedProjectId);
+
+    if (!deletedProject) {
+      return res.status(404).json({
+        success: false,
+        message: "Deleted project not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Project permanently deleted",
+    });
+  } catch (error) {
+    console.error("Permanently Delete Project Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to permanently delete project",
+      error: error.message,
+    });
+  }
+};
+
 
 // =====================================================
 // ASSIGN ROOT ROLES — SUPER ADMIN ONLY
