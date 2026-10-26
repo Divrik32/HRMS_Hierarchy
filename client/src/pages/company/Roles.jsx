@@ -260,7 +260,6 @@ const Roles = () => {
       parentRoleId: getParentId(role) || "",
     });
 
-    toast.error("");
     setModalOpen(true);
   };
 

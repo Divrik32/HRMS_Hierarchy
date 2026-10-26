@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { toast } from "react-toastify";
 import api from "../../api/axios";
+import { Eye, EyeOff } from "lucide-react";
 
 const initialForm = {
   companyName: "",
@@ -25,6 +26,7 @@ const CreateCompanyForm = () => {
   const [logo, setLogo] = useState(null);
   const [signature, setSignature] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -132,20 +134,24 @@ const CreateCompanyForm = () => {
 
       <form onSubmit={handleSubmit}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div>
-            <label className="block text-sm font-medium mb-2">
-              Company Name *
-            </label>
-            <input
-              name="companyName"
-              value={formData.companyName}
-              onChange={handleChange}
-              placeholder="Enter company name"
-              className={inputClass}
-              required
-            />
-          </div>
-
+        <div>
+          <label className="block text-sm font-medium mb-2">
+            Company Name *
+          </label>
+          <input
+            name="companyName"
+            value={formData.companyName}
+            onChange={(e) =>
+              setFormData((prev) => ({
+                ...prev,
+                companyName: e.target.value.replace(/[0-9]/g, ""),
+              }))
+            }
+            placeholder="Enter company name"
+            className={inputClass}
+            required
+          />
+        </div>
           <div>
             <label className="block text-sm font-medium mb-2">
               Company Type *
@@ -223,47 +229,70 @@ const CreateCompanyForm = () => {
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-2">
-              Company Password *
-            </label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              placeholder="Create a password"
-              className={inputClass}
-              minLength={8}
-              autoComplete="new-password"
-              required
-            />
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-2">
-              Phone Number *
-            </label>
-            <input
-              type="tel"
-              name="phone"
-              value={formData.phone}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  phone: e.target.value.replace(/\D/g, "").slice(0, 10),
-                }))
-              }
-              placeholder="Enter 10-digit mobile number"
-              inputMode="numeric"
-              maxLength={10}
-              minLength={10}
-              pattern="[6-9][0-9]{9}"
-              title="Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9."
-              className={inputClass}
-              required
-            />
-          </div>
+<div>
+  <label className="block text-sm font-medium mb-2">
+    Company Password *
+  </label>
+
+  <div className="relative">
+    <input
+      type={showPassword ? "text" : "password"}
+      name="password"
+      value={formData.password}
+      onChange={handleChange}
+      placeholder="Create a password"
+      className={`${inputClass} pr-12`}
+      minLength={8}
+      autoComplete="new-password"
+      required
+    />
+
+    <button
+      type="button"
+      onClick={() => setShowPassword((prev) => !prev)}
+      aria-label={showPassword ? "Hide password" : "Show password"}
+      title={showPassword ? "Hide password" : "Show password"}
+      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-blue-700"
+    >
+      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+    </button>
+  </div>
+</div>
+
+
+<div>
+  <label className="block text-sm font-medium mb-2">
+    Phone Number *
+  </label>
+
+  <div className="flex">
+    <div className="flex items-center justify-center px-4 border border-slate-300 border-r-0 rounded-l-lg bg-slate-100 text-slate-700 font-medium">
+      +91
+    </div>
+
+    <input
+      type="tel"
+      name="phone"
+      value={formData.phone}
+      onChange={(e) =>
+        setFormData((prev) => ({
+          ...prev,
+          phone: e.target.value.replace(/\D/g, "").slice(0, 10),
+        }))
+      }
+      placeholder="Enter mobile number"
+      inputMode="numeric"
+      maxLength={10}
+      minLength={10}
+      pattern="[6-9][0-9]{9}"
+      title="Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9."
+      className="w-full min-w-0 border border-slate-300 p-3 rounded-r-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+      required
+    />
+  </div>
+</div>
+
 
           <div>
             <label className="block text-sm font-medium mb-2">

@@ -15,6 +15,7 @@ import {
   resendCompanyOtp,
   resetCompanyPassword,
   getCompanyNames,
+  updateCompanyProfile,
 } from "../controllers/companyController.js";
 
 import superAdminAuth from "../middleware/superAdminAuth.js";
@@ -44,6 +45,17 @@ router.post("/reset-password", resetCompanyPassword);
 
 // Company Logout
 router.post("/logout", companyAuth, logoutCompany);
+
+// Company Profile Update — logged-in company only
+router.put(
+  "/profile",
+  companyAuth,
+  companyUpload.fields([
+    { name: "logo", maxCount: 1 },
+    { name: "signature", maxCount: 1 },
+  ]),
+  updateCompanyProfile
+);
 
 // Get All Companies
 router.get("/", superAdminAuth, getAllCompanies);

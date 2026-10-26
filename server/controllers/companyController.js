@@ -340,6 +340,158 @@ export const logoutCompany = async (req, res) => {
   }
 };
 
+// Update Logged-in Company's Own Profile
+export const updateCompanyProfile = async (req, res) => {
+  try {
+    const companyId = req.companyId;
+
+    const {
+      companyName,
+      companyType,
+      gstNumber,
+      panNumber,
+      registeredEmail,
+      phone,
+      website,
+      industry,
+      address,
+    } = req.body;
+
+    const company = await Company.findById(companyId);
+
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        message: "Company not found.",
+      });
+    }
+
+    const normalizedName =
+      companyName !== undefined ? companyName.trim() : company.companyName;
+
+    const normalizedEmail =
+      registeredEmail !== undefined
+        ? registeredEmail.trim().toLowerCase()
+        : company.registeredEmail;
+
+    const normalizedPhone =
+      phone !== undefined ? phone.trim() : company.phone;
+
+    const normalizedPan =
+      panNumber !== undefined ? panNumber.trim().toUpperCase() : company.panNumber;
+
+    const normalizedGst =
+      gstNumber !== undefined ? gstNumber.trim().toUpperCase() : company.gstNumber;
+
+    if (!normalizedName) {
+      return res.status(400).json({
+        success: false,
+        field: "companyName",
+        message: "Company name is required.",
+      });
+    }
+
+    if (!normalizedEmail) {
+      return res.status(400).json({
+        success: false,
+        field: "registeredEmail",
+        message: "Registered email is required.",
+      });
+    }
+
+    if (!/^[6-9]\d{9}$/.test(normalizedPhone || "")) {
+      return res.status(400).json({
+        success: false,
+        field: "phone",
+        message: "Enter a valid 10-digit Indian mobile number.",
+      });
+    }
+
+    if (normalizedPan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(normalizedPan)) {
+      return res.status(400).json({
+        success: false,
+        field: "panNumber",
+        message: "Invalid PAN format.",
+      });
+    }
+
+    if (
+      normalizedGst &&
+      !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(
+        normalizedGst
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        field: "gstNumber",
+        message: "Invalid GSTIN format.",
+      });
+    }
+
+    const duplicateName = await Company.findOne({
+      _id: { $ne: companyId },
+      companyName: {
+        $regex: `^${normalizedName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+        $options: "i",
+      },
+    }).select("_id");
+
+    if (duplicateName) {
+      return res.status(409).json({
+        success: false,
+        field: "companyName",
+        message: "Company name already exists.",
+      });
+    }
+
+    company.companyName = normalizedName;
+    company.registeredEmail = normalizedEmail;
+    company.phone = normalizedPhone;
+
+    if (companyType !== undefined) company.companyType = companyType;
+    if (gstNumber !== undefined) company.gstNumber = normalizedGst;
+    if (panNumber !== undefined) company.panNumber = normalizedPan;
+    if (website !== undefined) company.website = website.trim();
+    if (industry !== undefined) company.industry = industry.trim();
+    if (address !== undefined) company.address = address.trim();
+
+    if (req.files?.logo?.[0]) {
+      company.logo = req.files.logo[0].filename;
+    }
+
+    if (req.files?.signature?.[0]) {
+      company.signature = req.files.signature[0].filename;
+    }
+
+    await company.save();
+
+    const safeCompany = company.toObject();
+    delete safeCompany.password;
+    delete safeCompany.resetOtp;
+    delete safeCompany.resetOtpExpire;
+
+    return res.status(200).json({
+      success: true,
+      message: "Company profile updated successfully.",
+      company: safeCompany,
+    });
+  } catch (error) {
+    console.error("Update Company Profile Error:", error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "A value already exists. Please check the company details.",
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update company profile.",
+    });
+  }
+};
+
 // Get All Companies
 export const getAllCompanies = async (req, res) => {
   try {

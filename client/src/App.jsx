@@ -19,6 +19,7 @@ import EmployeeProjects from "./pages/employee/EmployeeProjects";
 import EmployeeRoleAccess from "./pages/employee/EmployeeRoleAccess";
 import ForgotPassword from "./pages/ForgotPassword";
 import CompanyForgotPassword from "./pages/company/CompanyForgotPassword";
+import CompanyProfile from "./pages/company/CompanyProfile";
 
 const router = createBrowserRouter([
   // Registration Page for Super Admin
@@ -107,6 +108,10 @@ const router = createBrowserRouter([
     {
       path: "projects",
       element: <Projects />,
+    },
+    {
+      path: "profile",
+      element: <CompanyProfile />,
     },
   ],
 },

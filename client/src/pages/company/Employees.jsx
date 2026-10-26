@@ -8,6 +8,7 @@ import {
   Pencil,
   Trash2,
   Eye,
+  EyeOff,
   Users,
   X,
   Upload,
@@ -192,6 +193,7 @@ export default function Employees() {
   const [form, setForm] = useState(initialForm);
   const [profilePic, setProfilePic] = useState(null);
   const [preview, setPreview] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const loadEmployees = useCallback(
     async (showToast = false) => {
@@ -1059,21 +1061,34 @@ export default function Employees() {
                 />
               </div>
 
-              {!selectedEmployee && (
-                <div>
-                  <label className={labelClass}>Initial Password *</label>
-                  <input
-                    required
-                    minLength={6}
-                    type="password"
-                    name="password"
-                    value={form.password}
-                    onChange={handleInput}
-                    className={inputClass}
-                    placeholder="At least 6 characters"
-                  />
-                </div>
-              )}
+{!selectedEmployee && (
+  <div>
+    <label className={labelClass}>Initial Password *</label>
+
+    <div className="relative">
+      <input
+        required
+        minLength={6}
+        type={showPassword ? "text" : "password"}
+        name="password"
+        value={form.password}
+        onChange={handleInput}
+        className={`${inputClass} pr-11`}
+        placeholder="At least 6 characters"
+      />
+
+      <button
+        type="button"
+        onClick={() => setShowPassword((previous) => !previous)}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-blue-600"
+        aria-label={showPassword ? "Hide password" : "Show password"}
+        title={showPassword ? "Hide password" : "Show password"}
+      >
+        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+      </button>
+    </div>
+  </div>
+)}
 
               <div>
                 <label className={labelClass}>Phone *</label>
