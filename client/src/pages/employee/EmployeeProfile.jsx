@@ -19,12 +19,13 @@ const EmployeeProfile = () => {
   const [employee, setEmployee] = useState(null);
   const [profilePic, setProfilePic] = useState(null);
   const [preview, setPreview] = useState("");
-  const [form, setForm] = useState({
-    name: "",
-    phone: "",
-    presentAddress: "",
-    gender: "Other",
-  });
+const [form, setForm] = useState({
+  name: "",
+  email: "",
+  phone: "",
+  presentAddress: "",
+  gender: "Other",
+});
 
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
@@ -57,6 +58,7 @@ const EmployeeProfile = () => {
         setEmployee(data);
         setForm({
           name: data.name ?? "",
+          email: data.email ?? "",
           phone: data.phone ?? "",
           presentAddress: data.presentAddress ?? "",
           gender: data.gender ?? "Other",
@@ -118,6 +120,7 @@ const handleSubmit = async (event) => {
     const formData = new FormData();
 
     formData.append("name", form.name.trim());
+    formData.append("email", form.email.trim());
     formData.append("phone", form.phone.trim());
     formData.append("presentAddress", form.presentAddress.trim());
     formData.append("gender", form.gender);
@@ -137,12 +140,13 @@ const handleSubmit = async (event) => {
     if (updated) {
       setEmployee(updated);
 
-      setForm({
-        name: updated.name ?? "",
-        phone: updated.phone ?? "",
-        presentAddress: updated.presentAddress ?? "",
-        gender: updated.gender ?? "Other",
-      });
+setForm({
+  name: updated.name ?? "",
+  email: updated.email ?? "",
+  phone: updated.phone ?? "",
+  presentAddress: updated.presentAddress ?? "",
+  gender: updated.gender ?? "Other",
+});
     }
 
     setProfilePic(null);
@@ -290,16 +294,20 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
               />
             </div>
 
-            <div>
-              <label className="text-sm font-medium text-slate-700">
-                Email
-              </label>
-              <input
-                value={employee.email ?? ""}
-                disabled
-                className={`${fieldClass} bg-slate-50`}
-              />
-            </div>
+<div>
+  <label className="text-sm font-medium text-slate-700">
+    Email
+  </label>
+  <input
+    name="email"
+    type="email"
+    value={form.email}
+    onChange={handleChange}
+    required
+    className={fieldClass}
+    placeholder="Enter email address"
+  />
+</div>
 
             <div>
               <label className="text-sm font-medium text-slate-700">
