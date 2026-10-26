@@ -69,9 +69,9 @@ const handleLogout = async () => {
           {sidebarOpen ? <X size={22} /> : <Menu size={22} />}
         </button>
 
-        <h1 className="font-bold text-base sm:text-xl text-slate-800 truncate">
-          Company Administration
-        </h1>
+<h1 className="truncate text-base font-semibold text-black">
+  Company Administration
+</h1>
       </div>
 
       {/* Right Section */}

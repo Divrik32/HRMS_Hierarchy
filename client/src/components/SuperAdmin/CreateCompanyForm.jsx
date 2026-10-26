@@ -128,7 +128,7 @@ const CreateCompanyForm = () => {
         Register Company
       </h2>
 
-      <p className="text-sm text-slate-500 mb-7">
+      <p className="text-sm text-black-500 mb-7">
         Enter the company details below to register a new company.
       </p>
 

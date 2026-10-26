@@ -102,9 +102,9 @@ const handleLogout = async () => {
         </button>
 
         <div className="min-w-0">
-          <h1 className="truncate text-base font-bold text-slate-800 sm:text-lg">
-            Employee Portal
-          </h1>
+<span className="truncate text-base font-semibold text-black">
+  Employee Portal
+</span>
 
           <p className="hidden text-xs text-slate-500 sm:block">
             Your workspace

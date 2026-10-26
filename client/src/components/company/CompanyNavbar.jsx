@@ -62,9 +62,9 @@ const handleLogout = async () => {
           {sidebarOpen ? <X size={22} /> : <Menu size={22} />}
         </button>
 
-        <h2 className="font-semibold text-lg text-gray-800">
+        <span className="font-semibold text-normal text-gray-800">
           Company Workspace
-        </h2>
+        </span>
       </div>
 
       {/* Right Section */}

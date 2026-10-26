@@ -137,7 +137,7 @@ const handleSubmit = async (e) => {
 };
 
   const inputClass =
-    "w-full pl-11 pr-4 py-3 rounded-xl border border-gray-300 bg-white text-slate-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition";
+    "w-full pl-11 pr-4 py-3 rounded-xl border border-gray-300 bg-white text-slate-800 placeholder:text-black-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition";
 
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4 py-10">
@@ -151,7 +151,7 @@ const handleSubmit = async (e) => {
             Login Portal
           </h1>
 
-          <p className="mt-2 text-gray-500">
+          <p className="mt-2 text-black-500">
             Access your account securely
           </p>
         </div>
@@ -166,7 +166,7 @@ const handleSubmit = async (e) => {
               className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium rounded-lg transition-all ${
                 activeTab === "admin"
                   ? "bg-white text-blue-700 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
+                  : "text-black-600 hover:text-black-900"
               }`}
             >
               <ShieldCheck size={17} />
@@ -181,7 +181,7 @@ const handleSubmit = async (e) => {
               className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium rounded-lg transition-all ${
                 activeTab === "employee"
                   ? "bg-white text-blue-700 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
+                  : "text-black-600 hover:text-black-900"
               }`}
             >
               <Users size={17} />
@@ -196,7 +196,7 @@ const handleSubmit = async (e) => {
                 : "Employee Sign In"}
             </h2>
 
-            <p className="text-sm text-gray-500 mt-2">
+            <p className="text-sm text-black-500 mt-2">
               Please provide your login credentials
             </p>
           </div>
@@ -205,7 +205,7 @@ const handleSubmit = async (e) => {
             <div className="mb-5">
               <label
                 htmlFor="loginEmail"
-                className="block text-sm font-medium text-gray-700 mb-2"
+                className="block text-sm font-medium text-black-700 mb-2"
               >
                 Official Email Address
               </label>
@@ -213,7 +213,7 @@ const handleSubmit = async (e) => {
               <div className="relative">
                 <Mail
                   size={18}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-black-400"
                 />
 
                 <input
@@ -234,7 +234,7 @@ const handleSubmit = async (e) => {
             <div className="mb-3">
               <label
                 htmlFor="loginPassword"
-                className="block text-sm font-medium text-gray-700 mb-2"
+                className="block text-sm font-medium text-black-700 mb-2"
               >
                 Account Password
               </label>
@@ -242,7 +242,7 @@ const handleSubmit = async (e) => {
               <div className="relative">
                 <Lock
                   size={18}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-black-400"
                 />
 
                 <input
@@ -263,7 +263,7 @@ const handleSubmit = async (e) => {
                   onClick={() =>
                     setShowPassword((prev) => !prev)
                   }
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-blue-700"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-black-500 hover:text-blue-700"
                   aria-label={
                     showPassword ? "Hide password" : "Show password"
                   }
@@ -299,7 +299,7 @@ const handleSubmit = async (e) => {
             </button>
           </form>
 
-          <div className="text-center mt-6 text-sm text-gray-500">
+          <div className="text-center mt-6 text-sm text-black-500">
             {activeTab === "admin" ? (
               <>
                 Need a Super Administrator account?{" "}

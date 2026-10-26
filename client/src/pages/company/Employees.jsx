@@ -39,9 +39,9 @@ const initialForm = {
 };
 
 const inputClass =
-  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
+  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-black-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
 
-const labelClass = "mb-1.5 block text-sm font-medium text-slate-700";
+const labelClass = "mb-1.5 block text-sm font-medium text-black-700";
 
 const getError = (error) => {
   const data = error?.response?.data;
@@ -154,11 +154,11 @@ const Modal = ({ title, onClose, children, wide = false }) => (
       } overflow-y-auto rounded-2xl bg-white shadow-2xl`}
     >
       <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4">
-        <h2 className="text-lg font-semibold text-slate-800">{title}</h2>
+        <h2 className="text-lg font-semibold text-black-800">{title}</h2>
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+          className="rounded-lg p-2 text-black-500 hover:bg-slate-100"
           aria-label="Close modal"
         >
           <X size={19} />
@@ -624,56 +624,56 @@ export default function Employees() {
       <div className="mx-auto max-w-[1600px] space-y-6">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
-            <div className="mb-2 flex items-center gap-2 text-sm text-slate-500">
+            <div className="mb-2 flex items-center gap-2 text-sm text-black-500">
               <Building2 size={16} />
               Company Workspace
               <span>/</span>
               Employees
             </div>
 
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            <h1 className="text-2xl font-bold tracking-tight text-black-900 sm:text-3xl">
               Employee Management
             </h1>
 
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-black-500">
               Create, view, edit, activate, deactivate and delete employee
               accounts.
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60"
-            >
-              <RefreshCw
-                size={16}
-                className={refreshing ? "animate-spin" : ""}
-              />
-              {refreshing ? "Refreshing..." : "Refresh"}
-            </button>
+<div className="flex flex-wrap gap-2">
+  <button
+    type="button"
+    onClick={handleRefresh}
+    disabled={refreshing}
+    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-[13px] font-medium text-black hover:bg-slate-100 disabled:opacity-60"
+  >
+    <RefreshCw
+      size={16}
+      className={refreshing ? "animate-spin" : ""}
+    />
+    {refreshing ? "Refreshing..." : "Refresh"}
+  </button>
 
-            <button
-              type="button"
-              onClick={openCreate}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-            >
-              <Plus size={17} />
-              Add Employee
-            </button>
-          </div>
+  <button
+    type="button"
+    onClick={openCreate}
+    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-blue-600 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-blue-700"
+  >
+    <Plus size={16} />
+    Add Employee
+  </button>
+</div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-500">
+                <p className="text-sm font-medium text-black-500">
                   Employees in Current Results
                 </p>
-                <p className="mt-2 text-3xl font-bold text-slate-900">
+                <p className="mt-2 text-3xl font-bold text-black-900">
                   {employees.length}
                 </p>
               </div>
@@ -686,7 +686,7 @@ export default function Employees() {
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-500">
+                <p className="text-sm font-medium text-black-500">
                   Active Employees
                 </p>
                 <p className="mt-2 text-3xl font-bold text-emerald-600">
@@ -702,7 +702,7 @@ export default function Employees() {
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-500">
+                <p className="text-sm font-medium text-black-500">
                   Inactive Employees
                 </p>
                 <p className="mt-2 text-3xl font-bold text-rose-600">
@@ -720,10 +720,10 @@ export default function Employees() {
           <div className="border-b border-slate-100 p-4 sm:p-5">
             <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
               <div>
-                <h2 className="text-lg font-semibold text-slate-900">
+                <h2 className="text-lg font-semibold text-black-900">
                   Employee Directory
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-black-500">
                   {filteredEmployees.length} employee(s) found
                 </p>
               </div>
@@ -794,7 +794,7 @@ export default function Employees() {
               <div className="relative sm:col-span-2 xl:col-span-1">
                 <Search
                   size={17}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-black-400"
                 />
                 <input
                   value={search}
@@ -843,26 +843,26 @@ export default function Employees() {
           </div>
 
           {loading ? (
-            <div className="flex min-h-64 items-center justify-center gap-3 text-sm text-slate-500">
+            <div className="flex min-h-64 items-center justify-center gap-3 text-sm text-black-500">
               <RefreshCw size={19} className="animate-spin" />
               Loading employees...
             </div>
           ) : filteredEmployees.length === 0 ? (
             <div className="flex min-h-64 flex-col items-center justify-center px-5 text-center">
-              <div className="mb-3 rounded-full bg-slate-100 p-4 text-slate-400">
+              <div className="mb-3 rounded-full bg-slate-100 p-4 text-black-400">
                 <Users size={27} />
               </div>
-              <h3 className="font-semibold text-slate-800">
+              <h3 className="font-semibold text-black-800">
                 No employees found
               </h3>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-black-500">
                 Select another scope, add an employee, or change your filters.
               </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1100px] text-left">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wider text-black-500">
                   <tr>
                     <th className="px-5 py-3.5 font-semibold">Employee</th>
                     <th className="px-5 py-3.5 font-semibold">Contact</th>
@@ -886,10 +886,10 @@ export default function Employees() {
                         <div className="flex items-center gap-3">
                           <EmployeeAvatar employee={employee} />
                           <div className="min-w-0">
-                            <p className="truncate font-semibold text-slate-800">
+                            <p className="truncate font-semibold text-black-800">
                               {employee.name}
                             </p>
-                            <p className="mt-0.5 text-xs text-slate-500">
+                            <p className="mt-0.5 text-xs text-black-500">
                               ID: {employee.empId}
                             </p>
                           </div>
@@ -897,23 +897,23 @@ export default function Employees() {
                       </td>
 
                       <td className="px-5 py-4">
-                        <p className="text-sm text-slate-700">
+                        <p className="text-sm text-black-700">
                           {employee.email}
                         </p>
-                        <p className="mt-1 text-xs text-slate-500">
+                        <p className="mt-1 text-xs text-black-500">
                           {employee.phone || "—"}
                         </p>
                       </td>
 
-                      <td className="px-5 py-4 text-sm text-slate-600">
+                      <td className="px-5 py-4 text-sm text-black-600">
                         {getName(employee.companyId, "companyName")}
                       </td>
 
-                      <td className="px-5 py-4 text-sm text-slate-600">
+                      <td className="px-5 py-4 text-sm text-black-600">
                         {getName(employee.departmentId, "departmentName")}
                       </td>
 
-                      <td className="px-5 py-4 text-sm text-slate-600">
+                      <td className="px-5 py-4 text-sm text-black-600">
                         {getName(employee.roleId, "roleName")}
                       </td>
 
@@ -927,7 +927,7 @@ export default function Employees() {
                             type="button"
                             title="View employee"
                             onClick={() => openDetails(employee)}
-                            className="rounded-lg p-2 text-slate-500 hover:bg-blue-50 hover:text-blue-600"
+                            className="rounded-lg p-2 text-black-500 hover:bg-blue-50 hover:text-blue-600"
                           >
                             <Eye size={17} />
                           </button>
@@ -936,7 +936,7 @@ export default function Employees() {
                             type="button"
                             title="Edit employee"
                             onClick={() => openEdit(employee)}
-                            className="rounded-lg p-2 text-slate-500 hover:bg-amber-50 hover:text-amber-600"
+                            className="rounded-lg p-2 text-black-500 hover:bg-amber-50 hover:text-amber-600"
                           >
                             <Pencil size={17} />
                           </button>
@@ -951,8 +951,8 @@ export default function Employees() {
                             onClick={() => changeStatus(employee)}
                             className={`rounded-lg p-2 ${
                               employee.status === "active"
-                                ? "text-slate-500 hover:bg-rose-50 hover:text-rose-600"
-                                : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-600"
+                                ? "text-black-500 hover:bg-rose-50 hover:text-rose-600"
+                                : "text-black-500 hover:bg-emerald-50 hover:text-emerald-600"
                             }`}
                           >
                             {employee.status === "active" ? (
@@ -966,7 +966,7 @@ export default function Employees() {
                             type="button"
                             title="Delete employee"
                             onClick={() => handleDelete(employee)}
-                            className="rounded-lg p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-600"
+                            className="rounded-lg p-2 text-black-500 hover:bg-rose-50 hover:text-rose-600"
                           >
                             <Trash2 size={17} />
                           </button>
@@ -1002,13 +1002,13 @@ export default function Employees() {
               )}
 
               <div className="min-w-0 flex-1">
-                <p className="font-semibold text-slate-800">
+                <p className="font-semibold text-black-800">
                   Profile Picture
                 </p>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-black-500">
                   Image file only. Maximum size 5 MB.
                 </p>
-                <label className="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
+                <label className="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-black-700 hover:bg-slate-100">
                   <Upload size={15} />
                   Choose Image
                   <input
@@ -1080,7 +1080,7 @@ export default function Employees() {
       <button
         type="button"
         onClick={() => setShowPassword((previous) => !previous)}
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-blue-600"
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-black-500 hover:text-blue-600"
         aria-label={showPassword ? "Hide password" : "Show password"}
         title={showPassword ? "Hide password" : "Show password"}
       >
@@ -1182,7 +1182,7 @@ export default function Employees() {
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                className="rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-semibold text-black-700 hover:bg-slate-50"
               >
                 Cancel
               </button>
@@ -1212,10 +1212,10 @@ export default function Employees() {
           <div className="mb-6 flex flex-col items-center gap-3 rounded-xl bg-slate-50 p-5 sm:flex-row">
             <EmployeeAvatar employee={selectedEmployee} size="h-20 w-20" />
             <div className="text-center sm:text-left">
-              <h3 className="text-xl font-bold text-slate-900">
+              <h3 className="text-xl font-bold text-black-900">
                 {selectedEmployee.name}
               </h3>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-black-500">
                 Employee ID: {selectedEmployee.empId || "—"}
               </p>
               <div className="mt-2">
@@ -1283,11 +1283,11 @@ export default function Employees() {
                 key={label}
                 className="rounded-xl border border-slate-100 p-4"
               >
-                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-slate-500">
+                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-black-500">
                   <Icon size={15} />
                   {label}
                 </div>
-                <p className="break-words text-sm font-medium text-slate-800">
+                <p className="break-words text-sm font-medium text-black-800">
                   {value || "—"}
                 </p>
               </div>
@@ -1307,7 +1307,7 @@ export default function Employees() {
             <button
               type="button"
               onClick={closeModal}
-              className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700"
+              className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-black-700"
             >
               Close
             </button>

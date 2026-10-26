@@ -25,6 +25,63 @@ const EmployeeRoleAccess = () => {
   const [loading, setLoading] = useState(true);
   const [accessLoading, setAccessLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const handleArrowKeyNavigation = (e) => {
+  if (
+    !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
+      e.key
+    )
+  ) {
+    return;
+  }
+
+  const current = e.target;
+
+  if (!current.matches("input, select, textarea")) return;
+
+  // Text input-এর মধ্যে cursor সরানো স্বাভাবিকভাবে কাজ করবে।
+  if (
+    current.tagName === "INPUT" &&
+    current.type !== "file" &&
+    current.type !== "checkbox" &&
+    current.type !== "radio"
+  ) {
+    const start = current.selectionStart;
+    const end = current.selectionEnd;
+
+    if (
+      (e.key === "ArrowLeft" &&
+        start !== null &&
+        (start !== end || start > 0)) ||
+      (e.key === "ArrowRight" &&
+        end !== null &&
+        (start !== end || end < current.value.length))
+    ) {
+      return;
+    }
+  }
+
+  const form = current.closest("form");
+  if (!form) return;
+
+  const fields = Array.from(
+    form.querySelectorAll(
+      'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled])'
+    )
+  ).filter((field) => field.tabIndex !== -1);
+
+  const index = fields.indexOf(current);
+  if (index === -1) return;
+
+  const nextIndex =
+    e.key === "ArrowRight" || e.key === "ArrowDown"
+      ? index + 1
+      : index - 1;
+
+  if (nextIndex < 0 || nextIndex >= fields.length) return;
+
+  e.preventDefault();
+  fields[nextIndex].focus();
+};
 
   const loadProjects = useCallback(async () => {
     setLoading(true);
@@ -227,7 +284,7 @@ const revokeAccess = async (roleId) => {
 
   if (loading) {
     return (
-      <div className="p-6 text-slate-500">
+      <div className="p-6 text-black-500">
         Loading role access...
       </div>
     );
@@ -237,10 +294,10 @@ const revokeAccess = async (roleId) => {
     <div className="space-y-6 p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">
+          <h1 className="text-2xl font-bold text-black-900">
             Role Access
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-black-500">
             Review project role access and manage permissions available to you.
           </p>
         </div>
@@ -248,7 +305,7 @@ const revokeAccess = async (roleId) => {
         <button
           onClick={loadAccess}
           disabled={!selectedId || accessLoading}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-black-700 hover:bg-slate-50 disabled:opacity-50"
         >
           <RefreshCw size={16} />
           Refresh
@@ -256,7 +313,7 @@ const revokeAccess = async (roleId) => {
       </div>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <label className="text-sm font-medium text-slate-700">
+        <label className="text-sm font-medium text-black-700">
           Select project
         </label>
 
@@ -279,9 +336,9 @@ const revokeAccess = async (roleId) => {
         </select>
 
         {selectedProject && (
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-2 text-sm text-black-500">
             Selected project:{" "}
-            <span className="font-medium text-slate-700">
+            <span className="font-medium text-black-700">
               {selectedProject.projectName}
             </span>
           </p>
@@ -292,17 +349,17 @@ const revokeAccess = async (roleId) => {
         <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
           <ShieldCheck
             size={36}
-            className="mx-auto text-slate-400"
+            className="mx-auto text-black-400"
           />
-          <p className="mt-3 font-semibold text-slate-800">
+          <p className="mt-3 font-semibold text-black-800">
             No project selected
           </p>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-black-500">
             You need an accessible project to view its role access.
           </p>
         </div>
       ) : accessLoading ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
+        <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-black-500">
           Loading access information...
         </div>
       ) : (
@@ -322,21 +379,22 @@ const revokeAccess = async (roleId) => {
 
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-5">
-              <h2 className="text-lg font-semibold text-slate-900">
+              <h2 className="text-lg font-semibold text-black-900">
                 Grant Role Access
               </h2>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-black-500">
                 Select a role that does not currently have access.
               </p>
             </div>
 
             {availableRoles.length === 0 ? (
-              <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">
+              <p className="rounded-lg bg-slate-50 p-4 text-sm text-black-500">
                 No additional roles are available to grant access to.
               </p>
             ) : (
               <form
                 onSubmit={grantAccess}
+                onKeyDown={handleArrowKeyNavigation}
                 className="flex flex-col gap-3 sm:flex-row"
               >
                 <select
@@ -375,23 +433,23 @@ const revokeAccess = async (roleId) => {
 
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4">
-              <h2 className="text-lg font-semibold text-slate-900">
+              <h2 className="text-lg font-semibold text-black-900">
                 Project Role Access
               </h2>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-black-500">
                 Current access information returned by the server.
               </p>
             </div>
 
             {roleAccess.length === 0 ? (
-              <p className="rounded-lg bg-slate-50 p-5 text-sm text-slate-500">
+              <p className="rounded-lg bg-slate-50 p-5 text-sm text-black-500">
                 No role access information found for this project.
               </p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[560px] text-left text-sm">
                   <thead>
-                    <tr className="border-b border-slate-200 text-slate-500">
+                    <tr className="border-b border-slate-200 text-black-500">
                       <th className="px-3 py-3 font-medium">Role</th>
                       <th className="px-3 py-3 font-medium">Access</th>
                       <th className="px-3 py-3 font-medium">Access Type</th>
@@ -409,7 +467,7 @@ const revokeAccess = async (roleId) => {
                           key={roleId}
                           className="border-b border-slate-100 last:border-0"
                         >
-                          <td className="px-3 py-4 font-medium text-slate-800">
+                          <td className="px-3 py-4 font-medium text-black-800">
                             {role.roleName ??
                               item.roleName ??
                               "Unnamed role"}
@@ -421,7 +479,7 @@ const revokeAccess = async (roleId) => {
                             />
                           </td>
 
-                          <td className="px-3 py-4 text-slate-600">
+                          <td className="px-3 py-4 text-black-600">
                             {item.accessType || "—"}
                           </td>
 
@@ -436,7 +494,7 @@ const revokeAccess = async (roleId) => {
                                 Revoke
                               </button>
                             ) : (
-                              <span className="text-xs text-slate-400">
+                              <span className="text-xs text-black-400">
                                 Not granted
                               </span>
                             )}
@@ -451,12 +509,12 @@ const revokeAccess = async (roleId) => {
           </section>
 
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-4 text-lg font-semibold text-slate-900">
+            <h2 className="mb-4 text-lg font-semibold text-black-900">
               My Granted Access
             </h2>
 
             {grantedAccess.length === 0 ? (
-              <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">
+              <p className="rounded-lg bg-slate-50 p-4 text-sm text-black-500">
                 No granted access details were returned for this project.
               </p>
             ) : (
@@ -475,12 +533,12 @@ const revokeAccess = async (roleId) => {
                       className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-4"
                     >
                       <div>
-                        <p className="font-medium text-slate-800">
+                        <p className="font-medium text-black-800">
                           {role.roleName ??
                             item.roleName ??
                             "Granted role"}
                         </p>
-                        <p className="mt-1 text-xs text-slate-500">
+                        <p className="mt-1 text-xs text-black-500">
                           {item.accessType || "Access granted"}
                         </p>
                       </div>
@@ -501,10 +559,10 @@ const revokeAccess = async (roleId) => {
 const SummaryCard = ({ label, value, icon: Icon }) => (
   <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
     <div className="flex items-center justify-between gap-3">
-      <p className="text-sm text-slate-500">{label}</p>
+      <p className="text-sm text-black-500">{label}</p>
       <Icon size={20} className="text-indigo-600" />
     </div>
-    <p className="mt-3 text-2xl font-bold text-slate-900">
+    <p className="mt-3 text-2xl font-bold text-black-900">
       {value}
     </p>
   </div>
@@ -515,7 +573,7 @@ const AccessBadge = ({ hasAccess }) => (
     className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
       hasAccess
         ? "bg-green-50 text-green-700"
-        : "bg-slate-100 text-slate-600"
+        : "bg-slate-100 text-black-600"
     }`}
   >
     {hasAccess ? "Granted" : "Not granted"}

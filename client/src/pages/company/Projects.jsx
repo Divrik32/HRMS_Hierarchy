@@ -709,10 +709,10 @@ const permanentlyDeleteProject = async (deletedProject) => {
   };
 
   const inputClass =
-    "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100";
+    "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-black-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100";
 
   const labelClass =
-    "mb-1.5 block text-sm font-medium text-slate-700";
+    "mb-1.5 block text-sm font-medium text-black-700";
 
   const closeModal = () => {
     if (!saving) {
@@ -722,7 +722,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 text-slate-800 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-slate-50 p-4 text-black-800 sm:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
         {/* HEADER */}
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
@@ -736,7 +736,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
               Projects
             </h1>
 
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-black-500">
               Manage projects, root-role assignments and project modules.
             </p>
           </div>
@@ -815,7 +815,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                 className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-500">
+                  <span className="text-sm text-black-500">
                     {item.label}
                   </span>
 
@@ -837,7 +837,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
           <div className="relative flex-1">
             <Search
               size={18}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-black-400"
             />
 
             <input
@@ -851,7 +851,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
           <div className="relative md:w-72">
             <Building2
               size={17}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-black-400"
             />
 
             <select
@@ -872,7 +872,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
 
             <ChevronDown
               size={16}
-              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-black-400"
             />
           </div>
         </div>
@@ -883,14 +883,14 @@ const permanentlyDeleteProject = async (deletedProject) => {
             <div>
               <h2 className="font-semibold">Project Directory</h2>
 
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-black-500">
                 {filteredProjects.length} project(s) found
               </p>
             </div>
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center gap-3 py-20 text-sm text-slate-500">
+            <div className="flex items-center justify-center gap-3 py-20 text-sm text-black-500">
               <RefreshCw className="animate-spin" size={18} />
               Loading projects...
             </div>
@@ -898,19 +898,19 @@ const permanentlyDeleteProject = async (deletedProject) => {
             <div className="px-5 py-16 text-center">
               <FolderKanban
                 size={36}
-                className="mx-auto mb-3 text-slate-300"
+                className="mx-auto mb-3 text-black-300"
               />
 
               <h3 className="font-semibold">No projects found</h3>
 
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-black-500">
                 Create a project or change your search filters.
               </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-black-500">
                   <tr>
                     <th className="px-5 py-3 font-semibold">Project</th>
                     <th className="px-5 py-3 font-semibold">Company</th>
@@ -931,11 +931,11 @@ const permanentlyDeleteProject = async (deletedProject) => {
                       className="transition hover:bg-slate-50"
                     >
                       <td className="px-5 py-4">
-                        <p className="font-semibold text-slate-800">
+                        <p className="font-semibold text-black-800">
                           {project.projectName}
                         </p>
 
-                        <p className="mt-1 text-xs text-slate-500">
+                        <p className="mt-1 text-xs text-black-500">
                           {project.projectCode || "No project code"}
                         </p>
                       </td>
@@ -944,7 +944,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                         <div className="flex items-center gap-2">
                           <Building2
                             size={16}
-                            className="shrink-0 text-slate-400"
+                            className="shrink-0 text-black-400"
                           />
                           <span>{companyName(project)}</span>
                         </div>
@@ -972,7 +972,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                         <span
                           className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
                             project.status === "inactive"
-                              ? "bg-slate-100 text-slate-600"
+                              ? "bg-slate-100 text-black-600"
                               : "bg-emerald-50 text-emerald-700"
                           }`}
                         >
@@ -986,7 +986,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                             type="button"
                             title="View details and modules"
                             onClick={() => openDetails(project)}
-                            className="rounded-lg p-2 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600"
+                            className="rounded-lg p-2 text-black-500 hover:bg-indigo-50 hover:text-indigo-600"
                           >
                             <Eye size={17} />
                           </button>
@@ -995,7 +995,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                             type="button"
                             title="Edit project"
                             onClick={() => openEdit(project)}
-                            className="rounded-lg p-2 text-slate-500 hover:bg-amber-50 hover:text-amber-600"
+                            className="rounded-lg p-2 text-black-500 hover:bg-amber-50 hover:text-amber-600"
                           >
                             <Pencil size={17} />
                           </button>
@@ -1004,7 +1004,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                             type="button"
                             title="Delete project"
                             onClick={() => deleteProject(project)}
-                            className="rounded-lg p-2 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                            className="rounded-lg p-2 text-black-500 hover:bg-red-50 hover:text-red-600"
                           >
                             <Trash2 size={17} />
                           </button>
@@ -1029,7 +1029,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                   {modal === "create" ? "Create Project" : "Edit Project"}
                 </h2>
 
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-black-500">
                   Enter project information and assign root roles.
                 </p>
               </div>
@@ -1037,7 +1037,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                className="rounded-lg p-2 text-black-500 hover:bg-slate-100"
               >
                 <X size={20} />
               </button>
@@ -1073,7 +1073,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                   />
 
                   {modal === "edit" && (
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-black-500">
                       Project code cannot be changed.
                     </p>
                   )}
@@ -1166,7 +1166,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                       Root Role Assignment
                     </h3>
 
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-black-500">
                       Only root roles belonging to this company are shown.
                     </p>
                   </div>
@@ -1196,7 +1196,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                 </div>
 
                 {!form.companyId ? (
-                  <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">
+                  <p className="rounded-lg bg-slate-50 p-4 text-sm text-black-500">
                     Select a company to load its root roles.
                   </p>
                 ) : roles.length === 0 ? (
@@ -1245,7 +1245,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                 <div className="rounded-xl border border-slate-200 p-4">
                   <h3 className="mb-1 font-semibold">Project Modules</h3>
 
-                  <p className="mb-3 text-xs text-slate-500">
+                  <p className="mb-3 text-xs text-black-500">
                     Add one module per line.
                   </p>
 
@@ -1270,7 +1270,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                     rows={4}
                   />
 
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className="mt-2 text-xs text-black-500">
                     New modules default to “Not Assigned”.
                   </p>
                 </div>
@@ -1315,7 +1315,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                   {selectedProject.projectName}
                 </h2>
 
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="text-xs text-black-500">
                   {selectedProject.projectCode || "No project code"} ·{" "}
                   {companyName(selectedProject)}
                 </p>
@@ -1324,7 +1324,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                className="rounded-lg p-2 text-black-500 hover:bg-slate-100"
               >
                 <X size={20} />
               </button>
@@ -1333,7 +1333,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
             <div className="space-y-6 p-5 sm:p-6">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="rounded-lg bg-slate-50 p-4">
-                  <p className="text-xs text-slate-500">Client</p>
+                  <p className="text-xs text-black-500">Client</p>
 
                   <p className="mt-1 font-semibold">
                     {selectedProject.clientName || "—"}
@@ -1341,7 +1341,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                 </div>
 
                 <div className="rounded-lg bg-slate-50 p-4">
-                  <p className="text-xs text-slate-500">Status</p>
+                  <p className="text-xs text-black-500">Status</p>
 
                   <p className="mt-1 font-semibold capitalize">
                     {selectedProject.status || "active"}
@@ -1354,7 +1354,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                   Project Description
                 </h3>
 
-                <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                <p className="whitespace-pre-wrap text-sm leading-6 text-black-600">
                   {selectedProject.projectDescription ||
                     "No description provided."}
                 </p>
@@ -1363,7 +1363,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
               <div>
                 <h3 className="mb-2 font-semibold">Project Details</h3>
 
-                <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                <p className="whitespace-pre-wrap text-sm leading-6 text-black-600">
                   {selectedProject.projectDetails ||
                     "No details provided."}
                 </p>
@@ -1372,7 +1372,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
               <div>
                 <h3 className="mb-2 font-semibold">Remarks</h3>
 
-                <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                <p className="whitespace-pre-wrap text-sm leading-6 text-black-600">
                   {selectedProject.remarks || "No remarks."}
                 </p>
               </div>
@@ -1383,7 +1383,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                   <div>
                     <h3 className="font-semibold">Project Modules</h3>
 
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-black-500">
                       Add, edit, update status or delete project modules.
                     </p>
                   </div>
@@ -1426,7 +1426,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                 </form>
 
                 {!selectedProject.modules?.length ? (
-                  <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">
+                  <p className="rounded-lg bg-slate-50 p-4 text-sm text-black-500">
                     No modules have been added yet.
                   </p>
                 ) : (
@@ -1522,11 +1522,11 @@ const permanentlyDeleteProject = async (deletedProject) => {
                             /* MODULE DETAILS */
                             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                               <div className="min-w-0">
-                                <p className="break-words font-medium text-slate-800">
+                                <p className="break-words font-medium text-black-800">
                                   {module.moduleName}
                                 </p>
 
-                                <p className="mt-1 text-xs text-slate-500">
+                                <p className="mt-1 text-xs text-black-500">
                                   Status:{" "}
                                   <span
                                     className={`font-medium ${
@@ -1536,7 +1536,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                                           ? "text-indigo-600"
                                           : module.status === "Assigned"
                                             ? "text-blue-600"
-                                            : "text-slate-500"
+                                            : "text-black-500"
                                     }`}
                                   >
                                     {module.status || "Not Assigned"}
@@ -1585,7 +1585,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                 </h3>
 
                 {!selectedProject.roleAccess?.length ? (
-                  <p className="text-sm text-slate-500">
+                  <p className="text-sm text-black-500">
                     No roles assigned.
                   </p>
                 ) : (
@@ -1627,11 +1627,11 @@ const permanentlyDeleteProject = async (deletedProject) => {
       {/* HEADER */}
       <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:px-6">
         <div>
-          <h2 className="text-lg font-bold text-slate-800">
+          <h2 className="text-lg font-bold text-black-800">
             Deleted Projects
           </h2>
 
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-black-500">
             Restore archived projects or permanently delete them.
           </p>
         </div>
@@ -1642,7 +1642,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
             onClick={fetchDeletedProjects}
             disabled={deletedLoading}
             title="Refresh deleted projects"
-            className="rounded-lg border border-slate-300 p-2 text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+            className="rounded-lg border border-slate-300 p-2 text-black-600 hover:bg-slate-100 disabled:opacity-50"
           >
             <RefreshCw
               size={17}
@@ -1653,7 +1653,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
           <button
             type="button"
             onClick={closeModal}
-            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+            className="rounded-lg p-2 text-black-500 hover:bg-slate-100"
           >
             <X size={20} />
           </button>
@@ -1663,7 +1663,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
       {/* CONTENT */}
       <div className="max-h-[calc(95vh-85px)] overflow-y-auto p-4 sm:p-6">
         {deletedLoading ? (
-          <div className="flex items-center justify-center gap-3 py-20 text-sm text-slate-500">
+          <div className="flex items-center justify-center gap-3 py-20 text-sm text-black-500">
             <RefreshCw className="animate-spin" size={18} />
             Loading deleted projects...
           </div>
@@ -1671,21 +1671,21 @@ const permanentlyDeleteProject = async (deletedProject) => {
           <div className="py-16 text-center">
             <Trash2
               size={36}
-              className="mx-auto mb-3 text-slate-300"
+              className="mx-auto mb-3 text-black-300"
             />
 
-            <h3 className="font-semibold text-slate-800">
+            <h3 className="font-semibold text-black-800">
               No deleted projects
             </h3>
 
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-black-500">
               Projects moved to Deleted Projects will appear here.
             </p>
           </div>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-slate-200">
             <table className="w-full min-w-[850px] text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-black-500">
                 <tr>
                   <th className="px-4 py-3 font-semibold">
                     Project
@@ -1729,11 +1729,11 @@ const permanentlyDeleteProject = async (deletedProject) => {
                       className="hover:bg-slate-50"
                     >
                       <td className="px-4 py-4">
-                        <p className="font-semibold text-slate-800">
+                        <p className="font-semibold text-black-800">
                           {project.projectName || "Unnamed project"}
                         </p>
 
-                        <p className="mt-1 text-xs text-slate-500">
+                        <p className="mt-1 text-xs text-black-500">
                           {project.projectCode || "No project code"}
                         </p>
                       </td>

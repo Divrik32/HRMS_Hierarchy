@@ -30,6 +30,7 @@ const Roles = () => {
   const { companyId } = useParams();
 
   const [roles, setRoles] = useState([]);
+  
   const [rootRoles, setRootRoles] = useState([]);
   const [selectedRole, setSelectedRole] = useState(null);
   const [selectedChildren, setSelectedChildren] = useState([]);
@@ -42,12 +43,88 @@ const Roles = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRole, setEditingRole] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const handleArrowKeyNavigation = (e) => {
+  const supportedKeys = [
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
+  ];
+
+  if (!supportedKeys.includes(e.key)) return;
+
+  const current = e.target;
+
+  if (
+    !current.matches(
+      'input:not([type="hidden"]), select, textarea'
+    )
+  ) {
+    return;
+  }
+
+  // Input-এর ভিতরে cursor selection থাকলে arrow key স্বাভাবিক কাজ করবে।
+  if (
+    current.tagName === "INPUT" &&
+    current.type !== "file" &&
+    current.type !== "checkbox" &&
+    current.type !== "radio" &&
+    current.type !== "button" &&
+    current.type !== "submit"
+  ) {
+    const start = current.selectionStart;
+    const end = current.selectionEnd;
+    const valueLength = current.value.length;
+
+    if (
+      (e.key === "ArrowLeft" &&
+        start !== null &&
+        (start !== end || start > 0)) ||
+      (e.key === "ArrowRight" &&
+        end !== null &&
+        (start !== end || end < valueLength))
+    ) {
+      return;
+    }
+  }
+
+  const container = current.closest("form");
+  if (!container) return;
+
+  const fields = Array.from(
+    container.querySelectorAll(
+      'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled])'
+    )
+  ).filter(
+    (field) =>
+      field.tabIndex !== -1 &&
+      field.getAttribute("aria-hidden") !== "true"
+  );
+
+  const currentIndex = fields.indexOf(current);
+  if (currentIndex === -1) return;
+
+  let nextIndex = currentIndex;
+
+  if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+    nextIndex++;
+  } else {
+    nextIndex--;
+  }
+
+  if (nextIndex < 0 || nextIndex >= fields.length) return;
+
+  e.preventDefault();
+  fields[nextIndex].focus();
+};
   const [deletingId, setDeletingId] = useState(null);
 
-  const [treeTranslate, setTreeTranslate] = useState({
-    x: 400,
-    y: 80,
-  });
+const [treeTranslate, setTreeTranslate] = useState({
+  x: 400,
+  y: 80,
+});
+
+const [treeZoom, setTreeZoom] = useState(1);
 
   // Get ID from populated or unpopulated parentRoleId.
   const getParentId = (role) => {
@@ -429,18 +506,18 @@ const Roles = () => {
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="mb-2 flex items-center gap-2 text-sm text-slate-500">
+            <div className="mb-2 flex items-center gap-2 text-sm text-black-500">
               <Building2 size={16} />
               Company Workspace
               <ChevronRight size={15} />
               <span className="text-blue-600">Roles & Permissions</span>
             </div>
 
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            <h1 className="text-2xl font-bold tracking-tight text-black-900 sm:text-3xl">
               Roles & Hierarchy
             </h1>
 
-            <p className="mt-2 text-sm text-slate-500">
+            <p className="mt-2 text-sm text-black-500">
               Organize your company roles and visualize reporting relationships.
             </p>
           </div>
@@ -450,7 +527,7 @@ const Roles = () => {
               type="button"
               onClick={loadRoles}
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-100 disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-black-700 shadow-sm hover:bg-slate-100 disabled:opacity-60"
             >
               <RefreshCw
                 size={16}
@@ -486,8 +563,8 @@ const Roles = () => {
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-500">Total Roles</p>
-                <p className="mt-2 text-3xl font-bold text-slate-900">
+                <p className="text-sm text-black-500">Total Roles</p>
+                <p className="mt-2 text-3xl font-bold text-black-900">
                   {roles.length}
                 </p>
               </div>
@@ -500,8 +577,8 @@ const Roles = () => {
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-500">Top-level Roles</p>
-                <p className="mt-2 text-3xl font-bold text-slate-900">
+                <p className="text-sm text-black-500">Top-level Roles</p>
+                <p className="mt-2 text-3xl font-bold text-black-900">
                   {rootRoles.length}
                 </p>
               </div>
@@ -514,8 +591,8 @@ const Roles = () => {
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-500">Nested Roles</p>
-                <p className="mt-2 text-3xl font-bold text-slate-900">
+                <p className="text-sm text-black-500">Nested Roles</p>
+                <p className="mt-2 text-3xl font-bold text-black-900">
                   {roles.length - rootRoles.length}
                 </p>
               </div>
@@ -530,10 +607,10 @@ const Roles = () => {
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-lg font-bold text-slate-900">
+              <h2 className="text-lg font-bold text-black-900">
                 Role Hierarchy Tree
               </h2>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-black-500">
                 Select a node to view its parent and child roles.
               </p>
             </div>
@@ -544,19 +621,19 @@ const Roles = () => {
           </div>
 
           {loading ? (
-            <div className="flex h-96 items-center justify-center gap-3 text-slate-500">
+            <div className="flex h-96 items-center justify-center gap-3 text-black-500">
               <LoaderCircle size={25} className="animate-spin text-blue-600" />
               Loading hierarchy...
             </div>
           ) : roles.length === 0 ? (
             <div className="flex min-h-80 flex-col items-center justify-center px-6 text-center">
-              <div className="rounded-2xl bg-slate-100 p-4 text-slate-400">
+              <div className="rounded-2xl bg-slate-100 p-4 text-black-400">
                 <Network size={34} />
               </div>
-              <h3 className="mt-4 font-semibold text-slate-800">
+              <h3 className="mt-4 font-semibold text-black-800">
                 No roles created yet
               </h3>
-              <p className="mt-2 max-w-md text-sm text-slate-500">
+              <p className="mt-2 max-w-md text-sm text-black-500">
                 Create a top-level role first, then add child roles beneath it.
               </p>
               <button
@@ -570,105 +647,117 @@ const Roles = () => {
             </div>
           ) : (
             <div className="relative h-[560px] w-full overflow-hidden bg-slate-50 sm:h-[650px]">
-              <div className="absolute left-4 top-4 z-10 rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-500 shadow-sm">
+              <div className="absolute left-4 top-4 z-10 rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs text-black-500 shadow-sm">
                 Scroll to zoom · Drag to move
               </div>
 
-              <Tree
-                data={treeData}
-                translate={treeTranslate}
-                orientation="vertical"
-                pathFunc="step"
-                collapsible
-                zoomable
-                draggable
-                separation={{ siblings: 1.4, nonSiblings: 1.8 }}
-                nodeSize={{ x: 210, y: 105 }}
-                onUpdate={(state) => {
-                  if (state?.translate) {
-                    setTreeTranslate(state.translate);
-                  }
-                }}
-                onNodeClick={handleTreeNodeClick}
-                renderCustomNodeElement={({ nodeDatum }) => {
-                  const isVirtualRoot =
-                    nodeDatum.roleId === "virtual-root";
+<Tree
+  data={treeData}
+  translate={treeTranslate}
+  zoom={treeZoom}
+  scaleExtent={{ min: 0.2, max: 2 }}
+  orientation="vertical"
+  pathFunc="step"
+  collapsible={true}
+  zoomable={true}
+  draggable={true}
+  separation={{ siblings: 1.4, nonSiblings: 1.8 }}
+  nodeSize={{ x: 210, y: 105 }}
+  onUpdate={(state) => {
+    if (state?.translate) {
+      setTreeTranslate(state.translate);
+    }
 
-                  const isSelected =
-                    String(selectedRole?._id) ===
-                    String(nodeDatum.roleId);
+    if (typeof state?.zoom === "number") {
+      setTreeZoom(state.zoom);
+    }
+  }}
+  onNodeClick={handleTreeNodeClick}
+  renderCustomNodeElement={({ nodeDatum }) => {
+    const isVirtualRoot = nodeDatum.roleId === "virtual-root";
 
-                  const childCount = nodeDatum.children?.length || 0;
+    const isSelected =
+      String(selectedRole?._id) === String(nodeDatum.roleId);
 
-                  return (
-                    <g>
-                      <rect
-                        x="-88"
-                        y="-28"
-                        width="176"
-                        height="56"
-                        rx="12"
-                        fill={
-                          isVirtualRoot
-                            ? "#0f172a"
-                            : isSelected
-                              ? "#dbeafe"
-                              : "#ffffff"
-                        }
-                        stroke={
-                          isVirtualRoot
-                            ? "#0f172a"
-                            : isSelected
-                              ? "#2563eb"
-                              : "#cbd5e1"
-                        }
-                        strokeWidth={isSelected ? 2.5 : 1.5}
-                        filter="url(#roleNodeShadow)"
-                      />
+    const childCount = nodeDatum.children?.length || 0;
 
-                      <text
-                        fill={
-                          isVirtualRoot
-                            ? "#ffffff"
-                            : "#0f172a"
-                        }
-                        fontSize="12"
-                        fontWeight="600"
-                        textAnchor="middle"
-                        y="-3"
-                      >
-                        {nodeDatum.name.length > 23
-                          ? `${nodeDatum.name.slice(0, 20)}...`
-                          : nodeDatum.name}
-                      </text>
+    const titleColor = isVirtualRoot ? "#ffffff" : "#0f172a";
+    const subtitleColor = isVirtualRoot ? "#cbd5e1" : "#64748b";
 
-                      <text
-                        fill={
-                          isVirtualRoot ? "#cbd5e1" : "#64748b"
-                        }
-                        fontSize="10"
-                        textAnchor="middle"
-                        y="15"
-                      >
-                        {isVirtualRoot
-                          ? `${childCount} top-level roles`
-                          : `${childCount} direct child${
-                              childCount === 1 ? "" : "ren"
-                            }`}
-                      </text>
+    return (
+      <g>
+        <rect
+          x="-88"
+          y="-28"
+          width="176"
+          height="56"
+          rx="12"
+          fill={
+            isVirtualRoot
+              ? "#0f172a"
+              : isSelected
+                ? "#dbeafe"
+                : "#ffffff"
+          }
+          stroke={
+            isVirtualRoot
+              ? "#0f172a"
+              : isSelected
+                ? "#2563eb"
+                : "#cbd5e1"
+          }
+          strokeWidth={isSelected ? 2.5 : 1.5}
+        />
 
-                      {isSelected && !isVirtualRoot && (
-                        <circle
-                          cx="77"
-                          cy="-18"
-                          r="5"
-                          fill="#2563eb"
-                        />
-                      )}
-                    </g>
-                  );
-                }}
-              />
+        <text
+          fontSize="12"
+          fontWeight="600"
+          textAnchor="middle"
+          y="-3"
+          style={{
+            fill: titleColor,
+            stroke: "none",
+            strokeWidth: 0,
+            fontFamily:
+              "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
+            textRendering: "optimizeLegibility",
+            pointerEvents: "none",
+          }}
+        >
+          {nodeDatum.name.length > 23
+            ? `${nodeDatum.name.slice(0, 20)}...`
+            : nodeDatum.name}
+        </text>
+
+        <text
+          fontSize="10"
+          fontWeight="400"
+          textAnchor="middle"
+          y="15"
+          style={{
+            fill: subtitleColor,
+            stroke: "none",
+            strokeWidth: 0,
+            fontFamily:
+              "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
+            textRendering: "optimizeLegibility",
+            pointerEvents: "none",
+          }}
+        >
+          {isVirtualRoot
+            ? `${childCount} top-level roles`
+            : `${childCount} direct child${
+                childCount === 1 ? "" : "ren"
+              }`}
+        </text>
+
+        {isSelected && !isVirtualRoot && (
+          <circle cx="77" cy="-18" r="5" fill="#2563eb" />
+        )}
+      </g>
+    );
+  }}
+/>
             </div>
           )}
         </section>
@@ -681,10 +770,10 @@ const Roles = () => {
                 <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
                   Selected Role
                 </p>
-                <h2 className="mt-1 text-xl font-bold text-slate-900">
+                <h2 className="mt-1 text-xl font-bold text-black-900">
                   {selectedRole.roleName}
                 </h2>
-                <p className="mt-2 text-sm text-slate-500">
+                <p className="mt-2 text-sm text-black-500">
                   Parent: {getRoleName(getParentId(selectedRole))}
                 </p>
               </div>
@@ -693,7 +782,7 @@ const Roles = () => {
                 <button
                   type="button"
                   onClick={() => openEditModal(selectedRole)}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-black-700 hover:bg-slate-50"
                 >
                   <Pencil size={15} />
                   Edit
@@ -716,12 +805,12 @@ const Roles = () => {
             </div>
 
             <div className="mt-5 border-t border-slate-100 pt-4">
-              <h3 className="text-sm font-semibold text-slate-800">
+              <h3 className="text-sm font-semibold text-black-800">
                 Direct Child Roles ({selectedChildren.length})
               </h3>
 
               {selectedChildren.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-500">
+                <p className="mt-2 text-sm text-black-500">
                   This role has no direct child roles.
                 </p>
               ) : (
@@ -731,7 +820,7 @@ const Roles = () => {
                       type="button"
                       key={child._id}
                       onClick={() => handleSelectRole(child._id)}
-                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-black-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
                     >
                       <GitBranch
                         size={14}
@@ -750,10 +839,10 @@ const Roles = () => {
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-4 border-b border-slate-200 p-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="text-lg font-bold text-slate-900">
+              <h2 className="text-lg font-bold text-black-900">
                 All Roles
               </h2>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-black-500">
                 Manage each role and its reporting parent.
               </p>
             </div>
@@ -762,7 +851,7 @@ const Roles = () => {
               <div className="relative">
                 <Search
                   size={17}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-black-400"
                 />
                 <input
                   value={search}
@@ -789,12 +878,12 @@ const Roles = () => {
           </div>
 
           {loading ? (
-            <div className="flex h-40 items-center justify-center gap-3 text-slate-500">
+            <div className="flex h-40 items-center justify-center gap-3 text-black-500">
               <LoaderCircle size={23} className="animate-spin" />
               Loading roles...
             </div>
           ) : filteredRoles.length === 0 ? (
-            <div className="p-10 text-center text-sm text-slate-500">
+            <div className="p-10 text-center text-sm text-black-500">
               No matching roles found.
             </div>
           ) : (
@@ -802,19 +891,19 @@ const Roles = () => {
               <table className="w-full min-w-[700px] text-left">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wider text-black-500">
                       Role Name
                     </th>
-                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wider text-black-500">
                       Parent Role
                     </th>
-                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wider text-black-500">
                       Direct Children
                     </th>
-                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wider text-black-500">
                       Created
                     </th>
-                    <th className="px-5 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-5 py-4 text-right text-xs font-semibold uppercase tracking-wider text-black-500">
                       Actions
                     </th>
                   </tr>
@@ -847,28 +936,28 @@ const Roles = () => {
                               <Network size={18} />
                             </span>
                             <span>
-                              <span className="block font-semibold text-slate-800">
+                              <span className="block font-semibold text-black-800">
                                 {role.roleName}
                               </span>
-                              <span className="mt-1 block text-xs text-slate-400">
+                              <span className="mt-1 block text-xs text-black-400">
                                 {isSelected ? "Selected" : "Click to view"}
                               </span>
                             </span>
                           </button>
                         </td>
 
-                        <td className="px-5 py-4 text-sm text-slate-600">
+                        <td className="px-5 py-4 text-sm text-black-600">
                           {getRoleName(getParentId(role))}
                         </td>
 
                         <td className="px-5 py-4">
-                          <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-700">
+                          <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-black-700">
                             <Users size={13} />
                             {childCount}
                           </span>
                         </td>
 
-                        <td className="whitespace-nowrap px-5 py-4 text-sm text-slate-500">
+                        <td className="whitespace-nowrap px-5 py-4 text-sm text-black-500">
                           {role.createdAt
                             ? new Date(role.createdAt).toLocaleDateString(
                                 "en-IN",
@@ -887,7 +976,7 @@ const Roles = () => {
                               type="button"
                               onClick={() => openEditModal(role)}
                               title="Edit role"
-                              className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600"
+                              className="rounded-lg border border-slate-200 p-2 text-black-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600"
                             >
                               <Pencil size={15} />
                             </button>
@@ -918,7 +1007,7 @@ const Roles = () => {
             </div>
           )}
 
-          <div className="border-t border-slate-200 px-5 py-4 text-xs text-slate-500">
+          <div className="border-t border-slate-200 px-5 py-4 text-xs text-black-500">
             Showing {filteredRoles.length} of {roles.length} roles
           </div>
         </section>
@@ -935,10 +1024,10 @@ const Roles = () => {
           <div className="my-auto w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
               <div>
-                <h2 className="text-lg font-bold text-slate-900">
+                <h2 className="text-lg font-bold text-black-900">
                   {editingRole ? "Edit Role" : "Create Role"}
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-black-500">
                   {editingRole
                     ? "Update the role and its parent."
                     : "Add a role to your company hierarchy."}
@@ -950,19 +1039,19 @@ const Roles = () => {
                 onClick={closeModal}
                 disabled={submitting}
                 aria-label="Close modal"
-                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+                className="rounded-lg p-2 text-black-400 hover:bg-slate-100 hover:text-black-700 disabled:opacity-50"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit} onKeyDown={handleArrowKeyNavigation}>
               <div className="space-y-5 px-6 py-6">
 
                 <div>
                   <label
                     htmlFor="roleName"
-                    className="mb-2 block text-sm font-semibold text-slate-700"
+                    className="mb-2 block text-sm font-semibold text-black-700"
                   >
                     Role Name <span className="text-red-500">*</span>
                   </label>
@@ -983,7 +1072,7 @@ const Roles = () => {
                 <div>
                   <label
                     htmlFor="parentRoleId"
-                    className="mb-2 block text-sm font-semibold text-slate-700"
+                    className="mb-2 block text-sm font-semibold text-black-700"
                   >
                     Parent Role
                   </label>
@@ -1009,7 +1098,7 @@ const Roles = () => {
                       ))}
                   </select>
 
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                  <p className="mt-2 text-xs leading-5 text-black-500">
                     Select an existing role to place this role beneath it.
                     Leave empty to create a top-level role.
                   </p>
@@ -1017,10 +1106,10 @@ const Roles = () => {
 
                 {editingRole && (
                   <div className="rounded-xl bg-slate-50 p-4">
-                    <p className="text-xs font-medium text-slate-500">
+                    <p className="text-xs font-medium text-black-500">
                       Role ID
                     </p>
-                    <p className="mt-1 break-all font-mono text-xs text-slate-700">
+                    <p className="mt-1 break-all font-mono text-xs text-black-700">
                       {editingRole._id}
                     </p>
                   </div>
@@ -1032,7 +1121,7 @@ const Roles = () => {
                   type="button"
                   onClick={closeModal}
                   disabled={submitting}
-                  className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                  className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-black-700 hover:bg-slate-100 disabled:opacity-50"
                 >
                   Cancel
                 </button>

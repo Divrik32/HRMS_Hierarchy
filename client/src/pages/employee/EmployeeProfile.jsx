@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   Save,
@@ -14,6 +14,7 @@ import {
 } from "./employeeApi";
 
 const EmployeeProfile = () => {
+  const formRef = useRef(null);
   const { employeeId } = useParams();
 
   const [employee, setEmployee] = useState(null);
@@ -91,6 +92,73 @@ if (!cancelled) {
       [name]: value,
     }));
   };
+
+  const handleKeyboardNavigation = (event) => {
+  const navigationKeys = [
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
+  ];
+
+  if (!navigationKeys.includes(event.key)) return;
+
+  const current = event.target;
+
+  if (
+    current instanceof HTMLInputElement &&
+    ["text", "email", "password", "search", "tel", "url"].includes(
+      current.type
+    )
+  ) {
+    const start = current.selectionStart;
+    const end = current.selectionEnd;
+
+    if (
+      (event.key === "ArrowLeft" &&
+        (start > 0 || start !== end)) ||
+      (event.key === "ArrowRight" &&
+        (end < current.value.length || start !== end))
+    ) {
+      return;
+    }
+  }
+
+  if (
+    current instanceof HTMLSelectElement &&
+    ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
+  ) {
+    return;
+  }
+
+  const focusableElements = Array.from(
+    formRef.current?.querySelectorAll(
+      'input:not(:disabled), button:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])'
+    ) || []
+  ).filter(
+    (element) =>
+      element.getClientRects().length > 0 &&
+      element.getAttribute("aria-hidden") !== "true"
+  );
+
+  const currentIndex = focusableElements.indexOf(current);
+
+  if (currentIndex === -1) return;
+
+  const movingForward =
+    event.key === "ArrowDown" || event.key === "ArrowRight";
+
+  const movingBackward =
+    event.key === "ArrowUp" || event.key === "ArrowLeft";
+
+  if (movingForward && currentIndex < focusableElements.length - 1) {
+    event.preventDefault();
+    focusableElements[currentIndex + 1].focus();
+  } else if (movingBackward && currentIndex > 0) {
+    event.preventDefault();
+    focusableElements[currentIndex - 1].focus();
+  }
+};
 
 const handleProfilePic = (event) => {
   const file = event.target.files?.[0];
@@ -225,7 +293,7 @@ const handlePasswordChange = async (event) => {
 
   if (loading) {
     return (
-      <div className="p-6 text-slate-500">
+      <div className="p-6 text-black-500">
         Loading profile...
       </div>
     );
@@ -238,10 +306,10 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">
+        <h1 className="text-2xl font-bold text-black-900">
           My Profile
         </h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-black-500">
           Manage your personal information and account password.
         </p>
       </div>
@@ -261,10 +329,10 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
           </div>
 
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-semibold text-slate-900">
+            <h2 className="text-lg font-semibold text-black-900">
               {employee.name}
             </h2>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-black-500">
               {employee.empId}
             </p>
 
@@ -281,10 +349,15 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form
+  ref={formRef}
+  onSubmit={handleSubmit}
+  onKeyDown={handleKeyboardNavigation}
+  className="min-w-0 space-y-6"
+>
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
             <div>
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-sm font-medium text-black-700">
                 Employee ID
               </label>
               <input
@@ -295,7 +368,7 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
             </div>
 
 <div>
-  <label className="text-sm font-medium text-slate-700">
+  <label className="text-sm font-medium text-black-700">
     Email
   </label>
   <input
@@ -310,7 +383,7 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
 </div>
 
             <div>
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-sm font-medium text-black-700">
                 Full name
               </label>
               <input
@@ -323,7 +396,7 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
             </div>
 
             <div>
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-sm font-medium text-black-700">
                 Phone
               </label>
               <input
@@ -336,7 +409,7 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
             </div>
 
             <div>
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-sm font-medium text-black-700">
                 Gender
               </label>
               <select
@@ -352,7 +425,7 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
             </div>
 
             <div>
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-sm font-medium text-black-700">
                 Department
               </label>
               <input
@@ -366,7 +439,7 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
             </div>
 
             <div>
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-sm font-medium text-black-700">
                 Role
               </label>
               <input
@@ -379,7 +452,7 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
             </div>
 
             <div>
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-sm font-medium text-black-700">
                 Company
               </label>
               <input
@@ -392,7 +465,7 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
             </div>
 
             <div className="md:col-span-2">
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-sm font-medium text-black-700">
                 Present address
               </label>
               <textarea
@@ -425,10 +498,10 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
             <LockKeyhole size={21} />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">
+            <h2 className="text-lg font-semibold text-black-900">
               Change Password
             </h2>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-black-500">
               Confirm your current password before changing it.
             </p>
           </div>
@@ -439,7 +512,7 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
           className="space-y-4"
         >
           <div>
-            <label className="text-sm font-medium text-slate-700">
+            <label className="text-sm font-medium text-black-700">
               Current password
             </label>
             <input
@@ -458,7 +531,7 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
           </div>
 
           <div>
-            <label className="text-sm font-medium text-slate-700">
+            <label className="text-sm font-medium text-black-700">
               New password
             </label>
             <input
