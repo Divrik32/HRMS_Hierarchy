@@ -30,6 +30,9 @@ const EmployeeProjects = () => {
   const [loading, setLoading] = useState(true);
   const [modulesLoading, setModulesLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState("");
+  const [assignableEmployees, setAssignableEmployees] = useState([]);
+  const [selectedEmployees, setSelectedEmployees] = useState({});
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
 
 const loadProjects = useCallback(async () => {
   setLoading(true);
@@ -69,6 +72,37 @@ const loadProjects = useCallback(async () => {
     setLoading(false);
   }
 }, [employeeId]);
+
+const loadAssignableEmployees = useCallback(async () => {
+  if (!selectedId) {
+    setAssignableEmployees([]);
+    return;
+  }
+
+  setLoadingEmployees(true);
+
+  try {
+    const response = await api.get(
+      `/projects/${selectedId}/assignable-employees`,
+      { withCredentials: true }
+    );
+
+    setAssignableEmployees(response.data.employees ?? []);
+  } catch (err) {
+    setAssignableEmployees([]);
+
+    toast.error(
+      err.response?.data?.message ||
+        "Failed to load assignable employees."
+    );
+  } finally {
+    setLoadingEmployees(false);
+  }
+}, [selectedId]);
+
+useEffect(() => {
+  loadAssignableEmployees();
+}, [loadAssignableEmployees]);
 
   useEffect(() => {
     loadProjects();
@@ -121,6 +155,60 @@ const loadProjects = useCallback(async () => {
       cancelled = true;
     };
   }, [selectedId]);
+
+  const assignModule = async (moduleId) => {
+  const employeeId = selectedEmployees[moduleId];
+
+  if (!selectedId || !employeeId || updatingId) {
+    toast.error("Please select an employee first.");
+    return;
+  }
+
+  setUpdatingId(moduleId);
+
+  try {
+    const response = await api.patch(
+      `/projects/${selectedId}/modules/${moduleId}/assign`,
+      { employeeId },
+      { withCredentials: true }
+    );
+    
+
+    const updatedModule = response.data.module;
+
+    setModules((previous) =>
+      previous.map((module) =>
+        module._id === moduleId
+          ? { ...module, ...updatedModule }
+          : module
+      )
+    );
+
+    setProjects((previous) =>
+      previous.map((project) =>
+        project._id === selectedId
+          ? {
+              ...project,
+              modules: (project.modules ?? []).map((module) =>
+                module._id === moduleId
+                  ? { ...module, ...updatedModule }
+                  : module
+              ),
+            }
+          : project
+      )
+    );
+
+    toast.success(response.data.message || "Module assigned successfully.");
+  } catch (err) {
+    toast.error(
+      err.response?.data?.message ||
+        "Failed to assign module."
+    );
+  } finally {
+    setUpdatingId("");
+  }
+};
 
 const updateStatus = async (moduleId, status) => {
   if (!selectedId || updatingId) return;
@@ -344,30 +432,67 @@ const updateStatus = async (moduleId, status) => {
                               <StatusBadge status={module.status} />
                             </td>
 
-                            <td className="px-3 py-4">
-                              <select
-                                value={module.status}
-                                disabled={updatingId === module._id}
-                                onChange={(event) =>
-                                  updateStatus(
-                                    module._id,
-                                    event.target.value
-                                  )
-                                }
-                                className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm outline-none focus:border-indigo-500 disabled:opacity-50"
-                              >
-                                {STATUSES.map((status) => (
-                                  <option key={status} value={status}>
-                                    {status}
-                                  </option>
-                                ))}
-                              </select>
-                              {updatingId === module._id && (
-                                <p className="mt-1 text-xs text-slate-500">
-                                  Updating...
-                                </p>
-                              )}
-                            </td>
+<td className="px-3 py-4">
+  {module.status === "Not Assigned" &&
+  !module.assignedEmployee ? (
+    <div className="flex min-w-[220px] flex-col gap-2">
+      <select
+        value={selectedEmployees[module._id] || ""}
+        disabled={loadingEmployees || updatingId === module._id}
+        onChange={(event) =>
+          setSelectedEmployees((previous) => ({
+            ...previous,
+            [module._id]: event.target.value,
+          }))
+        }
+        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 disabled:opacity-50"
+      >
+        <option value="">
+          {loadingEmployees
+            ? "Loading employees..."
+            : "Select employee"}
+        </option>
+
+        {assignableEmployees.map((employee) => (
+          <option key={employee._id} value={employee._id}>
+            {employee.name}
+            {employee.empId ? ` (${employee.empId})` : ""}
+            {employee.roleId?.roleName
+              ? ` — ${employee.roleId.roleName}`
+              : ""}
+          </option>
+        ))}
+      </select>
+
+      <button
+        type="button"
+        onClick={() => assignModule(module._id)}
+        disabled={
+          !selectedEmployees[module._id] ||
+          updatingId === module._id ||
+          loadingEmployees
+        }
+        className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {updatingId === module._id ? "Assigning..." : "Assign Module"}
+      </button>
+    </div>
+  ) : (
+<span className="text-sm text-slate-600">
+  {module.status}
+  {module.assignedEmployee
+    ? ` — ${
+        typeof module.assignedEmployee === "object"
+          ? module.assignedEmployee.name || "Employee name unavailable"
+          : assignableEmployees.find(
+              (employee) =>
+                employee._id === module.assignedEmployee
+            )?.name || "Employee name unavailable"
+      }`
+    : ""}
+</span>
+  )}
+</td>
                           </tr>
                         ))}
 

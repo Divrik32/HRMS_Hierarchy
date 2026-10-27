@@ -17,10 +17,14 @@ import {
   getMyAccessibleProjects,
   getProjectModules,
   updateProjectModule,
+  getEmployeesForModuleAssignment,
+  assignProjectModule,
   revokeProjectAccessBySuperAdmin,
   getDeletedProjects,
   restoreDeletedProject,
   permanentlyDeleteProject,
+  getMyAssignedModules,
+  getAssignableEmployees,
 } from "../controllers/projectController.js";
 import superAdminAuth from "../middleware/superAdminAuth.js";
 import employeeOrSuperAdminAuth from "../middleware/employeeOrSuperAdminAuth.js";
@@ -37,6 +41,19 @@ router.put("/:projectId/root-roles", superAdminAuth, assignRootRoles);
 
 // Get modules — Super Admin or authorized Employee
 router.get("/:projectId/modules", employeeOrSuperAdminAuth, getProjectModules);
+// Get employees eligible for module assignment — Authorized Employee only
+router.get(
+  "/:projectId/modules/eligible-employees",
+  employeeAuth,
+  getEmployeesForModuleAssignment
+);
+
+// Assign module to self or an eligible employee — Authorized Employee only
+router.patch(
+  "/:projectId/modules/:moduleId/assign",
+  employeeAuth,
+  assignProjectModule
+);
 
 // Add module — Super Admin only
 router.post("/:projectId/modules", superAdminAuth, addProjectModule);
@@ -98,6 +115,19 @@ router.delete(
   "/deleted/:deletedProjectId/permanent",
   superAdminAuth,
   permanentlyDeleteProject
+);
+
+// Get modules assigned to the logged-in employee
+router.get(
+  "/my-assigned-modules",
+  employeeAuth,
+  getMyAssignedModules
+);
+
+router.get(
+  "/:projectId/assignable-employees",
+  employeeAuth,
+  getAssignableEmployees
 );
 
 // Project details

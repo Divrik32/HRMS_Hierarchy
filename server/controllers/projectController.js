@@ -1,6 +1,7 @@
 import Project from "../models/Project.js";
 import Role from "../models/Role.js";
 import Company from "../models/Company.js";
+import Employee from "../models/Employee.js";
 import DeletedProject from "../models/DeletedProject.js";
 
 
@@ -1002,9 +1003,16 @@ export const updateProjectModule = async (req, res) => {
       module.moduleName = normalizedName;
     }
 
-    if (status !== undefined) {
-      module.status = status;
-    }
+if (status !== undefined) {
+  module.status = status;
+
+  // Reset assignment details when Super Admin sets status to Not Assigned.
+  if (status === "Not Assigned") {
+    module.assignedEmployee = null;
+    module.assignedBy = null;
+    module.assignedAt = null;
+  }
+}
 
     await project.save();
 
@@ -1079,7 +1087,6 @@ export const deleteProjectModule = async (req, res) => {
 };
 
 // =====================================================
-// =====================================================
 // UPDATE PROJECT MODULE STATUS
 // SUPER ADMIN OR AUTHORIZED EMPLOYEE
 // =====================================================
@@ -1087,6 +1094,7 @@ export const updateProjectModuleStatus = async (req, res) => {
   try {
     const { projectId, moduleId } = req.params;
     const { status } = req.body;
+    const user = req.user;
 
     if (!isValidId(projectId) || !isValidId(moduleId)) {
       return res.status(400).json({
@@ -1095,28 +1103,30 @@ export const updateProjectModuleStatus = async (req, res) => {
       });
     }
 
-    if (!MODULE_STATUSES.includes(status)) {
+    // Employees cannot set a module back to Not Assigned
+    // or assign it through the status endpoint.
+    const employeeStatuses = ["In Progress", "Completed"];
+
+    if (
+      user?.role === "employee"
+        ? !employeeStatuses.includes(status)
+        : !MODULE_STATUSES.includes(status)
+    ) {
       return res.status(400).json({
         success: false,
-        message: `Status must be one of: ${MODULE_STATUSES.join(", ")}`,
+        message:
+          user?.role === "employee"
+            ? "You can only set your assigned module to In Progress or Completed"
+            : `Status must be one of: ${MODULE_STATUSES.join(", ")}`,
       });
     }
 
     let project;
 
-    // Super Admin can update any project's module status.
-    if (req.user?.role === "superadmin") {
+    if (user?.role === "superadmin") {
       project = await Project.findById(projectId);
-    }
-
-    // Employee must have access to the project.
-    else if (req.user?.role === "employee") {
-      const employee = req.user;
-
-      const result = await getProjectForEmployee(
-        projectId,
-        employee
-      );
+    } else if (user?.role === "employee") {
+      const result = await getProjectForEmployee(projectId, user);
 
       if (result.error) {
         return res.status(result.status).json({
@@ -1146,6 +1156,17 @@ export const updateProjectModuleStatus = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "Module not found in this project",
+      });
+    }
+
+    // Employees can update only modules assigned to themselves.
+    if (
+      user.role === "employee" &&
+      module.assignedEmployee?.toString() !== user.id?.toString()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "You can update only modules assigned to you",
       });
     }
 
@@ -1678,6 +1699,397 @@ export const revokeProjectAccessBySuperAdmin = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to revoke project access",
+      error: error.message,
+    });
+  }
+};
+
+
+// =====================================================
+// ASSIGN PROJECT MODULE TO AN EMPLOYEE
+// ASSIGNER + TARGET MUST HAVE PROJECT ACCESS
+// TARGET CAN BE ASSIGNER OR A DESCENDANT EMPLOYEE
+// =====================================================
+export const assignProjectModule = async (req, res) => {
+  try {
+    const { projectId, moduleId } = req.params;
+    const { employeeId } = req.body;
+    const assigner = req.user;
+
+    if (
+      !isValidId(projectId) ||
+      !isValidId(moduleId) ||
+      !isValidId(employeeId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid project, module and employee IDs are required",
+      });
+    }
+
+    if (
+      assigner?.role !== "employee" ||
+      !isValidId(assigner.roleId) ||
+      !isValidId(assigner.companyId) ||
+      !isValidId(assigner._id || assigner.id)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Only authorized employees can assign modules",
+      });
+    }
+
+    // 1. Verify the assigner's project access.
+    const result = await getProjectForEmployee(projectId, assigner);
+
+    if (result.error) {
+      return res.status(result.status).json({
+        success: false,
+        message: result.error,
+      });
+    }
+
+    const project = result.project;
+
+    // 2. Find the module.
+    const module = project.modules.id(moduleId);
+
+    if (!module) {
+      return res.status(404).json({
+        success: false,
+        message: "Module not found in this project",
+      });
+    }
+
+    // 3. Only an unassigned module can be assigned.
+    if (
+      module.status !== "Not Assigned" ||
+      module.assignedEmployee
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: "This module has already been assigned",
+      });
+    }
+
+// 4. Get all roles in the assigner's hierarchy.
+const assignerBranchRoleIds = await getRoleBranchIds(
+  assigner.companyId,
+  assigner.roleId
+);
+
+const assignerBranchRoleIdSet = new Set(
+  assignerBranchRoleIds.map(String)
+);
+
+// 5. Get ONLY roles explicitly granted access to this project.
+const projectAccessRoleIds = (project.roleAccess || []).map(
+  (role) => String(role?._id || role)
+);
+
+// 6. Employee role must:
+// - Be explicitly present in project.roleAccess.
+// - Belong to the assigner's own role hierarchy.
+const eligibleRoleIds = projectAccessRoleIds.filter((roleId) =>
+  assignerBranchRoleIdSet.has(roleId)
+);
+
+if (eligibleRoleIds.length === 0) {
+  return res.status(403).json({
+    success: false,
+    message:
+      "No eligible employees with direct project access were found",
+  });
+}
+
+    // 6. Verify target employee is active, belongs to this company,
+    // and has a role in the eligible role list.
+    const targetEmployee = await Employee.findOne({
+      _id: employeeId,
+      companyId: assigner.companyId,
+      roleId: { $in: eligibleRoleIds },
+      status: "active",
+    }).select("_id name empId companyId roleId departmentId");
+
+    if (!targetEmployee) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "The selected employee must be active, within your role hierarchy, and have project access",
+      });
+    }
+
+    // 7. Assign the module.
+    module.assignedEmployee = targetEmployee._id;
+    module.assignedBy = assigner._id || assigner.id;
+    module.assignedAt = new Date();
+    module.status = "Assigned";
+
+    await project.save();
+
+    await targetEmployee.populate([
+      { path: "roleId", select: "roleName" },
+      { path: "departmentId", select: "departmentName" },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: "Module assigned successfully",
+      module,
+      assignedEmployee: targetEmployee,
+    });
+  } catch (error) {
+    console.error("Assign Project Module Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to assign project module",
+      error: error.message,
+    });
+  }
+};
+
+// =====================================================
+// GET EMPLOYEES ELIGIBLE FOR MODULE ASSIGNMENT
+// OWN ROLE + DESCENDANT ROLES WITH PROJECT ACCESS
+// =====================================================
+export const getEmployeesForModuleAssignment = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const assigner = req.user;
+
+    if (!isValidId(projectId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid project ID",
+      });
+    }
+
+    if (
+      assigner?.role !== "employee" ||
+      !isValidId(assigner.roleId) ||
+      !isValidId(assigner.companyId)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Only authorized employees can assign modules",
+      });
+    }
+
+    const result = await getProjectForEmployee(projectId, assigner);
+
+    if (result.error) {
+      return res.status(result.status).json({
+        success: false,
+        message: result.error,
+      });
+    }
+
+    const project = result.project;
+
+    // Current role + all descendant roles.
+    const branchRoleIds = await getRoleBranchIds(
+      assigner.companyId,
+      assigner.roleId
+    );
+
+    // Only roles explicitly granted access to this project.
+    const projectAccessRoleIds = (project.roleAccess || []).map(
+      (roleId) => roleId.toString()
+    );
+
+    const eligibleRoleIds = branchRoleIds.filter((roleId) =>
+      projectAccessRoleIds.includes(roleId)
+    );
+
+    if (eligibleRoleIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        employees: [],
+      });
+    }
+
+    const employees = await Employee.find({
+      companyId: assigner.companyId,
+      roleId: { $in: eligibleRoleIds },
+      status: "active",
+    })
+      .select("_id name empId roleId departmentId")
+      .populate("roleId", "roleName")
+      .populate("departmentId", "departmentName")
+      .sort({ name: 1 });
+
+    return res.status(200).json({
+      success: true,
+      count: employees.length,
+      employees,
+    });
+  } catch (error) {
+    console.error(
+      "Get Employees For Module Assignment Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get employees for module assignment",
+      error: error.message,
+    });
+  }
+};
+
+
+ // =====================================================
+// GET MODULES ASSIGNED TO LOGGED-IN EMPLOYEE
+// EMPLOYEE ONLY
+// =====================================================
+export const getMyAssignedModules = async (req, res) => {
+  try {
+    const employee = req.user;
+    const employeeId = employee?._id || employee?.id;
+
+    if (
+      employee?.role !== "employee" ||
+      !isValidId(employeeId)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Valid employee authentication is required",
+      });
+    }
+
+    const projects = await Project.find({
+      "modules.assignedEmployee": employeeId,
+    })
+      .select("projectName projectCode modules")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const modules = projects.flatMap((project) =>
+      (project.modules || [])
+        .filter(
+          (module) =>
+            String(module.assignedEmployee) === String(employeeId)
+        )
+        .map((module) => ({
+          _id: module._id,
+          moduleName: module.moduleName,
+          status: module.status || "Assigned",
+          assignedAt: module.assignedAt || null,
+          projectId: project._id,
+          projectName: project.projectName,
+          projectCode: project.projectCode || "",
+        }))
+    );
+
+    return res.status(200).json({
+      success: true,
+      count: modules.length,
+      modules,
+    });
+  } catch (error) {
+    console.error("Get My Assigned Modules Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get assigned modules",
+      error: error.message,
+    });
+  }
+};
+
+// =====================================================
+// GET EMPLOYEES ELIGIBLE FOR PROJECT MODULE ASSIGNMENT
+// =====================================================
+export const getAssignableEmployees = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const assigner = req.user;
+    const assignerId = assigner?._id || assigner?.id;
+
+    if (!isValidId(projectId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid project ID",
+      });
+    }
+
+    if (
+      assigner?.role !== "employee" ||
+      !isValidId(assignerId) ||
+      !isValidId(assigner.roleId) ||
+      !isValidId(assigner.companyId)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Only authorized employees can view assignable employees",
+      });
+    }
+
+    // Verify that the logged-in employee can access this project.
+    const result = await getProjectForEmployee(projectId, assigner);
+
+    if (result.error) {
+      return res.status(result.status).json({
+        success: false,
+        message: result.error,
+      });
+    }
+
+    const project = result.project;
+
+// Only roles explicitly granted access to this project.
+const projectAccessRoleIds = (project.roleAccess || []).map(
+  (role) => String(role?._id || role)
+);
+
+// Only employees whose roles:
+// 1. Have direct project access.
+// 2. Are within the assigner's own role hierarchy.
+const assignerBranchRoleIds = await getRoleBranchIds(
+  assigner.companyId,
+  assigner.roleId
+);
+
+const assignerBranchRoleIdSet = new Set(
+  assignerBranchRoleIds.map(String)
+);
+
+const eligibleRoleIds = projectAccessRoleIds.filter(
+  (roleId) => assignerBranchRoleIdSet.has(roleId)
+);
+
+    if (eligibleRoleIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        employees: [],
+      });
+    }
+
+    const employees = await Employee.find({
+      companyId: assigner.companyId,
+      roleId: { $in: eligibleRoleIds },
+      status: "active",
+    })
+      .select("_id name empId roleId departmentId")
+      .populate("roleId", "roleName")
+      .populate("departmentId", "departmentName")
+      .sort({ name: 1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      count: employees.length,
+      employees,
+    });
+  } catch (error) {
+    console.error("Get Assignable Employees Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load assignable employees",
       error: error.message,
     });
   }

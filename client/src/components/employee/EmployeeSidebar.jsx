@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   Building2,
   BriefcaseBusiness,
+  Layers3,
 } from "lucide-react";
 
 const EmployeeSidebar = ({ open, employee }) => {
@@ -39,6 +40,11 @@ const EmployeeSidebar = ({ open, employee }) => {
       path: `${basePath}/access`,
       icon: ShieldCheck,
     },
+    {
+  label: "Modules Assigned",
+  path: `${basePath}/modules-assigned`,
+  icon: Layers3,
+},
   ];
 
 const departmentName =

@@ -20,6 +20,7 @@ import EmployeeRoleAccess from "./pages/employee/EmployeeRoleAccess";
 import ForgotPassword from "./pages/ForgotPassword";
 import CompanyForgotPassword from "./pages/company/CompanyForgotPassword";
 import CompanyProfile from "./pages/company/CompanyProfile";
+import ModulesAssigned from "./pages/employee/ModulesAssigned";
 
 const router = createBrowserRouter([
   // Registration Page for Super Admin
@@ -140,6 +141,10 @@ const router = createBrowserRouter([
       path: "access",
       element: <EmployeeRoleAccess />,
     },
+    {
+  path: "modules-assigned",
+  element: <ModulesAssigned />,
+},
   ],
 },
 

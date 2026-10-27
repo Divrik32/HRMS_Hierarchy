@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 import crypto from "crypto";
 
@@ -22,6 +21,7 @@ const generateProjectCode = (projectName, clientName) => {
 };
 
 // One project can contain many modules
+
 const moduleSchema = new mongoose.Schema(
   {
     moduleName: {
@@ -32,14 +32,39 @@ const moduleSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["Not Assigned", "Assigned", "In Progress", "Completed"],
+      enum: [
+        "Not Assigned",
+        "Assigned",
+        "In Progress",
+        "Completed",
+      ],
       default: "Not Assigned",
+    },
+
+    // Employee responsible for this module
+    assignedEmployee: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Employee",
+      default: null,
+    },
+
+    // Employee who assigned this module
+    assignedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Employee",
+      default: null,
+    },
+
+    assignedAt: {
+      type: Date,
+      default: null,
     },
   },
   {
     timestamps: true,
   }
 );
+
 
 const projectSchema = new mongoose.Schema(
   {
