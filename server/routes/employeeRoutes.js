@@ -59,13 +59,25 @@ const upload = multer({
   limits: {
     fileSize: 5 * 1024 * 1024,
   },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) {
-      return cb(null, true);
-    }
+fileFilter: (req, file, cb) => {
+  const allowedMimeTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp"
+  ];
 
-    cb(new Error("Only image files are allowed"));
-  },
+  const allowedExtensions = [".jpg", ".jpeg", ".png", ".webp"];
+  const extension = path.extname(file.originalname).toLowerCase();
+
+  if (
+    allowedMimeTypes.includes(file.mimetype) &&
+    allowedExtensions.includes(extension)
+  ) {
+    return cb(null, true);
+  }
+
+  cb(new Error("Only JPG, JPEG, and PNG image files are allowed."));
+},
 });
 
 // Public Authentication Routes

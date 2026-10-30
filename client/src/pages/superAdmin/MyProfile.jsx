@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "react-toastify";
 import api from "../../api/axios.js";
+import ImageCropper from "../../components/common/ImageCropper";
 
 const getErrorMessage = (error) =>
   error.response?.data?.message ||
@@ -107,7 +108,8 @@ const MyProfile = () => {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-
+  const [cropFile, setCropFile] = useState(null);
+  
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -166,28 +168,35 @@ const MyProfile = () => {
     }));
   };
 
-  const handleImageChange = (event) => {
-    const file = event.target.files?.[0];
+const handleImageChange = (event) => {
+  const file = event.target.files?.[0];
 
-    if (!file) return;
+  if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please select a valid image file");
-      event.target.value = "";
-      return;
-    }
+  if (!file.type.startsWith("image/")) {
+    toast.error("Please select a valid image.");
+    event.target.value = "";
+    return;
+  }
 
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Image size must be 5 MB or less");
-      event.target.value = "";
-      return;
-    }
+  if (file.size > 5 * 1024 * 1024) {
+    toast.error("Image size must not exceed 5MB.");
+    event.target.value = "";
+    return;
+  }
 
-    setForm((previous) => ({
-      ...previous,
-      profilePic: file,
-    }));
-  };
+  setCropFile(file);
+  event.target.value = "";
+};
+
+const handleProfileImageCrop = (croppedFile) => {
+  setForm((previous) => ({
+    ...previous,
+    profilePic: croppedFile,
+  }));
+
+  setCropFile(null);
+};
 
   const cancelEditing = () => {
     setForm({
@@ -413,7 +422,7 @@ const MyProfile = () => {
                       Change Photo
                       <input
                         type="file"
-                        accept="image/*"
+                        accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                         aria-label="Change profile picture"
                         className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                         onChange={handleImageChange}
@@ -665,6 +674,11 @@ const MyProfile = () => {
             )}
           </form>
         </div>
+        <ImageCropper
+          file={cropFile}
+          onCancel={() => setCropFile(null)}
+          onCrop={handleProfileImageCrop}
+        />
       </div>
     </div>
   );

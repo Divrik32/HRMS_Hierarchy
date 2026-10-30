@@ -40,6 +40,8 @@ const CompanyProfile = () => {
   const [saving, setSaving] = useState(false);
   const [logoPreview, setLogoPreview] = useState("");
   const [signaturePreview, setSignaturePreview] = useState("");
+  const [cropFile, setCropFile] = useState(null);
+  const [cropTarget, setCropTarget] = useState("");
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -189,6 +191,23 @@ const handleChange = (event) => {
     ...previous,
     [name]: nextValue,
   }));
+};
+
+const handleCompanyImageCrop = (croppedFile) => {
+  const previewUrl = URL.createObjectURL(croppedFile);
+
+  if (cropTarget === "logo") {
+    setLogo(croppedFile);
+    setLogoPreview(previewUrl);
+  }
+
+  if (cropTarget === "signature") {
+    setSignature(croppedFile);
+    setSignaturePreview(previewUrl);
+  }
+
+  setCropFile(null);
+  setCropTarget("");
 };
 
   const handleCancel = () => {
@@ -457,15 +476,27 @@ const fields = [
             {editing && (
               <input
                 type="file"
-                accept="image/*"
-                onChange={(event) => {
-                  const file = event.target.files?.[0] || null;
-                  setLogo(file);
-                
-                  if (file) {
-                    setLogoPreview(URL.createObjectURL(file));
-                  }
-                }}
+                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+onChange={(event) => {
+  const file = event.target.files?.[0] || null;
+  if (!file) return;
+
+  if (!file.type.startsWith("image/")) {
+    toast.error("Please select a valid image.");
+    event.target.value = "";
+    return;
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    toast.error("Image size must not exceed 5MB.");
+    event.target.value = "";
+    return;
+  }
+
+  setCropTarget("logo");
+  setCropFile(file);
+  event.target.value = "";
+}}
                 className="mt-3 block w-full text-sm"
               />
             )}
@@ -491,14 +522,26 @@ const fields = [
               <input
                 type="file"
                 accept="image/*"
-                onChange={(event) => {
-                  const file = event.target.files?.[0] || null;
-                  setSignature(file);
-                
-                  if (file) {
-                    setSignaturePreview(URL.createObjectURL(file));
-                  }
-                }}
+onChange={(event) => {
+  const file = event.target.files?.[0] || null;
+  if (!file) return;
+
+  if (!file.type.startsWith("image/")) {
+    toast.error("Please select a valid image.");
+    event.target.value = "";
+    return;
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    toast.error("Image size must not exceed 5MB.");
+    event.target.value = "";
+    return;
+  }
+
+  setCropTarget("signature");
+  setCropFile(file);
+  event.target.value = "";
+}}
                 className="mt-3 block w-full text-sm"
               />
             )}
@@ -522,6 +565,14 @@ const fields = [
           </div>
         )}
       </form>
+      <ImageCropper
+        file={cropFile}
+        onCancel={() => {
+          setCropFile(null);
+          setCropTarget("");
+        }}
+        onCrop={handleCompanyImageCrop}
+      />
     </div>
   );
 };

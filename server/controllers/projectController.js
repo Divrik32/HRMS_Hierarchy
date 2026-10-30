@@ -2094,3 +2094,37 @@ const eligibleRoleIds = projectAccessRoleIds.filter(
     });
   }
 };
+
+// =====================================================
+// GET ACTIVE PROJECTS BY COMPANY
+// =====================================================
+export const getActiveProjectsByCompany = async (req, res) => {
+  try {
+    const { companyId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(companyId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid company ID.",
+      });
+    }
+
+    const projects = await Project.find({
+      companyId,
+      status: "active",
+    }).sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: projects.length,
+      projects,
+    });
+  } catch (error) {
+    console.error("Get active projects by company error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch active projects.",
+    });
+  }
+};

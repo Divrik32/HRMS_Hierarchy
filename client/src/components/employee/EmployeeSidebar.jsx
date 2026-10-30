@@ -1,5 +1,4 @@
 import { NavLink, useParams } from "react-router-dom";
-
 import {
   LayoutDashboard,
   User,
@@ -8,6 +7,7 @@ import {
   Building2,
   BriefcaseBusiness,
   Layers3,
+  ClipboardList,
 } from "lucide-react";
 
 const EmployeeSidebar = ({ open, employee }) => {
@@ -44,6 +44,11 @@ const EmployeeSidebar = ({ open, employee }) => {
   label: "Modules Assigned",
   path: `${basePath}/modules-assigned`,
   icon: Layers3,
+},
+{
+  label: "My Timesheet",
+  path: `${basePath}/timesheet`,
+  icon: ClipboardList,
 },
   ];
 

@@ -21,6 +21,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import CompanyForgotPassword from "./pages/company/CompanyForgotPassword";
 import CompanyProfile from "./pages/company/CompanyProfile";
 import ModulesAssigned from "./pages/employee/ModulesAssigned";
+import Timesheet from "./pages/employee/Timesheet";
 
 const router = createBrowserRouter([
   // Registration Page for Super Admin
@@ -144,6 +145,10 @@ const router = createBrowserRouter([
     {
   path: "modules-assigned",
   element: <ModulesAssigned />,
+},
+{
+  path: "timesheet",
+  element: <Timesheet />,
 },
   ],
 },

@@ -6,13 +6,14 @@ import path from "path";
 import { fileURLToPath } from "url";
 import dns from "dns";
 import connectDB from "./config/db.js";
-
 import superAdminRoutes from "./routes/superAdminRoutes.js";
 import companyRoutes from "./routes/companyRoutes.js";
 import roleRoutes from "./routes/roleRoutes.js";
 import departmentRoutes from "./routes/departmentRoutes.js";
 import projectRoutes from "./routes/projectRoutes.js";
 import employeeRoutes from "./routes/employeeRoutes.js";
+import timesheetRoutes from "./routes/timesheetRoutes.js";
+import { startWeeklyTimesheetReminderCron } from "./services/weeklyTimesheetReminder.js";
 
 dotenv.config();
 
@@ -53,6 +54,7 @@ app.use("/api/roles", roleRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/employees", employeeRoutes);
+app.use("/api/timesheets", timesheetRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -67,4 +69,6 @@ const PORT = process.env.PORT || 5003;
 
 app.listen(PORT, () => {
   console.log(`HRMS Server running on port ${PORT}`);
+  // Start weekly timesheet reminder cron job
+  startWeeklyTimesheetReminderCron();
 });

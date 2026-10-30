@@ -10,6 +10,7 @@ import {
   ImagePlus,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
+import ImageCropper from "../components/common/ImageCropper";
 
 import api from "../api/axios";
 
@@ -19,7 +20,7 @@ const RegisterSuperAdmin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-
+  const [cropFile, setCropFile] = useState(null);
   const [formData, setFormData] = useState({
     superAdminId: "",
     fullName: "",
@@ -32,10 +33,47 @@ const RegisterSuperAdmin = () => {
 const handleChange = (e) => {
   const { name, value, files } = e.target;
 
+  if (name === "profilePicture") {
+    const file = files?.[0];
+
+    if (!file) return;
+
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Only JPG, JPEG, PNG and WebP images are allowed.");
+      e.target.value = "";
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Profile picture must not exceed 5 MB.");
+      e.target.value = "";
+      return;
+    }
+
+    setCropFile(file);
+    e.target.value = "";
+    return;
+  }
+
   setFormData((prev) => ({
     ...prev,
-    [name]: files ? files[0] || null : value,
+    [name]: value,
   }));
+};
+
+const handleProfileImageCrop = (croppedFile) => {
+  setFormData((prev) => ({
+    ...prev,
+    profilePicture: croppedFile,
+  }));
+
+  setCropFile(null);
 };
 
 const handleSubmit = async (e) => {
@@ -345,14 +383,32 @@ const handleSubmit = async (e) => {
                 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
               />
 
-              <input
-                id="profilePicture"
-                name="profilePicture"
-                type="file"
-                accept="image/*"
-                onChange={handleChange}
-                className="w-full border border-slate-300 rounded-xl pl-11 pr-3 py-3 text-sm text-slate-600 file:mr-3 file:border-0 file:rounded-lg file:bg-blue-50 file:px-3 file:py-2 file:font-medium file:text-blue-700 hover:file:bg-blue-100"
-              />
+<input
+  id="profilePicture"
+  name="profilePicture"
+  type="file"
+  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+  onChange={handleChange}
+  className="w-full border border-slate-300 rounded-xl pl-11 pr-3 py-3 text-sm text-slate-600 file:mr-3 file:border-0 file:rounded-lg file:bg-blue-50 file:px-3 file:py-2 file:font-medium file:text-blue-700 hover:file:bg-blue-100"
+/>
+
+{formData.profilePicture && (
+  <div className="mt-3 flex items-center gap-3">
+    <img
+      src={URL.createObjectURL(formData.profilePicture)}
+      alt="Profile Picture Preview"
+      className="h-16 w-16 rounded-full border object-cover"
+    />
+
+    <p className="text-xs text-slate-500">
+      Selected: {formData.profilePicture.name}
+    </p>
+  </div>
+)}
+
+<p className="mt-2 text-xs text-slate-500">
+  JPG, JPEG, PNG or WebP. Maximum file size: 5 MB.
+</p>
             </div>
 
             <p className="mt-2 text-xs text-slate-500">
@@ -380,6 +436,12 @@ const handleSubmit = async (e) => {
             Sign In
           </Link>
         </div>
+
+        <ImageCropper
+          file={cropFile}
+          onCancel={() => setCropFile(null)}
+          onCrop={handleProfileImageCrop}
+        />
       </div>
     </div>
   );

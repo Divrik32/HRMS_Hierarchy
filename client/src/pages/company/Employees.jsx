@@ -23,6 +23,7 @@ import {
   UserX,
   Filter,
 } from "lucide-react";
+import ImageCropper from "../../components/common/ImageCropper";
 import api from "../../api/axios";
 
 const initialForm = {
@@ -38,8 +39,7 @@ const initialForm = {
   roleId: "",
 };
 
-const inputClass =
-  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-black-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
+const inputClass = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-black-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
 
 const labelClass = "mb-1.5 block text-sm font-medium text-black-700";
 
@@ -99,7 +99,7 @@ const getImageUrl = (profilePic) => {
 const EmployeeAvatar = ({ employee, size = "h-11 w-11" }) => {
   const [imageError, setImageError] = useState(false);
   const imageUrl = getImageUrl(employee?.profilePic);
-
+  const [cropFile, setCropFile] = useState(null);
   useEffect(() => {
     setImageError(false);
   }, [imageUrl]);
@@ -360,6 +360,7 @@ export default function Employees() {
       companyId: companyId || "",
     });
     setProfilePic(null);
+    setCropFile(null);
     setPreview("");
     setModal("form");
   };
@@ -381,6 +382,7 @@ export default function Employees() {
     });
 
     setProfilePic(null);
+    setCropFile(null);
     setPreview(employee.profilePic ? getImageUrl(employee.profilePic) : "");
     setModal("form");
   };
@@ -428,34 +430,46 @@ export default function Employees() {
     }));
   };
 
-  const handlePicture = (event) => {
-    const file = event.target.files?.[0];
+const handlePicture = (event) => {
+  const file = event.target.files?.[0];
 
-    if (!file) return;
+  if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please select a valid image file.");
-      event.target.value = "";
-      return;
-    }
+  const allowedTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+  ];
 
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Image size must be 5 MB or less.");
-      event.target.value = "";
-      return;
-    }
+  if (!allowedTypes.includes(file.type)) {
+    toast.error("Only JPG, JPEG, PNG and WebP images are allowed.");
+    event.target.value = "";
+    return;
+  }
 
-    if (preview.startsWith("blob:")) {
-      URL.revokeObjectURL(preview);
-    }
+  if (file.size > 5 * 1024 * 1024) {
+    toast.error("Image size must be 5 MB or less.");
+    event.target.value = "";
+    return;
+  }
 
-    setProfilePic(file);
-    setPreview(URL.createObjectURL(file));
+  setCropFile(file);
+  event.target.value = "";
+};
 
-    toast.success("Profile picture selected.", {
-      autoClose: 1500,
-    });
-  };
+const handleProfileImageCrop = (croppedFile) => {
+  if (preview.startsWith("blob:")) {
+    URL.revokeObjectURL(preview);
+  }
+
+  setProfilePic(croppedFile);
+  setPreview(URL.createObjectURL(croppedFile));
+  setCropFile(null);
+
+  toast.success("Profile picture cropped successfully.", {
+    autoClose: 1500,
+  });
+};
 
   const saveEmployee = async (event) => {
     event.preventDefault();
@@ -607,17 +621,18 @@ export default function Employees() {
     }
   };
 
-  const closeModal = () => {
-    setModal("");
-    setSelectedEmployee(null);
-    setProfilePic(null);
+const closeModal = () => {
+  setModal("");
+  setSelectedEmployee(null);
+  setProfilePic(null);
+  setCropFile(null);
 
-    if (preview.startsWith("blob:")) {
-      URL.revokeObjectURL(preview);
-    }
+  if (preview.startsWith("blob:")) {
+    URL.revokeObjectURL(preview);
+  }
 
-    setPreview("");
-  };
+  setPreview("");
+};
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
@@ -1005,18 +1020,18 @@ export default function Employees() {
                 <p className="font-semibold text-black-800">
                   Profile Picture
                 </p>
-                <p className="mt-1 text-xs text-black-500">
-                  Image file only. Maximum size 5 MB.
-                </p>
+<p className="mt-1 text-xs text-black-500">
+  JPG, JPEG, PNG or WebP. Maximum size 5 MB. Image will be cropped to 1:1 square.
+</p>
                 <label className="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-black-700 hover:bg-slate-100">
                   <Upload size={15} />
                   Choose Image
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handlePicture}
-                  />
+<input
+  type="file"
+  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+  className="hidden"
+  onChange={handlePicture}
+/>
                 </label>
               </div>
             </div>
@@ -1314,6 +1329,11 @@ export default function Employees() {
           </div>
         </Modal>
       )}
+      <ImageCropper
+  file={cropFile}
+  onCancel={() => setCropFile(null)}
+  onCrop={handleProfileImageCrop}
+/>
     </div>
   );
 }

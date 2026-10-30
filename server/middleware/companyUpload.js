@@ -22,11 +22,19 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith("image/")) {
+  const allowedMimeTypes = ["image/jpeg", "image/png", "image/webp",];
+  const allowedExtensions = [".jpg", ".jpeg", ".png", ".webp"];
+
+  const extension = path.extname(file.originalname).toLowerCase();
+
+  if (
+    allowedMimeTypes.includes(file.mimetype) &&
+    allowedExtensions.includes(extension)
+  ) {
     return cb(null, true);
   }
 
-  cb(new Error("Only image files are allowed."));
+  cb(new Error("Only JPG, JPEG, and PNG image files are allowed."));
 };
 
 export const companyUpload = multer({

@@ -12,11 +12,12 @@ import {
   getEmployeeProfile,
   verifyEmployeeRoute,
 } from "./employeeApi";
+import ImageCropper from "../../components/common/ImageCropper";
 
 const EmployeeProfile = () => {
   const formRef = useRef(null);
   const { employeeId } = useParams();
-
+  const [cropFile, setCropFile] = useState(null);
   const [employee, setEmployee] = useState(null);
   const [profilePic, setProfilePic] = useState(null);
   const [preview, setPreview] = useState("");
@@ -166,13 +167,25 @@ const handleProfilePic = (event) => {
   if (!file) return;
 
   if (!file.type.startsWith("image/")) {
-    toast.error("Please select a valid image file.");
+    toast.error("Please select a valid image.");
     event.target.value = "";
     return;
   }
 
-  setProfilePic(file);
-  setPreview(URL.createObjectURL(file));
+  if (file.size > 5 * 1024 * 1024) {
+    toast.error("Image size must not exceed 5MB.");
+    event.target.value = "";
+    return;
+  }
+
+  setCropFile(file);
+  event.target.value = "";
+};
+
+const handleProfileImageCrop = (croppedFile) => {
+  setProfilePic(croppedFile);
+  setPreview(URL.createObjectURL(croppedFile));
+  setCropFile(null);
 };
 
 const handleSubmit = async (event) => {
@@ -341,7 +354,7 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
               Change picture
               <input
                 type="file"
-                accept="image/*"
+                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                 className="hidden"
                 onChange={handleProfilePic}
               />
@@ -563,6 +576,11 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
           </div>
         </form>
       </section>
+      <ImageCropper
+        file={cropFile}
+        onCancel={() => setCropFile(null)}
+        onCrop={handleProfileImageCrop}
+      />
     </div>
   );
 };

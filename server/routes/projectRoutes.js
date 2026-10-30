@@ -25,6 +25,7 @@ import {
   permanentlyDeleteProject,
   getMyAssignedModules,
   getAssignableEmployees,
+  getActiveProjectsByCompany,
 } from "../controllers/projectController.js";
 import superAdminAuth from "../middleware/superAdminAuth.js";
 import employeeOrSuperAdminAuth from "../middleware/employeeOrSuperAdminAuth.js";
@@ -136,5 +137,12 @@ router.get("/:projectId", employeeOrSuperAdminAuth, getProjectById);
 // Update and delete — Super Admin only
 router.put("/:projectId", superAdminAuth, updateProject);
 router.delete("/:projectId", superAdminAuth, deleteProject);
+
+// Get active projects for a particular company
+router.get(
+  "/company/:companyId/active-projects",
+  employeeOrSuperAdminAuth,
+  getActiveProjectsByCompany
+);
 
 export default router;

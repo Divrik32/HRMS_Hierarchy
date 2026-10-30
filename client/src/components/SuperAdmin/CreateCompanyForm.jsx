@@ -1,8 +1,8 @@
-
 import { useState } from "react";
 import { toast } from "react-toastify";
 import api from "../../api/axios";
 import { Eye, EyeOff } from "lucide-react";
+import ImageCropper from "../../components/common/ImageCropper";
 
 const initialForm = {
   companyName: "",
@@ -27,6 +27,8 @@ const CreateCompanyForm = () => {
   const [signature, setSignature] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [cropFile, setCropFile] = useState(null);
+  const [cropTarget, setCropTarget] = useState("");
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -37,30 +39,47 @@ const CreateCompanyForm = () => {
     }));
   };
 
-  const handleFileChange = (e, setFile) => {
-    const file = e.target.files?.[0];
+  const handleCompanyImageCrop = (croppedFile) => {
+  if (cropTarget === "logo") {
+    setLogo(croppedFile);
+  }
 
-    if (!file) {
-      setFile(null);
-      return;
-    }
+  if (cropTarget === "signature") {
+    setSignature(croppedFile);
+  }
 
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please select an image file.");
-      e.target.value = "";
-      setFile(null);
-      return;
-    }
+  setCropFile(null);
+  setCropTarget("");
+};
 
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Image size must not exceed 5 MB.");
-      e.target.value = "";
-      setFile(null);
-      return;
-    }
+const handleFileChange = (e, target) => {
+  const file = e.target.files?.[0];
 
-    setFile(file);
-  };
+  if (!file) return;
+
+  const allowedTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+  ];
+
+  if (!allowedTypes.includes(file.type)) {
+    toast.error("Only JPG, JPEG, PNG and WebP images are allowed.");
+    e.target.value = "";
+    return;
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    toast.error("Image size must not exceed 5 MB.");
+    e.target.value = "";
+    return;
+  }
+
+  setCropTarget(target);
+  setCropFile(file);
+
+  e.target.value = "";
+};
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -342,34 +361,50 @@ const CreateCompanyForm = () => {
             <label className="block text-sm font-medium mb-2">
               Company Logo
             </label>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => handleFileChange(e, setLogo)}
-              className={inputClass}
-            />
-            {logo && (
-              <p className="text-xs text-slate-500 mt-2">
-                Selected: {logo.name}
-              </p>
-            )}
+<input
+  type="file"
+  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+  onChange={(e) => handleFileChange(e, "logo")}
+  className={inputClass}
+/>
+
+{logo && (
+  <div className="mt-3 flex items-center gap-3">
+    <img
+      src={URL.createObjectURL(logo)}
+      alt="Company Logo Preview"
+      className="h-16 w-16 rounded-lg border object-cover"
+    />
+    <p className="text-xs text-slate-500">
+      Selected: {logo.name}
+    </p>
+  </div>
+)}
           </div>
 
           <div>
             <label className="block text-sm font-medium mb-2">
               Company Signature
             </label>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => handleFileChange(e, setSignature)}
-              className={inputClass}
-            />
-            {signature && (
-              <p className="text-xs text-slate-500 mt-2">
-                Selected: {signature.name}
-              </p>
-            )}
+<input
+  type="file"
+  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+  onChange={(e) => handleFileChange(e, "signature")}
+  className={inputClass}
+/>
+
+{signature && (
+  <div className="mt-3 flex items-center gap-3">
+    <img
+      src={URL.createObjectURL(signature)}
+      alt="Company Signature Preview"
+      className="h-16 w-16 rounded-lg border object-cover"
+    />
+    <p className="text-xs text-slate-500">
+      Selected: {signature.name}
+    </p>
+  </div>
+)}
           </div>
         </div>
 
@@ -396,6 +431,14 @@ const CreateCompanyForm = () => {
           {loading ? "Creating Company..." : "Create Company"}
         </button>
       </form>
+      <ImageCropper
+  file={cropFile}
+  onCancel={() => {
+    setCropFile(null);
+    setCropTarget("");
+  }}
+  onCrop={handleCompanyImageCrop}
+/>
     </div>
   );
 };
