@@ -29,10 +29,10 @@ connectDB();
 // CORS
 app.use(
   cors({
-    origin:
-      process.env.NODE_ENV === "production"
-        ? "https://hrms.wsdstech.com"
-        : "http://localhost:5173",
+    origin: [
+      "http://localhost:5173",
+      "https://hrms.wsdstech.com"
+    ],
     credentials: true,
   })
 );
