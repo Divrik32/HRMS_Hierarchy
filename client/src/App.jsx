@@ -11,6 +11,7 @@ import Employees from "./pages/company/Employees";
 import Departments from "./pages/company/Departments";
 import Roles from "./pages/company/Roles";
 import Projects from "./pages/company/Projects";
+import Timesheets from "./pages/company/Timesheets";
 import RegisterSuperAdmin from "./pages/RegisterSuperAdmin";
 import EmployeeLayout from "./layouts/EmployeeLayout";
 import EmployeeDashboard from "./pages/employee/EmployeeDashboard";
@@ -22,6 +23,7 @@ import CompanyForgotPassword from "./pages/company/CompanyForgotPassword";
 import CompanyProfile from "./pages/company/CompanyProfile";
 import ModulesAssigned from "./pages/employee/ModulesAssigned";
 import Timesheet from "./pages/employee/Timesheet";
+import EfficiencyGraph from "./pages/company/EfficiencyGraph";
 
 const router = createBrowserRouter([
   // Registration Page for Super Admin
@@ -110,6 +112,14 @@ const router = createBrowserRouter([
     {
       path: "projects",
       element: <Projects />,
+    },
+    {
+      path: "timesheets",
+      element: <Timesheets />,
+    },
+    {
+      path: "efficiency",
+      element: <EfficiencyGraph />,
     },
     {
       path: "profile",

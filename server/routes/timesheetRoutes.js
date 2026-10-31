@@ -32,7 +32,7 @@ router.get("/", employeeOrSuperAdminAuth, getTimesheetsByCompany);
 router.patch("/:id", employeeAuth, updateTimesheet);
 
 // Audit timesheet — approve or reject
-router.patch("/:id/audit", employeeOrSuperAdminAuth, auditTimesheet);
+router.patch("/:id/audit", employeeAuth, auditTimesheet);
 
 // Super Admin: daily efficiency graph for a specific company
 router.get(

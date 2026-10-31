@@ -6,6 +6,8 @@ import {
   Shield,
   FolderKanban,
   UserRound,
+  CalendarDays,
+  Activity,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import api from "../../api/axios";
@@ -128,6 +130,22 @@ const fetchOverview = async () => {
           <FolderKanban size={20} />
           Projects
         </Link>
+
+        <Link
+  to={`/company/${companyId}/timesheets`}
+  className="flex items-center gap-3 p-3 rounded-lg hover:bg-blue-50"
+>
+  <CalendarDays size={20} />
+  Timesheets
+</Link>
+
+<Link
+  to={`/company/${companyId}/efficiency`}
+  className="flex items-center gap-3 p-3 rounded-lg hover:bg-blue-50"
+>
+  <Activity size={20} />
+  Daily Efficiency
+</Link>
 
         <Link
           to={`/company/${companyId}/profile`}

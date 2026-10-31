@@ -33,7 +33,7 @@ const timesheetSchema = new mongoose.Schema(
     projectId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Project",
-      required: true,
+      default: null,
       index: true,
     },
 

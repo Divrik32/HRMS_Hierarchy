@@ -77,22 +77,43 @@ export const createTimesheet = async (req, res) => {
       });
     }
 
-    if (!task?.trim()) {
+    if (typeof task !== "string" || !task.trim()) {
       return res.status(400).json({
         success: false,
         message: "Task is required.",
       });
     }
 
-    // Project is mandatory
-    if (!projectId || !mongoose.Types.ObjectId.isValid(projectId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Please select a valid project.",
-      });
+    // =========================================
+    // PROJECT IS OPTIONAL
+    // =========================================
+    let selectedProject = null;
+
+    if (projectId) {
+      if (!mongoose.Types.ObjectId.isValid(projectId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid project ID.",
+        });
+      }
+
+      selectedProject = await Project.findOne({
+        _id: projectId,
+        companyId,
+        status: "active",
+      }).select("_id projectName");
+
+      if (!selectedProject) {
+        return res.status(404).json({
+          success: false,
+          message: "Active project not found for this company.",
+        });
+      }
     }
 
-    // Training and working time are mandatory
+    // =========================================
+    // TRAINING AND WORKING TIME ARE MANDATORY
+    // =========================================
     if (
       !allocatedTime ||
       allocatedTime.trainingTime === undefined ||
@@ -117,11 +138,14 @@ export const createTimesheet = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: "Training time and working time must be valid non-negative numbers.",
+        message:
+          "Training time and working time must be valid non-negative numbers.",
       });
     }
 
-    // Verify selected employee belongs to the authenticated user's company
+    // =========================================
+    // VERIFY EMPLOYEE BELONGS TO THE COMPANY
+    // =========================================
     const selectedEmployee = await Employee.findOne({
       _id: employeeId,
       companyId,
@@ -134,28 +158,25 @@ export const createTimesheet = async (req, res) => {
       });
     }
 
-    // Verify selected project belongs to the same company
-    const selectedProject = await Project.findOne({
-      _id: projectId,
-      companyId,
-      status: "active",
-    }).select("_id projectName");
-
-    if (!selectedProject) {
-      return res.status(404).json({
-        success: false,
-        message: "Active project not found for this company.",
-      });
-    }
-
+    // =========================================
+    // CREATE TIMESHEET
+    // =========================================
     const timesheet = await Timesheet.create({
       companyId,
       employeeId: selectedEmployee._id,
-      task: task.trim(),
-      description: description?.trim() || "",
 
-      projectId: selectedProject._id,
-      projectName: projectName?.trim() || selectedProject.projectName || "",
+      task: task.trim(),
+      description:
+        typeof description === "string"
+          ? description.trim()
+          : "",
+
+      projectId: selectedProject?._id || null,
+
+projectName:
+  typeof projectName === "string"
+    ? projectName.trim()
+    : "",
 
       allocatedTime: {
         trainingTime,
@@ -181,6 +202,7 @@ export const createTimesheet = async (req, res) => {
     });
   }
 };
+
 
 /* =====================================================
    GET GLOBAL TIMESHEETS — EMPLOYEE & SUPER ADMIN
@@ -225,6 +247,7 @@ if (
     })
       .populate("employeeId", "name empId")
       .populate("projectId", "projectName projectCode")
+      .populate("auditedBy", "name empId")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -248,7 +271,6 @@ if (
 /* =====================================================
    UPDATE GLOBAL TIMESHEET — EMPLOYEE & SUPER ADMIN
 ===================================================== */
-
 export const updateTimesheet = async (req, res) => {
   try {
     const { id } = req.params;
@@ -283,19 +305,20 @@ export const updateTimesheet = async (req, res) => {
       });
     }
 
-    const allowedFields = [
-      "task",
-      "description",
-      "projectId",
-      "projectName",
-      "allocatedTime.trainingTime",
-      "allocatedTime.workingTime",
-      "allocatedTime.idleTime",
-      "startTime",
-      "endTime",
-      "remarks.delayFast",
-      "remarks.reason",
-    ];
+const allowedFields = [
+  "employeeId",
+  "task",
+  "description",
+  "projectId",
+  "projectName",
+  "allocatedTime.trainingTime",
+  "allocatedTime.workingTime",
+  "allocatedTime.idleTime",
+  "startTime",
+  "endTime",
+  "remarks.delayFast",
+  "remarks.reason",
+];
 
     if (!allowedFields.includes(field)) {
       return res.status(400).json({
@@ -327,6 +350,35 @@ export const updateTimesheet = async (req, res) => {
 
     switch (field) {
       // =========================================
+// EMPLOYEE
+// =========================================
+case "employeeId": {
+  if (
+    !value ||
+    !mongoose.Types.ObjectId.isValid(value)
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "Please select a valid employee.",
+    });
+  }
+
+  const selectedEmployee = await Employee.findOne({
+    _id: value,
+    companyId,
+  }).select("_id");
+
+  if (!selectedEmployee) {
+    return res.status(404).json({
+      success: false,
+      message: "Selected employee not found in this company.",
+    });
+  }
+
+  timesheet.employeeId = selectedEmployee._id;
+  break;
+}
+      // =========================================
       // TASK
       // =========================================
       case "task": {
@@ -357,34 +409,42 @@ export const updateTimesheet = async (req, res) => {
       }
 
       // =========================================
-      // PROJECT
+      // PROJECT (OPTIONAL)
       // =========================================
-      case "projectId": {
-        // Project is mandatory in the schema.
-        if (!value || !mongoose.Types.ObjectId.isValid(value)) {
-          return res.status(400).json({
-            success: false,
-            message: "A valid project must be selected.",
-          });
-        }
+case "projectId": {
+  // Empty or null value removes only the project reference.
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    timesheet.projectId = null;
+    break;
+  }
 
-        const project = await Project.findOne({
-          _id: value,
-          companyId,
-          status: "active",
-        }).select("_id projectName");
+  if (!mongoose.Types.ObjectId.isValid(value)) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid project ID.",
+    });
+  }
 
-        if (!project) {
-          return res.status(404).json({
-            success: false,
-            message: "Active project not found for this company.",
-          });
-        }
+  const project = await Project.findOne({
+    _id: value,
+    companyId,
+    status: "active",
+  }).select("_id");
 
-        timesheet.projectId = project._id;
-        timesheet.projectName = project.projectName || "";
-        break;
-      }
+  if (!project) {
+    return res.status(404).json({
+      success: false,
+      message: "Active project not found for this company.",
+    });
+  }
+
+  timesheet.projectId = project._id;
+  break;
+}
 
       // =========================================
       // PROJECT / ACTIVITY NAME
@@ -531,8 +591,6 @@ export const updateTimesheet = async (req, res) => {
     });
   }
 };
-
-
 
 /* =====================================================
    Audit timesheet — approve or reject
@@ -772,15 +830,19 @@ export const getDailyEfficiencyGraph = async (req, res) => {
       });
     }
 
-    const start = new Date(`${startDate}T00:00:00.000Z`);
-    const end = new Date(`${endDate}T00:00:00.000Z`);
+const start = new Date(`${startDate}T00:00:00.000Z`);
+const end = new Date(`${endDate}T00:00:00.000Z`);
 
-    if (start >= end) {
-      return res.status(400).json({
-        success: false,
-        message: "endDate must be after startDate.",
-      });
-    }
+if (start > end) {
+  return res.status(400).json({
+    success: false,
+    message: "endDate must be on or after startDate.",
+  });
+}
+
+// End date-এর পরের দিনের রাত ১২টা
+const endExclusive = new Date(end);
+endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
 
     const companyObjectId = new mongoose.Types.ObjectId(companyId);
 
@@ -795,20 +857,27 @@ export const getDailyEfficiencyGraph = async (req, res) => {
     // Fetch daily efficiency for the selected date range.
     const dailyData = await Timesheet.aggregate([
       {
-        $match: {
-          companyId: companyObjectId,
-          startTime: {
-            $gte: start,
-            $lt: end,
-          },
-          efficiency: {
-            $ne: null,
-            $gte: 0,
-          },
-          employeeId: {
-            $in: employees.map((employee) => employee._id),
-          },
-        },
+$match: {
+  companyId: companyObjectId,
+
+  approvalStatus: {
+    $ne: "Rejected",
+  },
+
+  startTime: {
+    $gte: start,
+    $lt: endExclusive,
+  },
+
+  efficiency: {
+    $ne: null,
+    $gte: 0,
+  },
+
+  employeeId: {
+    $in: employees.map((employee) => employee._id),
+  },
+},
       },
       {
         $group: {
@@ -849,15 +918,15 @@ export const getDailyEfficiencyGraph = async (req, res) => {
     ]);
 
     // Generate every date in the selected range.
-    const dates = [];
+const dates = [];
 
-    for (
-      let current = new Date(start);
-      current < end;
-      current.setUTCDate(current.getUTCDate() + 1)
-    ) {
-      dates.push(current.toISOString().slice(0, 10));
-    }
+for (
+  let current = new Date(start);
+  current < endExclusive;
+  current.setUTCDate(current.getUTCDate() + 1)
+) {
+  dates.push(current.toISOString().slice(0, 10));
+}
 
     // Index daily values by employeeId + date.
     const efficiencyMap = new Map();

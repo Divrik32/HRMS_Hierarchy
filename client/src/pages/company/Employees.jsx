@@ -99,7 +99,6 @@ const getImageUrl = (profilePic) => {
 const EmployeeAvatar = ({ employee, size = "h-11 w-11" }) => {
   const [imageError, setImageError] = useState(false);
   const imageUrl = getImageUrl(employee?.profilePic);
-  const [cropFile, setCropFile] = useState(null);
   useEffect(() => {
     setImageError(false);
   }, [imageUrl]);
@@ -193,6 +192,7 @@ export default function Employees() {
   const [form, setForm] = useState(initialForm);
   const [profilePic, setProfilePic] = useState(null);
   const [preview, setPreview] = useState("");
+  const [cropFile, setCropFile] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
 
   const loadEmployees = useCallback(

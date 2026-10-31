@@ -322,17 +322,13 @@ const openCreateForm = () => {
   setShowForm(true);
 };
 
-  const handleProjectChange = (projectId) => {
-    const project = projects.find(
-      (item) => String(item._id) === String(projectId)
-    );
+const handleProjectChange = (projectId) => {
+  setForm((previous) => ({
+    ...previous,
+    projectId,
+  }));
+};
 
-    setForm((previous) => ({
-      ...previous,
-      projectId,
-      projectName: project?.projectName || "",
-    }));
-  };
 const handleInlineUpdate = async (timesheet, field, value) => {
   try {
     await api.patch(`/timesheets/${timesheet._id}`, {
@@ -385,11 +381,6 @@ const handleSubmit = async (event) => {
     return;
   }
 
-  if (!form.projectId) {
-    setError("Please select a project.");
-    return;
-  }
-
   const trainingTime = Number(form.trainingTime);
   const workingTime = Number(form.workingTime);
 
@@ -405,18 +396,18 @@ const handleSubmit = async (event) => {
     return;
   }
 
-  const payload = {
-    employeeId: form.employeeId,
-    task: form.task.trim(),
-    description: form.description.trim(),
-    projectId: form.projectId,
-    projectName: form.projectName.trim(),
+const payload = {
+  employeeId: form.employeeId,
+  task: form.task.trim(),
+  description: form.description.trim(),
+  projectId: form.projectId || null,
+  projectName: form.projectName.trim(),
 
-    allocatedTime: {
-      trainingTime,
-      workingTime,
-    },
-  };
+  allocatedTime: {
+    trainingTime,
+    workingTime,
+  },
+};
 
   setSaving(true);
 
@@ -738,15 +729,17 @@ const handleAudit = async (timesheet, approvalStatus) => {
                   }`
                 : "—";
 
-            const projectId =
-              typeof item.projectId === "object"
-                ? item.projectId?._id || ""
-                : item.projectId || "";
+const projectId =
+  typeof item.projectId === "object"
+    ? item.projectId?._id || ""
+    : item.projectId || "";
 
-            const projectDisplay =
-              typeof item.projectId === "object"
-                ? item.projectId?.projectName || "—"
-                : "—";
+const projectDisplay =
+  typeof item.projectId === "object"
+    ? item.projectId?.projectName || "—"
+    : projects.find(
+        (project) => String(project._id) === String(item.projectId)
+      )?.projectName || "—";
 
             const auditedBy =
               typeof item.auditedBy === "object"
@@ -758,12 +751,30 @@ const handleAudit = async (timesheet, approvalStatus) => {
                 key={item._id}
                 className="align-top hover:bg-slate-50/70"
               >
-                {/* Employee - read only */}
-                <td className="min-w-48 px-4 py-4">
-                  <span className="font-medium text-slate-700">
-                    {employeeName}
-                  </span>
-                </td>
+{/* Employee */}
+<td className="min-w-48 px-4 py-4">
+  <InlineEditableCell
+    field="employeeId"
+    value={
+      typeof item.employeeId === "object"
+        ? item.employeeId?._id || ""
+        : item.employeeId || ""
+    }
+    type="select"
+    displayValue={employeeName}
+    options={[
+      { value: "", label: "Select Employee" },
+      ...employees.map((emp) => ({
+        value: String(emp._id),
+        label: `${emp.name} (${emp.empId})`,
+      })),
+    ]}
+    onSave={(field, value) =>
+      handleInlineUpdate(item, field, value)
+    }
+    disabled={isApproved}
+  />
+</td>
 
                 {/* Task */}
                 <td className="min-w-48 px-4 py-4">
@@ -798,14 +809,20 @@ const handleAudit = async (timesheet, approvalStatus) => {
                     value={projectId}
                     type="select"
                     displayValue={projectDisplay}
-                    options={projects.map((project) => ({
-                      value: String(project._id),
-                      label: `${project.projectName}${
-                        project.projectCode
-                          ? ` (${project.projectCode})`
-                          : ""
-                      }`,
-                    }))}
+options={[
+  {
+    value: "",
+    label: "No Project / External Task",
+  },
+  ...projects.map((project) => ({
+    value: String(project._id),
+    label: `${project.projectName}${
+      project.projectCode
+        ? ` (${project.projectCode})`
+        : ""
+    }`,
+  })),
+]}
                     onSave={(field, value) =>
                       handleInlineUpdate(item, field, value)
                     }
@@ -1058,16 +1075,15 @@ const handleAudit = async (timesheet, approvalStatus) => {
                       className="form-input-custom"
                     />
                   </FormField>
-<FormField label="Project" required>
+<FormField label="Project (Optional)">
   <select
     value={form.projectId}
     onChange={(event) =>
       handleProjectChange(event.target.value)
     }
-    required
     className="form-input-custom"
   >
-    <option value="">Select Project</option>
+    <option value="">No Project / External Task</option>
 
     {projects.map((project) => (
       <option key={project._id} value={project._id}>
