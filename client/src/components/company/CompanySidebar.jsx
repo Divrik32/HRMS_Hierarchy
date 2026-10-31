@@ -8,6 +8,7 @@ import {
   UserRound,
   CalendarDays,
   Activity,
+  CalendarCheck,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import api from "../../api/axios";
@@ -137,6 +138,14 @@ const fetchOverview = async () => {
 >
   <CalendarDays size={20} />
   Timesheets
+</Link>
+
+<Link
+  to={`/company/${companyId}/attendance`}
+  className="flex items-center gap-3 p-3 rounded-lg hover:bg-blue-50"
+>
+  <CalendarCheck size={20} />
+  Attendance Checker
 </Link>
 
 <Link

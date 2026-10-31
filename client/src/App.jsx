@@ -24,6 +24,8 @@ import CompanyProfile from "./pages/company/CompanyProfile";
 import ModulesAssigned from "./pages/employee/ModulesAssigned";
 import Timesheet from "./pages/employee/Timesheet";
 import EfficiencyGraph from "./pages/company/EfficiencyGraph";
+import EmployeeAttendance from "./pages/employee/EmployeeAttendance";
+import CompanyAttendanceChecker from "./pages/company/CompanyAttendanceChecker";
 
 const router = createBrowserRouter([
   // Registration Page for Super Admin
@@ -122,6 +124,10 @@ const router = createBrowserRouter([
       element: <EfficiencyGraph />,
     },
     {
+  path: "attendance",
+  element: <CompanyAttendanceChecker />,
+},
+    {
       path: "profile",
       element: <CompanyProfile />,
     },
@@ -159,6 +165,10 @@ const router = createBrowserRouter([
 {
   path: "timesheet",
   element: <Timesheet />,
+},
+{
+  path: "attendance",
+  element: <EmployeeAttendance />,
 },
   ],
 },

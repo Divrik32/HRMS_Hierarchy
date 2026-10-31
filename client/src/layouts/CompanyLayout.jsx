@@ -14,6 +14,8 @@ const CompanyLayout = () => {
   const navigate = useNavigate();
 
   const loadCompany = useCallback(async () => {
+    console.log("Company ID:", companyId);
+    console.log("Current URL:", window.location.pathname);
     setLoading(true);
 
     try {

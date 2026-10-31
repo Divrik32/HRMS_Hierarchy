@@ -13,6 +13,7 @@ import departmentRoutes from "./routes/departmentRoutes.js";
 import projectRoutes from "./routes/projectRoutes.js";
 import employeeRoutes from "./routes/employeeRoutes.js";
 import timesheetRoutes from "./routes/timesheetRoutes.js";
+import attendanceRoutes from "./routes/attendanceRoutes.js";
 import { startWeeklyTimesheetReminderCron } from "./services/weeklyTimesheetReminder.js";
 
 dotenv.config();
@@ -55,6 +56,7 @@ app.use("/api/departments", departmentRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/timesheets", timesheetRoutes);
+app.use("/api/attendance", attendanceRoutes);
 
 // Test route
 app.get("/", (req, res) => {

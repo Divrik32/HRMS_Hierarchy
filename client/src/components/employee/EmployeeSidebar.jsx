@@ -8,6 +8,7 @@ import {
   BriefcaseBusiness,
   Layers3,
   ClipboardList,
+  CalendarDays,
 } from "lucide-react";
 
 const EmployeeSidebar = ({ open, employee }) => {
@@ -49,6 +50,11 @@ const EmployeeSidebar = ({ open, employee }) => {
   label: "My Timesheet",
   path: `${basePath}/timesheet`,
   icon: ClipboardList,
+},
+{
+  label: "My Attendance",
+  path: `${basePath}/attendance`,
+  icon: CalendarDays,
 },
   ];
 
