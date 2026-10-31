@@ -117,16 +117,17 @@ export const createEmployee = async (req, res) => {
     }
 
     // Check duplicate email
-    const existingEmail = await Employee.findOne({
-      email: normalizedEmail,
-    });
+const existingEmail = await Employee.findOne({
+  email: normalizedEmail,
+  companyId,
+});
 
-    if (existingEmail) {
-      return res.status(400).json({
-        success: false,
-        message: "Employee email already exists",
-      });
-    }
+if (existingEmail) {
+  return res.status(400).json({
+    success: false,
+    message: "This email already exists in this company",
+  });
+}
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
