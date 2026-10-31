@@ -456,30 +456,54 @@ const handleAudit = async (timesheet, approvalStatus) => {
   }
 };
 
-  const filteredTimesheets = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
+const filteredTimesheets = useMemo(() => {
+  const normalizedSearch = search.trim().toLowerCase();
 
-    return timesheets.filter((item) => {
-      const matchesStatus =
-        statusFilter === "All" ||
-        (item.approvalStatus || "Pending") === statusFilter;
+  return timesheets.filter((item) => {
+    const matchesStatus =
+      statusFilter === "All" ||
+      (item.approvalStatus || "Pending") === statusFilter;
 
-      const matchesSearch =
-        !normalizedSearch ||
-        [
-          item.task,
-          item.description,
-          item.projectName,
-          item.empId,
-        ]
-          .filter(Boolean)
-          .some((value) =>
-            String(value).toLowerCase().includes(normalizedSearch)
-          );
+    const employeeName =
+      typeof item.employeeId === "object"
+        ? item.employeeId?.name || ""
+        : "";
 
-      return matchesStatus && matchesSearch;
-    });
-  }, [timesheets, search, statusFilter]);
+    const employeeId =
+      typeof item.employeeId === "object"
+        ? item.employeeId?.empId || ""
+        : "";
+
+    const projectName =
+      typeof item.projectId === "object"
+        ? item.projectId?.projectName || ""
+        : "";
+
+    const projectCode =
+      typeof item.projectId === "object"
+        ? item.projectId?.projectCode || ""
+        : "";
+
+    const matchesSearch =
+      !normalizedSearch ||
+      [
+        employeeName,
+        employeeId,
+        item.task,
+        item.description,
+        item.projectName,
+        projectName,
+        projectCode,
+        item.remarks?.reason,
+      ]
+        .filter(Boolean)
+        .some((value) =>
+          String(value).toLowerCase().includes(normalizedSearch)
+        );
+
+    return matchesStatus && matchesSearch;
+  });
+}, [timesheets, search, statusFilter]);
 
   const stats = useMemo(() => {
     return {
