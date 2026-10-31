@@ -26,6 +26,7 @@ import {
   getMyAssignedModules,
   getAssignableEmployees,
   getActiveProjectsByCompany,
+  grantProjectAccessBySuperAdmin,
 } from "../controllers/projectController.js";
 import superAdminAuth from "../middleware/superAdminAuth.js";
 import employeeOrSuperAdminAuth from "../middleware/employeeOrSuperAdminAuth.js";
@@ -85,6 +86,17 @@ router.delete(
   employeeAuth,
   revokeProjectAccess
 );
+
+// =====================================================
+// SUPER ADMIN — GRANT / REVOKE PROJECT ROLE ACCESS
+// =====================================================
+
+router.post(
+  "/:projectId/access/super-admin",
+  superAdminAuth,
+  grantProjectAccessBySuperAdmin
+);
+
 
 router.delete(
   "/:projectId/access/:roleId/super-admin",

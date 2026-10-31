@@ -154,26 +154,26 @@ toast.error(
   // =====================================================
   // FETCH ROOT ROLES
   // =====================================================
-  const fetchRoles = useCallback(async (selectedCompanyId) => {
-    if (!selectedCompanyId) {
-      setRoles([]);
-      return;
-    }
+const fetchRoles = useCallback(async (selectedCompanyId) => {
+  if (!selectedCompanyId) {
+    setRoles([]);
+    return;
+  }
 
-    try {
-      const response = await api.get(
-        `/roles/company/${selectedCompanyId}/root`
-      );
+  try {
+    const response = await api.get(
+      `/roles/company/${selectedCompanyId}`
+    );
 
-      setRoles(getList(response, "roles"));
-    } catch (error) {
-      setRoles([]);
+    setRoles(getList(response, "roles"));
+  } catch (error) {
+    setRoles([]);
 
-      toast.error(
-        `Could not load root roles: ${getErrorMessage(error)}`
-      );
-    }
-  }, []);
+    toast.error(
+      `Could not load company roles: ${getErrorMessage(error)}`
+    );
+  }
+}, []);
 
   useEffect(() => {
     fetchCompanies();
@@ -1162,13 +1162,13 @@ const permanentlyDeleteProject = async (deletedProject) => {
               <div className="rounded-xl border border-slate-200 p-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <h3 className="font-semibold">
-                      Root Role Assignment
-                    </h3>
+<h3 className="font-semibold">
+  Role Assignment
+</h3>
 
-                    <p className="mt-1 text-xs text-black-500">
-                      Only root roles belonging to this company are shown.
-                    </p>
+<p className="mt-1 text-xs text-black-500">
+  All roles belonging to this company are shown, including child and descendant roles.
+</p>
                   </div>
 
                   <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
@@ -1181,7 +1181,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                     value={roleSearch}
                     onChange={(event) => setRoleSearch(event.target.value)}
                     className={`${inputClass} min-w-[180px] flex-1`}
-                    placeholder="Search root roles..."
+                    placeholder="Search company roles..."
                     disabled={!form.companyId}
                   />
 
@@ -1197,7 +1197,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
 
                 {!form.companyId ? (
                   <p className="rounded-lg bg-slate-50 p-4 text-sm text-black-500">
-                    Select a company to load its root roles.
+                    Select a company to load all its roles.
                   </p>
                 ) : roles.length === 0 ? (
                   <p className="rounded-lg bg-amber-50 p-4 text-sm text-amber-700">

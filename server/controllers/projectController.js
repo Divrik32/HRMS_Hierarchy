@@ -3,7 +3,7 @@ import Role from "../models/Role.js";
 import Company from "../models/Company.js";
 import Employee from "../models/Employee.js";
 import DeletedProject from "../models/DeletedProject.js";
-
+import mongoose from "mongoose";
 
 import {
   isValidId,
@@ -698,12 +698,9 @@ export const permanentlyDeleteProject = async (req, res) => {
 
 
 // =====================================================
-// ASSIGN ROOT ROLES — SUPER ADMIN ONLY
-// Adds validated root roles to roleAccess.
-// It does not erase existing delegated access.
-// =====================================================
-// =====================================================
-// ASSIGN ROOT ROLES — SUPER ADMIN ONLY
+// ASSIGN PROJECT ACCESS TO SELECTED ROLES
+// SUPER ADMIN ONLY
+// Accepts ANY role belonging to the project's company.
 // =====================================================
 export const assignRootRoles = async (req, res) => {
   try {
@@ -735,41 +732,37 @@ export const assignRootRoles = async (req, res) => {
       });
     }
 
-    const rootRoles = await Role.find({
+    // All selected roles must belong to this project's company.
+    const selectedRoles = await Role.find({
       _id: { $in: uniqueRoleIds },
       companyId: project.companyId,
-      parentRoleId: null,
-    });
+    }).select("_id");
 
-    if (rootRoles.length !== uniqueRoleIds.length) {
+    if (selectedRoles.length !== uniqueRoleIds.length) {
       return res.status(400).json({
         success: false,
         message:
-          "All assigned roles must be root roles belonging to the project's company",
+          "All selected roles must belong to the project's company",
       });
     }
 
-    // Existing role access বজায় রেখে নতুন root roles যোগ করবে।
-    const combinedIds = new Set([
-      ...project.roleAccess.map(String),
-      ...uniqueRoleIds,
-    ]);
-
-    project.roleAccess = [...combinedIds];
+    // Add only the explicitly selected role IDs.
+    // No automatic descendant access.
+    project.roleAccess = uniqueRoleIds;
 
     await project.save();
 
     return res.status(200).json({
       success: true,
-      message: "Root roles added to project access successfully",
+      message: "Project role access updated successfully",
       project,
     });
   } catch (error) {
-    console.error("Assign Root Roles Error:", error);
+    console.error("Assign Project Roles Error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Failed to assign root roles",
+      message: "Failed to update project role access",
       error: error.message,
     });
   }
@@ -1198,6 +1191,7 @@ export const updateProjectModuleStatus = async (req, res) => {
 export const getProjectRoleAccess = async (req, res) => {
   try {
     const { projectId } = req.params;
+    const user = req.user;
 
     if (!isValidId(projectId)) {
       return res.status(400).json({
@@ -1209,15 +1203,12 @@ export const getProjectRoleAccess = async (req, res) => {
     let project;
     let employee = null;
 
-    if (req.user?.role === "superadmin") {
+    if (user?.role === "superadmin") {
       project = await Project.findById(projectId);
-    } else if (req.user?.role === "employee") {
-      employee = req.user;
+    } else if (user?.role === "employee") {
+      employee = user;
 
-      const result = await getProjectForEmployee(
-        projectId,
-        employee
-      );
+      const result = await getProjectForEmployee(projectId, employee);
 
       if (result.error) {
         return res.status(result.status).json({
@@ -1241,39 +1232,44 @@ export const getProjectRoleAccess = async (req, res) => {
       });
     }
 
-    const roles = await Role.find({
-      companyId: project.companyId,
-    })
-      .select("roleName parentRoleId companyId")
-      .sort({ roleName: 1 });
+    let roles;
+
+    if (employee) {
+      const branchIds = await getRoleBranchIds(
+        employee.companyId,
+        employee.roleId
+      );
+
+      const descendantIds = branchIds.filter(
+        (id) => id.toString() !== employee.roleId.toString()
+      );
+
+      roles = await Role.find({
+        _id: { $in: descendantIds },
+        companyId: employee.companyId,
+      })
+        .select("roleName parentRoleId companyId")
+        .sort({ roleName: 1 });
+    } else {
+      roles = await Role.find({
+        companyId: project.companyId,
+      })
+        .select("roleName parentRoleId companyId")
+        .sort({ roleName: 1 });
+    }
 
     const accessRoleIds = new Set(
-      project.roleAccess.map((id) => id.toString())
+      (project.roleAccess || []).map((id) => id.toString())
     );
 
     const roleAccess = roles.map((role) => {
-      const hasProjectAccess = accessRoleIds.has(
-        role._id.toString()
-      );
-
-      // Super Admin can see actual project access.
-      // Employee can manage only direct child roles.
-      const isDirectChild =
-        employee &&
-        role.parentRoleId?.toString() ===
-          employee.roleId?.toString();
-
-      const hasAccess = employee
-        ? Boolean(isDirectChild && hasProjectAccess)
-        : hasProjectAccess;
+      const hasAccess = accessRoleIds.has(role._id.toString());
 
       return {
         role,
         hasAccess,
         accessType: hasAccess ? "has-access" : "none",
-        canManageAccess: employee
-          ? Boolean(isDirectChild)
-          : true,
+        canManageAccess: true,
       };
     });
 
@@ -1300,29 +1296,21 @@ export const getProjectRoleAccess = async (req, res) => {
 export const grantProjectAccess = async (req, res) => {
   try {
     const employee = req.user;
-
-    if (!employee?.roleId) {
-      return res.status(403).json({
-        success: false,
-        message: "Employee does not have an assigned role",
-      });
-    }
-
     const { projectId } = req.params;
     const { roleId } = req.body;
 
-    if (!isValidId(projectId) || !isValidId(roleId)) {
+    if (
+      !employee?.roleId ||
+      !isValidId(projectId) ||
+      !isValidId(roleId)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Valid project ID and role ID are required",
       });
     }
 
-    // Verify project and employee access using the shared helper.
-    const result = await getProjectForEmployee(
-      projectId,
-      employee
-    );
+    const result = await getProjectForEmployee(projectId, employee);
 
     if (result.error) {
       return res.status(result.status).json({
@@ -1333,23 +1321,36 @@ export const grantProjectAccess = async (req, res) => {
 
     const project = result.project;
 
-    // Employee can grant access only to their direct child roles.
-    const childRole = await Role.findOne({
-      _id: roleId,
-      companyId: employee.companyId,
-      parentRoleId: employee.roleId,
-    });
+    const branchIds = await getRoleBranchIds(
+      employee.companyId,
+      employee.roleId
+    );
 
-    if (!childRole) {
+    const descendantIds = branchIds.filter(
+      (id) => id.toString() !== employee.roleId.toString()
+    );
+
+    if (!descendantIds.includes(roleId.toString())) {
       return res.status(403).json({
         success: false,
-        message:
-          "You can grant access only to your direct child roles",
+        message: "You can grant access only to roles under your hierarchy",
+      });
+    }
+
+    const selectedRole = await Role.findOne({
+      _id: roleId,
+      companyId: employee.companyId,
+    });
+
+    if (!selectedRole) {
+      return res.status(404).json({
+        success: false,
+        message: "Role not found",
       });
     }
 
     const alreadyHasAccess = project.roleAccess.some(
-      (id) => id.toString() === childRole._id.toString()
+      (id) => id.toString() === roleId.toString()
     );
 
     if (alreadyHasAccess) {
@@ -1359,19 +1360,19 @@ export const grantProjectAccess = async (req, res) => {
       });
     }
 
-    project.roleAccess.push(childRole._id);
+    project.roleAccess.push(selectedRole._id);
 
     await project.save();
 
     return res.status(200).json({
       success: true,
       message: "Project access granted successfully",
-      roleId: childRole._id,
-      roleName: childRole.roleName,
+      roleId: selectedRole._id,
+      roleName: selectedRole.roleName,
       project,
     });
   } catch (error) {
-    console.error("Grant Project Access Error:", error);
+    console.error("Employee Grant Project Access Error:", error);
 
     return res.status(500).json({
       success: false,
@@ -1381,6 +1382,7 @@ export const grantProjectAccess = async (req, res) => {
   }
 };
 
+
 // =====================================================
 // REVOKE PROJECT ACCESS FROM A DIRECT CHILD ROLE
 // Also removes access from descendants in that branch.
@@ -1388,28 +1390,20 @@ export const grantProjectAccess = async (req, res) => {
 export const revokeProjectAccess = async (req, res) => {
   try {
     const employee = req.user;
-
-    if (!employee?.roleId) {
-      return res.status(403).json({
-        success: false,
-        message: "Employee does not have an assigned role",
-      });
-    }
-
     const { projectId, roleId } = req.params;
 
-    if (!isValidId(projectId) || !isValidId(roleId)) {
+    if (
+      !employee?.roleId ||
+      !isValidId(projectId) ||
+      !isValidId(roleId)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid project ID or role ID",
       });
     }
 
-    // Verify project and employee access using the shared helper.
-    const result = await getProjectForEmployee(
-      projectId,
-      employee
-    );
+    const result = await getProjectForEmployee(projectId, employee);
 
     if (result.error) {
       return res.status(result.status).json({
@@ -1420,43 +1414,47 @@ export const revokeProjectAccess = async (req, res) => {
 
     const project = result.project;
 
-    // Employee can revoke access only from their direct child roles.
-    const childRole = await Role.findOne({
-      _id: roleId,
-      companyId: employee.companyId,
-      parentRoleId: employee.roleId,
-    });
-
-    if (!childRole) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "You can revoke access only from your direct child roles",
-      });
-    }
-
-    const hasChildAccess = project.roleAccess.some(
-      (id) => id.toString() === childRole._id.toString()
-    );
-
-    if (!hasChildAccess) {
-      return res.status(404).json({
-        success: false,
-        message: "This child role does not have project access",
-      });
-    }
-
-    // Find the child role and all its descendant roles.
     const branchIds = await getRoleBranchIds(
       employee.companyId,
-      childRole._id
+      employee.roleId
     );
 
-    // Revoke access from the entire role branch.
-    const branchIdSet = new Set(branchIds);
+    const descendantIds = branchIds.filter(
+      (id) => id.toString() !== employee.roleId.toString()
+    );
+
+    if (!descendantIds.includes(roleId.toString())) {
+      return res.status(403).json({
+        success: false,
+        message: "You can revoke access only from roles under your hierarchy",
+      });
+    }
+
+    const selectedRole = await Role.findOne({
+      _id: roleId,
+      companyId: employee.companyId,
+    });
+
+    if (!selectedRole) {
+      return res.status(404).json({
+        success: false,
+        message: "Role not found",
+      });
+    }
+
+    const hasAccess = project.roleAccess.some(
+      (id) => id.toString() === roleId.toString()
+    );
+
+    if (!hasAccess) {
+      return res.status(404).json({
+        success: false,
+        message: "This role does not have project access",
+      });
+    }
 
     project.roleAccess = project.roleAccess.filter(
-      (id) => !branchIdSet.has(id.toString())
+      (id) => id.toString() !== roleId.toString()
     );
 
     await project.save();
@@ -1464,11 +1462,11 @@ export const revokeProjectAccess = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Project access revoked successfully",
-      revokedRoleIds: branchIds,
+      revokedRoleId: roleId,
       project,
     });
   } catch (error) {
-    console.error("Revoke Project Access Error:", error);
+    console.error("Employee Revoke Project Access Error:", error);
 
     return res.status(500).json({
       success: false,
@@ -1476,7 +1474,7 @@ export const revokeProjectAccess = async (req, res) => {
       error: error.message,
     });
   }
-}; 
+};
 
 // =====================================================
 // GET MY GRANTED PROJECT ACCESS — EMPLOYEE
@@ -1484,6 +1482,7 @@ export const revokeProjectAccess = async (req, res) => {
 export const getMyGrantedProjectAccess = async (req, res) => {
   try {
     const employee = req.user;
+    const { projectId } = req.params;
 
     if (!employee?.roleId) {
       return res.status(403).json({
@@ -1491,8 +1490,6 @@ export const getMyGrantedProjectAccess = async (req, res) => {
         message: "Employee does not have an assigned role",
       });
     }
-
-    const { projectId } = req.params;
 
     if (!isValidId(projectId)) {
       return res.status(400).json({
@@ -1501,11 +1498,7 @@ export const getMyGrantedProjectAccess = async (req, res) => {
       });
     }
 
-    // Verify project and employee access using the shared helper.
-    const result = await getProjectForEmployee(
-      projectId,
-      employee
-    );
+    const result = await getProjectForEmployee(projectId, employee);
 
     if (result.error) {
       return res.status(result.status).json({
@@ -1516,17 +1509,27 @@ export const getMyGrantedProjectAccess = async (req, res) => {
 
     const project = result.project;
 
-    // Find direct child roles of the current employee's role.
-    const childRoles = await Role.find({
-      companyId: employee.companyId,
-      parentRoleId: employee.roleId,
-    }).select("roleName parentRoleId companyId");
-
-    const accessRoleIds = new Set(
-      project.roleAccess.map(String)
+    const branchIds = await getRoleBranchIds(
+      employee.companyId,
+      employee.roleId
     );
 
-    const grantedAccess = childRoles
+    const descendantIds = branchIds.filter(
+      (id) => id.toString() !== employee.roleId.toString()
+    );
+
+    const roles = await Role.find({
+      _id: { $in: descendantIds },
+      companyId: employee.companyId,
+    })
+      .select("roleName parentRoleId companyId")
+      .sort({ roleName: 1 });
+
+    const accessRoleIds = new Set(
+      project.roleAccess.map((id) => id.toString())
+    );
+
+    const grantedAccess = roles
       .filter((role) => accessRoleIds.has(role._id.toString()))
       .map((role) => ({
         role,
@@ -1611,7 +1614,6 @@ export const revokeProjectAccessBySuperAdmin = async (req, res) => {
     const { projectId, roleId } = req.params;
     const user = req.user;
 
-    // Only Super Admin can use this controller.
     if (user?.role !== "superadmin") {
       return res.status(403).json({
         success: false,
@@ -1626,7 +1628,6 @@ export const revokeProjectAccessBySuperAdmin = async (req, res) => {
       });
     }
 
-    // Find the project created by this Super Admin.
     const project = await Project.findOne({
       _id: projectId,
       createdBy: user.id,
@@ -1639,7 +1640,6 @@ export const revokeProjectAccessBySuperAdmin = async (req, res) => {
       });
     }
 
-    // The selected role must belong to this project's company.
     const selectedRole = await Role.findOne({
       _id: roleId,
       companyId: project.companyId,
@@ -1648,53 +1648,35 @@ export const revokeProjectAccessBySuperAdmin = async (req, res) => {
     if (!selectedRole) {
       return res.status(404).json({
         success: false,
-        message: "Role not found in this project's company",
+        message: "Role not found in this company",
       });
     }
 
-    // Get the selected role and all roles under its hierarchy.
-    const branchIds = await getRoleBranchIds(
-      project.companyId,
-      selectedRole._id
+    const hasAccess = project.roleAccess.some(
+      (id) => id.toString() === roleId.toString()
     );
 
-    const branchIdSet = new Set(branchIds.map(String));
-
-    // Remove access from the entire role branch.
-    const previousAccessIds = project.roleAccess.map(String);
-
-    project.roleAccess = project.roleAccess.filter(
-      (id) => !branchIdSet.has(id.toString())
-    );
-
-    const removedRoleIds = previousAccessIds.filter(
-      (id) => branchIdSet.has(id)
-    );
-
-    // If no access was removed, return a clear response.
-    if (removedRoleIds.length === 0) {
+    if (!hasAccess) {
       return res.status(404).json({
         success: false,
-        message:
-          "The selected role and its descendants do not have project access",
+        message: "This role does not have project access",
       });
     }
+
+    project.roleAccess = project.roleAccess.filter(
+      (id) => id.toString() !== roleId.toString()
+    );
 
     await project.save();
 
     return res.status(200).json({
       success: true,
-      message:
-        "Project access revoked from the selected role and all descendants",
-      projectId: project._id,
-      revokedRoleIds: removedRoleIds,
+      message: "Project access revoked successfully",
+      revokedRoleId: roleId,
       project,
     });
   } catch (error) {
-    console.error(
-      "Super Admin Revoke Project Access Error:",
-      error
-    );
+    console.error("Super Admin Revoke Project Access Error:", error);
 
     return res.status(500).json({
       success: false,
@@ -2125,6 +2107,83 @@ export const getActiveProjectsByCompany = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch active projects.",
+    });
+  }
+};
+
+export const grantProjectAccessBySuperAdmin = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { roleId } = req.body;
+    const user = req.user;
+
+    if (user?.role !== "superadmin") {
+      return res.status(403).json({
+        success: false,
+        message: "Only Super Admin can grant project access",
+      });
+    }
+
+    if (!isValidId(projectId) || !isValidId(roleId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid project ID and role ID are required",
+      });
+    }
+
+    const project = await Project.findOne({
+      _id: projectId,
+      createdBy: user.id,
+    });
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found or access denied",
+      });
+    }
+
+    const selectedRole = await Role.findOne({
+      _id: roleId,
+      companyId: project.companyId,
+    });
+
+    if (!selectedRole) {
+      return res.status(404).json({
+        success: false,
+        message: "Role not found in this company",
+      });
+    }
+
+    const alreadyHasAccess = project.roleAccess.some(
+      (id) => id.toString() === roleId.toString()
+    );
+
+    if (alreadyHasAccess) {
+      return res.status(409).json({
+        success: false,
+        message: "This role already has project access",
+      });
+    }
+
+    project.roleAccess.push(selectedRole._id);
+
+    await project.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Project access granted successfully",
+      roleId: selectedRole._id,
+      roleName: selectedRole.roleName,
+      project,
+    });
+  } catch (error) {
+    console.error("Super Admin Grant Project Access Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to grant project access",
+      error: error.message,
     });
   }
 };
