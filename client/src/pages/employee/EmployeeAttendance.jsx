@@ -97,9 +97,22 @@ const EmployeeAttendance = () => {
       response.data?.records ||
       [];
 
-    const todayRecord = records.find(
-      (item) => item.attendanceDate === getTodayDate()
-    );
+const todayRecord = records.find((item) => {
+  if (!item.attendanceDate) return false;
+
+  const attendanceDate = new Date(item.attendanceDate);
+
+  if (Number.isNaN(attendanceDate.getTime())) return false;
+
+  const formattedDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(attendanceDate);
+
+  return formattedDate === getTodayDate();
+});
 
     setMyAttendance(todayRecord || null);
   }, []);
