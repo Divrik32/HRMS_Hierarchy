@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { Pencil, Save, X, Building2, LoaderCircle } from "lucide-react";
 import { toast } from "react-toastify";
 import api from "../../api/axios";
+import ImageCropper from "../../components/common/ImageCropper";
 
 const initialForm = {
   companyName: "",
