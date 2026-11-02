@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   LogIn,
@@ -64,25 +64,63 @@ const getStatusClasses = (status) => {
   }
 };
 
+const getCurrentMonth = () => {
+  const today = getTodayDate();
+  const [year, month] = today.split("-");
+
+  return {
+    month: Number(month),
+    year: Number(year),
+  };
+};
+
+const getEmployeeSearchText = (employee) => {
+  return [
+    employee?.name,
+    employee?.empId,
+    employee?.email,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+};
+
 // =========================================
 // EMPLOYEE ATTENDANCE PAGE
 // =========================================
 
 const EmployeeAttendance = () => {
-  const [selectedDate, setSelectedDate] = useState(getTodayDate());
+const today = getTodayDate();
+const currentMonth = getCurrentMonth();
 
-  const [myAttendance, setMyAttendance] = useState(null);
-  const [companyAttendance, setCompanyAttendance] = useState([]);
+const [selectedDate, setSelectedDate] = useState(today);
 
-  const [summary, setSummary] = useState({
-    totalEmployees: 0,
-    checkedIn: 0,
-    checkedOut: 0,
-    notCheckedIn: 0,
-  });
+const [attendanceView, setAttendanceView] = useState("single");
 
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState("");
+const [startDate, setStartDate] = useState(today);
+const [endDate, setEndDate] = useState(today);
+
+const [selectedMonth, setSelectedMonth] = useState(
+  String(currentMonth.month).padStart(2, "0")
+);
+const [selectedYear, setSelectedYear] = useState(
+  String(currentMonth.year)
+);
+
+const [employeeSearch, setEmployeeSearch] = useState("");
+
+const [myAttendance, setMyAttendance] = useState(null);
+const [companyAttendance, setCompanyAttendance] = useState([]);
+
+const [summary, setSummary] = useState({
+  totalEmployees: 0,
+  checkedIn: 0,
+  checkedOut: 0,
+  notCheckedIn: 0,
+});
+
+const [loading, setLoading] = useState(true);
+const [actionLoading, setActionLoading] = useState("");
 
   // =========================================
   // LOAD MY ATTENDANCE
@@ -109,45 +147,133 @@ const EmployeeAttendance = () => {
   // EMPLOYEE ONLY
   // =========================================
 
-  const loadCompanyAttendance = useCallback(async (date) => {
-    const response = await api.get("/attendance/company", {
-      params: { date },
+// =========================================
+// LOAD COMPANY ATTENDANCE
+// SINGLE DATE / DATE RANGE / MONTHLY
+// =========================================
+
+const loadCompanyAttendance = useCallback(async () => {
+  if (attendanceView === "range" && startDate > endDate) {
+    toast.error("Start date cannot be after end date.");
+    return;
+  }
+  
+  if (
+    attendanceView === "monthly" &&
+    (!selectedYear ||
+      !Number.isInteger(Number(selectedYear)) ||
+      Number(selectedYear) < 1000 ||
+      Number(selectedYear) > currentMonth.year)
+  ) {
+    toast.error("Please select a valid year.");
+    return;
+  }
+  let response;
+
+  if (attendanceView === "single") {
+    response = await api.get("/attendance/company", {
+      params: {
+        date: selectedDate,
+      },
     });
-
-    setCompanyAttendance(response.data?.records || []);
-
-    setSummary({
-      totalEmployees: response.data?.totalEmployees || 0,
-      checkedIn: response.data?.checkedIn || 0,
-      checkedOut: response.data?.checkedOut || 0,
-      notCheckedIn: response.data?.notCheckedIn || 0,
+  } else if (attendanceView === "range") {
+    response = await api.get("/attendance/date-range", {
+      params: {
+        startDate,
+        endDate,
+      },
     });
-  }, []);
+  } else {
+    response = await api.get("/attendance/monthly", {
+      params: {
+        month: Number(selectedMonth),
+        year: Number(selectedYear),
+      },
+    });
+  }
 
-  // =========================================
-  // LOAD ALL ATTENDANCE DATA
-  // =========================================
+  const records = response.data?.records || [];
 
-  const loadAttendance = useCallback(async () => {
-    setLoading(true);
-    try {
-      await Promise.all([
-        loadMyAttendance(),
-        loadCompanyAttendance(selectedDate),
-      ]);
-} catch (err) {
-  toast.error(
-    err.response?.data?.message ||
-      "Failed to load attendance information."
-  );
-} finally {
-      setLoading(false);
-    }
-  }, [
-    loadMyAttendance,
-    loadCompanyAttendance,
-    selectedDate,
-  ]);
+  // Single date API already returns one attendance row per employee.
+  // Range and monthly APIs return attendance arrays inside each employee row.
+  const normalizedRecords =
+    attendanceView === "single"
+      ? records
+      : records.flatMap((item) => {
+          const attendanceRecords = item.attendance || [];
+
+          if (attendanceRecords.length === 0) {
+            return [
+              {
+                employee: item.employee,
+                attendanceDate: null,
+                checkIn: null,
+                checkOut: null,
+                status: "Not Checked In",
+              },
+            ];
+          }
+
+          return attendanceRecords.map((attendance) => ({
+            ...attendance,
+            employee: item.employee,
+            attendanceDate: attendance.attendanceDate,
+          }));
+        });
+
+  setCompanyAttendance(normalizedRecords);
+
+  const totalEmployees =
+    response.data?.totalEmployees || records.length;
+
+  const checkedIn = normalizedRecords.filter(
+    (item) => Boolean(item.checkIn)
+  ).length;
+
+  const checkedOut = normalizedRecords.filter(
+    (item) => Boolean(item.checkOut)
+  ).length;
+
+  setSummary({
+    totalEmployees,
+    checkedIn,
+    checkedOut,
+    notCheckedIn: Math.max(0, totalEmployees - checkedIn),
+  });
+}, [
+  attendanceView,
+  selectedDate,
+  startDate,
+  endDate,
+  selectedMonth,
+  selectedYear,
+]);
+
+// =========================================
+// LOAD ALL ATTENDANCE DATA
+// =========================================
+
+const loadAttendance = useCallback(async () => {
+  setLoading(true);
+
+  try {
+    await Promise.all([
+      loadMyAttendance(),
+      loadCompanyAttendance(),
+    ]);
+  } catch (err) {
+    toast.error(
+      err.response?.data?.message ||
+        "Failed to load attendance information."
+    );
+  } finally {
+    setLoading(false);
+  }
+}, [loadMyAttendance, loadCompanyAttendance]);
+
+useEffect(() => {
+  loadAttendance();
+}, [loadAttendance]);
 
   useEffect(() => {
     loadAttendance();
@@ -241,6 +367,23 @@ const handleCheckOut = () => {
     }
   );
 };
+
+// =========================================
+// SEARCH EMPLOYEES
+// NAME / EMPLOYEE ID / EMAIL
+// =========================================
+
+const filteredCompanyAttendance = useMemo(() => {
+  const searchText = employeeSearch.trim().toLowerCase();
+
+  if (!searchText) {
+    return companyAttendance;
+  }
+
+  return companyAttendance.filter((record) =>
+    getEmployeeSearchText(record.employee).includes(searchText)
+  );
+}, [companyAttendance, employeeSearch]);
 
   // =========================================
   // ATTENDANCE STATUS
@@ -428,38 +571,189 @@ const handleCheckOut = () => {
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
 
-        {/* Section Header */}
-        <div className="flex flex-col justify-between gap-4 border-b border-slate-200 p-5 sm:flex-row sm:items-center">
-          <div>
-            <h2 className="text-lg font-bold text-slate-800">
-              Company Attendance
-            </h2>
+{/* Section Header */}
+<div className="space-y-5 border-b border-slate-200 p-5">
+  <div>
+    <h2 className="text-lg font-bold text-slate-800">
+      Company Attendance
+    </h2>
 
-            <p className="mt-1 text-sm text-slate-500">
-              View attendance records of company employees by date.
-            </p>
-          </div>
+    <p className="mt-1 text-sm text-slate-500">
+      View employee attendance by single date, date range or month.
+    </p>
+  </div>
 
-          <div className="w-full sm:w-56">
-            <label
-              htmlFor="attendance-date"
-              className="mb-1.5 block text-xs font-semibold text-slate-600"
+  {/* Attendance Tabs */}
+  <div className="grid grid-cols-1 gap-2 rounded-xl bg-slate-100 p-1 sm:grid-cols-3">
+    {[
+      { value: "single", label: "Single Date" },
+      { value: "range", label: "Date Range" },
+      { value: "monthly", label: "Monthly" },
+    ].map((tab) => (
+      <button
+        key={tab.value}
+        type="button"
+        onClick={() => setAttendanceView(tab.value)}
+        className={`rounded-lg px-3 py-3 text-sm font-semibold transition ${
+          attendanceView === tab.value
+            ? "bg-white text-blue-700 shadow-sm"
+            : "text-slate-600 hover:bg-white/70"
+        }`}
+      >
+        {tab.label}
+      </button>
+    ))}
+  </div>
+
+  {/* Date Selection */}
+  {attendanceView === "single" && (
+    <div className="max-w-xs">
+      <label
+        htmlFor="attendance-date"
+        className="mb-1.5 block text-xs font-semibold text-slate-600"
+      >
+        Select Date
+      </label>
+
+      <input
+        id="attendance-date"
+        type="date"
+        value={selectedDate}
+        max={today}
+        onChange={(event) => setSelectedDate(event.target.value)}
+        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+      />
+    </div>
+  )}
+
+  {attendanceView === "range" && (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div>
+        <label
+          htmlFor="attendance-start-date"
+          className="mb-1.5 block text-xs font-semibold text-slate-600"
+        >
+          Start Date
+        </label>
+
+        <input
+          id="attendance-start-date"
+          type="date"
+          value={startDate}
+          max={today}
+          onChange={(event) => setStartDate(event.target.value)}
+          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+        />
+      </div>
+
+      <div>
+        <label
+          htmlFor="attendance-end-date"
+          className="mb-1.5 block text-xs font-semibold text-slate-600"
+        >
+          End Date
+        </label>
+
+        <input
+          id="attendance-end-date"
+          type="date"
+          value={endDate}
+          min={startDate}
+          max={today}
+          onChange={(event) => setEndDate(event.target.value)}
+          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+        />
+      </div>
+    </div>
+  )}
+
+  {attendanceView === "monthly" && (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div>
+        <label
+          htmlFor="attendance-month"
+          className="mb-1.5 block text-xs font-semibold text-slate-600"
+        >
+          Select Month
+        </label>
+
+        <select
+          id="attendance-month"
+          value={selectedMonth}
+          onChange={(event) => setSelectedMonth(event.target.value)}
+          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+        >
+          {[
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+          ].map((month, index) => (
+            <option
+              key={month}
+              value={String(index + 1).padStart(2, "0")}
             >
-              Select Date
-            </label>
+              {month}
+            </option>
+          ))}
+        </select>
+      </div>
 
-            <input
-              id="attendance-date"
-              type="date"
-              value={selectedDate}
-              max={getTodayDate()}
-              onChange={(event) =>
-                setSelectedDate(event.target.value)
-              }
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            />
-          </div>
-        </div>
+      <div>
+        <label
+          htmlFor="attendance-year"
+          className="mb-1.5 block text-xs font-semibold text-slate-600"
+        >
+          Select Year
+        </label>
+
+        <input
+          id="attendance-year"
+          type="number"
+          min="1000"
+          max={currentMonth.year}
+          value={selectedYear}
+          onChange={(event) => setSelectedYear(event.target.value)}
+          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+        />
+      </div>
+    </div>
+  )}
+
+  {/* Employee Search */}
+  <div>
+    <label
+      htmlFor="attendance-search"
+      className="mb-1.5 block text-xs font-semibold text-slate-600"
+    >
+      Search Employee
+    </label>
+
+    <div className="relative">
+      <UserRound
+        size={18}
+        className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+      />
+
+      <input
+        id="attendance-search"
+        type="text"
+        value={employeeSearch}
+        onChange={(event) => setEmployeeSearch(event.target.value)}
+        placeholder="Search by employee name, ID or email..."
+        className="w-full rounded-lg border border-slate-300 bg-white py-3 pl-10 pr-4 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+      />
+    </div>
+  </div>
+</div>
 
         {/* Summary */}
         <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4">
@@ -512,22 +806,26 @@ const handleCheckOut = () => {
             <LoaderCircle size={18} className="animate-spin" />
             Loading company attendance...
           </div>
-        ) : companyAttendance.length === 0 ? (
-          <div className="p-10 text-center">
-            <Users
-              size={32}
-              className="mx-auto text-slate-300"
-            />
+) : filteredCompanyAttendance.length === 0 ? (
+  <div className="p-10 text-center">
+    <Users
+      size={32}
+      className="mx-auto text-slate-300"
+    />
 
-            <p className="mt-3 font-medium text-slate-700">
-              No employees found
-            </p>
+    <p className="mt-3 font-medium text-slate-700">
+      {employeeSearch
+        ? "No matching employees found"
+        : "No attendance records found"}
+    </p>
 
-            <p className="mt-1 text-sm text-slate-500">
-              No attendance information is available for this date.
-            </p>
-          </div>
-        ) : (
+    <p className="mt-1 text-sm text-slate-500">
+      {employeeSearch
+        ? "Try searching with another employee name, ID or email."
+        : "No attendance information is available for this selection."}
+    </p>
+  </div>
+) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[750px] text-left text-sm">
 
@@ -539,6 +837,10 @@ const handleCheckOut = () => {
 
                   <th className="px-5 py-3 font-semibold">
                     Employee ID
+                  </th>  
+
+                  <th className="px-5 py-3 font-semibold">
+                    Attendance Date
                   </th>
 
                   <th className="px-5 py-3 font-semibold">
@@ -560,7 +862,7 @@ const handleCheckOut = () => {
               </thead>
 
               <tbody className="divide-y divide-slate-100">
-                {companyAttendance.map((record, index) => {
+                {filteredCompanyAttendance.map((record, index) => {
                   const employee = record.employee;
 
                   return (
@@ -582,6 +884,9 @@ const handleCheckOut = () => {
 
                       <td className="px-5 py-4 text-slate-600">
                         {getEmployeeId(employee)}
+                      </td>
+                      <td className="px-5 py-4 text-slate-600">
+                        {formatDate(record.attendanceDate)}
                       </td>
 
                       <td className="px-5 py-4 text-slate-600">
@@ -613,9 +918,10 @@ const handleCheckOut = () => {
         )}
 
         {/* Footer */}
-        <div className="border-t border-slate-200 px-5 py-3 text-xs text-slate-500">
-          Showing attendance for {formatDate(selectedDate)}
-        </div>
+<div className="border-t border-slate-200 px-5 py-3 text-xs text-slate-500">
+  Showing {filteredCompanyAttendance.length} attendance records
+  {employeeSearch && " matching your search"}.
+</div>
 
       </section>
     </div>

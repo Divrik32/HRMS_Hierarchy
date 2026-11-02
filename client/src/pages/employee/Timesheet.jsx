@@ -1047,8 +1047,9 @@ const filteredTimesheets = useMemo(() => {
 
         <tbody className="divide-y divide-slate-100">
           {filteredTimesheets.map((item) => {
-            const isApproved = item.approvalStatus === "Approved";
-
+            const isLocked = ["Approved", "Rejected"].includes(
+              item.approvalStatus
+            );
             const employeeName =
               typeof item.employeeId === "object"
                 ? `${item.employeeId?.name || ""}${
@@ -1101,7 +1102,7 @@ const projectDisplay =
     onSave={(field, value) =>
       handleInlineUpdate(item, field, value)
     }
-    disabled={isApproved}
+    disabled={isLocked}
   />
 </td>
 
@@ -1113,7 +1114,7 @@ const projectDisplay =
                     onSave={(field, value) =>
                       handleInlineUpdate(item, field, value)
                     }
-                    disabled={isApproved}
+                    disabled={isLocked}
                   />
                 </td>
 
@@ -1127,7 +1128,7 @@ const projectDisplay =
                     onSave={(field, value) =>
                       handleInlineUpdate(item, field, value)
                     }
-                    disabled={isApproved}
+                    disabled={isLocked}
                   />
                 </td>
 
@@ -1155,7 +1156,7 @@ options={[
                     onSave={(field, value) =>
                       handleInlineUpdate(item, field, value)
                     }
-                    disabled={isApproved}
+                    disabled={isLocked}
                   />
                 </td>
 
@@ -1168,7 +1169,7 @@ options={[
                     onSave={(field, value) =>
                       handleInlineUpdate(item, field, value)
                     }
-                    disabled={isApproved}
+                    disabled={isLocked}
                   />
                 </td>
 
@@ -1187,7 +1188,7 @@ options={[
                     onSave={(field, value) =>
                       handleInlineUpdate(item, field, value)
                     }
-                    disabled={isApproved}
+                    disabled={isLocked}
                   />
                 </td>
 
@@ -1201,7 +1202,7 @@ options={[
                     onSave={(field, value) =>
                       handleInlineUpdate(item, field, value)
                     }
-                    disabled={isApproved}
+                    disabled={isLocked}
                   />
                 </td>
 
@@ -1215,7 +1216,7 @@ options={[
                     onSave={(field, value) =>
                       handleInlineUpdate(item, field, value)
                     }
-                    disabled={isApproved}
+                    disabled={isLocked}
                   />
                 </td>
 
@@ -1224,7 +1225,7 @@ options={[
   <TaskTimeCell
     variant="start"
     value={item.startTime}
-    disabled={isApproved}
+    disabled={isLocked}
     loading={timeActionId === `${item._id}-startTime`}
     onClick={() => handleTaskTime(item, "startTime")}
   />
@@ -1235,7 +1236,7 @@ options={[
   <TaskTimeCell
     variant="end"
     value={item.endTime}
-    disabled={isApproved}
+    disabled={isLocked}
     loading={timeActionId === `${item._id}-endTime`}
     onClick={() => handleTaskTime(item, "endTime")}
   />
@@ -1274,7 +1275,7 @@ options={[
                     onSave={(field, value) =>
                       handleInlineUpdate(item, field, value)
                     }
-                    disabled={isApproved}
+                    disabled={isLocked}
                   />
                 </td>
 
@@ -1288,7 +1289,7 @@ options={[
                     onSave={(field, value) =>
                       handleInlineUpdate(item, field, value)
                     }
-                    disabled={isApproved}
+                    disabled={isLocked}
                   />
                 </td>
 

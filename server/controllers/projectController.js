@@ -121,19 +121,17 @@ export const createProject = async (req, res) => {
       });
     }
 
-    const rootRoles = await Role.find({
-      _id: { $in: uniqueRoleIds },
-      companyId,
-      parentRoleId: null,
-    });
+const selectedRoles = await Role.find({
+  _id: { $in: uniqueRoleIds },
+  companyId,
+}).select("_id");
 
-    if (rootRoles.length !== uniqueRoleIds.length) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Initially assigned roles must be root roles in this company",
-      });
-    }
+if (selectedRoles.length !== uniqueRoleIds.length) {
+  return res.status(400).json({
+    success: false,
+    message: "One or more selected roles do not belong to this company",
+  });
+}
 
     const projectData = {
       projectName: projectName.trim(),

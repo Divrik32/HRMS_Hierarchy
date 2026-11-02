@@ -4,6 +4,8 @@ import {
   checkIn,
   checkOut,
   getAttendanceByDate,
+  getAttendanceByDateRange,
+  getAttendanceByMonth,
   getMyAttendance,
 } from "../controllers/attendanceController.js";
 
@@ -21,6 +23,17 @@ router.patch("/check-out", employeeAuth, checkOut);
 
 router.get("/my-attendance", employeeAuth, getMyAttendance);
 router.get("/company", employeeAuth, getAttendanceByDate);
+router.get(
+  "/date-range",
+  employeeAuth,
+  getAttendanceByDateRange
+);
+
+router.get(
+  "/monthly",
+  employeeAuth,
+  getAttendanceByMonth
+);
 
 
 // =========================================
@@ -49,6 +62,18 @@ router.get(
   "/super-admin/company",
   superAdminCompanyAuth,
   getAttendanceByDate
+);
+
+router.get(
+  "/super-admin/date-range",
+  superAdminCompanyAuth,
+  getAttendanceByDateRange
+);
+
+router.get(
+  "/super-admin/monthly",
+  superAdminCompanyAuth,
+  getAttendanceByMonth
 );
 
 export default router;

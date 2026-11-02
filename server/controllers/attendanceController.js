@@ -364,3 +364,216 @@ export const getMyAttendance = async (req, res) => {
     });
   }
 };
+
+
+// =====================================================
+// GET ATTENDANCE BY DATE RANGE — COMPANY
+// startDate and endDate are inclusive
+// =====================================================
+export const getAttendanceByDateRange = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid company information is required.",
+      });
+    }
+
+    const isValidDate = (date) => {
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return false;
+      }
+
+      const parsedDate = new Date(`${date}T00:00:00.000Z`);
+
+      return (
+        !Number.isNaN(parsedDate.getTime()) &&
+        parsedDate.toISOString().slice(0, 10) === date
+      );
+    };
+
+    if (!isValidDate(startDate) || !isValidDate(endDate)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide valid startDate and endDate in YYYY-MM-DD format.",
+      });
+    }
+
+    if (startDate > endDate) {
+      return res.status(400).json({
+        success: false,
+        message: "Start date cannot be after end date.",
+      });
+    }
+
+    const employees = await Employee.find({
+      companyId,
+      status: "active",
+    })
+      .select("name empId email departmentId roleId")
+      .populate("departmentId", "departmentName")
+      .populate("roleId", "roleName")
+      .sort({ name: 1 });
+
+    const attendanceRecords = await Attendance.find({
+      companyId,
+      attendanceDate: {
+        $gte: startDate,
+        $lte: endDate,
+      },
+    }).sort({ attendanceDate: 1 });
+
+    const attendanceMap = new Map();
+
+    attendanceRecords.forEach((record) => {
+      const employeeKey = String(record.employeeId);
+
+      if (!attendanceMap.has(employeeKey)) {
+        attendanceMap.set(employeeKey, []);
+      }
+
+      attendanceMap.get(employeeKey).push(record);
+    });
+
+    const records = employees.map((employee) => {
+      const attendance = attendanceMap.get(String(employee._id)) || [];
+
+      return {
+        employee,
+        attendance,
+        totalAttendanceDays: attendance.length,
+        checkedInDays: attendance.filter(
+          (item) => item.checkIn
+        ).length,
+        checkedOutDays: attendance.filter(
+          (item) => item.checkOut
+        ).length,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      startDate,
+      endDate,
+      totalEmployees: employees.length,
+      totalAttendanceRecords: attendanceRecords.length,
+      records,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch attendance by date range.",
+    });
+  }
+};
+
+
+// =====================================================
+// GET ATTENDANCE BY MONTH — COMPANY
+// month: 1-12, year: YYYY
+// =====================================================
+export const getAttendanceByMonth = async (req, res) => {
+  try {
+    const { month, year } = req.query;
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid company information is required.",
+      });
+    }
+
+    const selectedMonth = Number(month);
+    const selectedYear = Number(year);
+
+    if (
+      !month ||
+      !year ||
+      !Number.isInteger(selectedMonth) ||
+      selectedMonth < 1 ||
+      selectedMonth > 12 ||
+      !Number.isInteger(selectedYear) ||
+      selectedYear < 1000 ||
+      selectedYear > 9999
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid month (1-12) and year.",
+      });
+    }
+
+    const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-01`;
+
+    const lastDay = new Date(
+      Date.UTC(selectedYear, selectedMonth, 0)
+    ).getUTCDate();
+
+    const endDate = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+    const employees = await Employee.find({
+      companyId,
+      status: "active",
+    })
+      .select("name empId email departmentId roleId")
+      .populate("departmentId", "departmentName")
+      .populate("roleId", "roleName")
+      .sort({ name: 1 });
+
+    const attendanceRecords = await Attendance.find({
+      companyId,
+      attendanceDate: {
+        $gte: startDate,
+        $lte: endDate,
+      },
+    }).sort({ attendanceDate: 1 });
+
+    const attendanceMap = new Map();
+
+    attendanceRecords.forEach((record) => {
+      const employeeKey = String(record.employeeId);
+
+      if (!attendanceMap.has(employeeKey)) {
+        attendanceMap.set(employeeKey, []);
+      }
+
+      attendanceMap.get(employeeKey).push(record);
+    });
+
+    const records = employees.map((employee) => {
+      const attendance = attendanceMap.get(String(employee._id)) || [];
+
+      return {
+        employee,
+        attendance,
+        totalAttendanceDays: attendance.length,
+        checkedInDays: attendance.filter(
+          (item) => item.checkIn
+        ).length,
+        checkedOutDays: attendance.filter(
+          (item) => item.checkOut
+        ).length,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      month: selectedMonth,
+      year: selectedYear,
+      startDate,
+      endDate,
+      totalDays: lastDay,
+      totalEmployees: employees.length,
+      totalAttendanceRecords: attendanceRecords.length,
+      records,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch monthly attendance.",
+    });
+  }
+};
