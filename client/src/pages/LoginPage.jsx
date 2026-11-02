@@ -216,18 +216,23 @@ const handleSubmit = async (e) => {
                   className="absolute left-4 top-1/2 -translate-y-1/2 text-black-400"
                 />
 
-                <input
-                  id="loginEmail"
-                  type="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                  }}
-                  placeholder="Enter your email address"
-                  autoComplete="email"
-                  required
-                  className={inputClass}
-                />
+<input
+  id="loginEmail"
+  type="email"
+  value={email}
+  onKeyDown={(e) => {
+    if (e.key === " ") {
+      e.preventDefault();
+    }
+  }}
+  onChange={(e) => {
+    setEmail(e.target.value.replace(/\s/g, ""));
+  }}
+  placeholder="Enter your email address"
+  autoComplete="email"
+  required
+  className={inputClass}
+/>
               </div>
             </div>
 
