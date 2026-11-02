@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CalendarDays,
   RefreshCw,
@@ -72,6 +72,12 @@ const Timesheets = () => {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
+  // Table scroll helpers (top horizontal scrollbar + vertical scroll)
+  const topScrollRef = useRef(null);
+  const tableScrollRef = useRef(null);
+  const tableRef = useRef(null);
+  const [tableWidth, setTableWidth] = useState(2600);
+
   const loadTimesheets = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -133,6 +139,42 @@ const Timesheets = () => {
     rejected: timesheets.filter(
       (item) => item.approvalStatus === "Rejected"
     ).length,
+  };
+
+  // Keep the top scrollbar width equal to the real table width.
+  useEffect(() => {
+    const updateTableWidth = () => {
+      if (tableRef.current) {
+        setTableWidth(tableRef.current.scrollWidth);
+      }
+    };
+
+    updateTableWidth();
+
+    window.addEventListener("resize", updateTableWidth);
+
+    return () => {
+      window.removeEventListener("resize", updateTableWidth);
+    };
+  }, [loading, filteredTimesheets.length]);
+
+  // Sync top scrollbar <-> table horizontal scroll.
+  const handleTopScroll = () => {
+    const top = topScrollRef.current;
+    const table = tableScrollRef.current;
+
+    if (top && table && table.scrollLeft !== top.scrollLeft) {
+      table.scrollLeft = top.scrollLeft;
+    }
+  };
+
+  const handleTableScroll = () => {
+    const top = topScrollRef.current;
+    const table = tableScrollRef.current;
+
+    if (top && table && top.scrollLeft !== table.scrollLeft) {
+      top.scrollLeft = table.scrollLeft;
+    }
   };
 
   return (
@@ -276,126 +318,186 @@ const Timesheets = () => {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[2600px] text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-4">Employee</th>
-                  <th className="px-4 py-4">Task</th>
-                  <th className="px-4 py-4">Description</th>
-                  <th className="px-4 py-4">Project</th>
-                  <th className="px-4 py-4">Project Name</th>
-                  <th className="px-4 py-4">Training Time</th>
-                  <th className="px-4 py-4">Working Time</th>
-                  <th className="px-4 py-4">Idle Time</th>
-                  <th className="px-4 py-4">Start Time</th>
-                  <th className="px-4 py-4">End Time</th>
-                  <th className="px-4 py-4">Completion Time</th>
-                  <th className="px-4 py-4">Efficiency</th>
-                  <th className="px-4 py-4">Delay / Fast</th>
-                  <th className="px-4 py-4">Reason</th>
-                  <th className="px-4 py-4">Approval Status</th>
-                  <th className="px-4 py-4">Audited By</th>
-                  <th className="px-4 py-4">Created At</th>
-                </tr>
-              </thead>
+          <>
+            {/* Top horizontal scrollbar (synced with the table) */}
+            <div
+              ref={topScrollRef}
+              onScroll={handleTopScroll}
+              className="ts-top-scroll overflow-x-auto overflow-y-hidden border-b border-slate-100 bg-slate-50"
+            >
+              <div style={{ width: tableWidth, height: 1 }} />
+            </div>
 
-              <tbody className="divide-y divide-slate-100">
-                {filteredTimesheets.map((item) => (
-                  <tr
-                    key={item._id}
-                    className="align-top hover:bg-slate-50"
-                  >
-                    <td className="min-w-48 px-4 py-4 font-medium text-slate-700">
-                      {getEmployeeName(item.employeeId)}
-                    </td>
-
-                    <td className="min-w-48 px-4 py-4 text-slate-700">
-                      {item.task || "—"}
-                    </td>
-
-                    <td className="min-w-56 whitespace-pre-wrap px-4 py-4 text-slate-600">
-                      {item.description || "—"}
-                    </td>
-
-                    <td className="min-w-52 px-4 py-4 text-slate-700">
-                      {getProjectName(item.projectId)}
-                    </td>
-
-                    <td className="min-w-48 px-4 py-4 text-slate-700">
-                      {item.projectName || "—"}
-                    </td>
-
-                    <td className="px-4 py-4 text-slate-700">
-                      {item.allocatedTime?.trainingTime ?? 0} min
-                    </td>
-
-                    <td className="px-4 py-4 text-slate-700">
-                      {item.allocatedTime?.workingTime ?? 0} min
-                    </td>
-
-                    <td className="px-4 py-4 text-slate-700">
-                      {item.allocatedTime?.idleTime ?? 0} min
-                    </td>
-
-                    <td className="min-w-52 px-4 py-4 text-slate-600">
-                      {formatDateTime(item.startTime)}
-                    </td>
-
-                    <td className="min-w-52 px-4 py-4 text-slate-600">
-                      {formatDateTime(item.endTime)}
-                    </td>
-
-                    <td className="px-4 py-4 text-slate-700">
-                      {item.totalCompletionTime == null
-                        ? "—"
-                        : `${item.totalCompletionTime} min`}
-                    </td>
-
-                    <td className="px-4 py-4">
-                      {item.efficiency == null ? (
-                        "—"
-                      ) : (
-                        <span className="font-semibold text-blue-700">
-                          {item.efficiency}%
-                        </span>
-                      )}
-                    </td>
-
-                    <td className="px-4 py-4 text-slate-700">
-                      {item.remarks?.delayFast || "—"}
-                    </td>
-
-                    <td className="min-w-48 whitespace-pre-wrap px-4 py-4 text-slate-600">
-                      {item.remarks?.reason || "—"}
-                    </td>
-
-                    <td className="px-4 py-4">
-                      <span
-                        className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getStatusStyle(
-                          item.approvalStatus || "Pending"
-                        )}`}
-                      >
-                        {item.approvalStatus || "Pending"}
-                      </span>
-                    </td>
-
-                    <td className="px-4 py-4 text-slate-600">
-                      {typeof item.auditedBy === "object"
-                        ? item.auditedBy?.name || "—"
-                        : "—"}
-                    </td>
-
-                    <td className="min-w-52 px-4 py-4 text-slate-600">
-                      {formatDateTime(item.createdAt)}
-                    </td>
+            {/* Table: vertical scroll on the right + horizontal scroll */}
+            <div
+              ref={tableScrollRef}
+              onScroll={handleTableScroll}
+              className="ts-table-scroll max-h-[70vh] overflow-auto"
+            >
+              <table
+                ref={tableRef}
+                className="ts-table w-full min-w-[2600px] text-left text-sm"
+              >
+                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-4">Employee</th>
+                    <th className="px-4 py-4">Task</th>
+                    <th className="px-4 py-4">Description</th>
+                    <th className="px-4 py-4">Project</th>
+                    <th className="px-4 py-4">Project Name</th>
+                    <th className="px-4 py-4">Training Time</th>
+                    <th className="px-4 py-4">Working Time</th>
+                    <th className="px-4 py-4">Idle Time</th>
+                    <th className="px-4 py-4">Start Time</th>
+                    <th className="px-4 py-4">End Time</th>
+                    <th className="px-4 py-4">Completion Time</th>
+                    <th className="px-4 py-4">Efficiency</th>
+                    <th className="px-4 py-4">Delay / Fast</th>
+                    <th className="px-4 py-4">Reason</th>
+                    <th className="px-4 py-4">Approval Status</th>
+                    <th className="px-4 py-4">Audited By</th>
+                    <th className="px-4 py-4">Created At</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {filteredTimesheets.map((item) => (
+                    <tr
+                      key={item._id}
+                      className="align-top hover:bg-slate-50"
+                    >
+                      <td className="min-w-48 px-4 py-4 font-medium text-slate-700">
+                        {getEmployeeName(item.employeeId)}
+                      </td>
+
+                      <td className="min-w-48 px-4 py-4 text-slate-700">
+                        {item.task || "—"}
+                      </td>
+
+                      <td className="min-w-56 whitespace-pre-wrap px-4 py-4 text-slate-600">
+                        {item.description || "—"}
+                      </td>
+
+                      <td className="min-w-52 px-4 py-4 text-slate-700">
+                        {getProjectName(item.projectId)}
+                      </td>
+
+                      <td className="min-w-48 px-4 py-4 text-slate-700">
+                        {item.projectName || "—"}
+                      </td>
+
+                      <td className="px-4 py-4 text-slate-700">
+                        {item.allocatedTime?.trainingTime ?? 0} min
+                      </td>
+
+                      <td className="px-4 py-4 text-slate-700">
+                        {item.allocatedTime?.workingTime ?? 0} min
+                      </td>
+
+                      <td className="px-4 py-4 text-slate-700">
+                        {item.allocatedTime?.idleTime ?? 0} min
+                      </td>
+
+                      <td className="min-w-52 px-4 py-4 text-slate-600">
+                        {formatDateTime(item.startTime)}
+                      </td>
+
+                      <td className="min-w-52 px-4 py-4 text-slate-600">
+                        {formatDateTime(item.endTime)}
+                      </td>
+
+                      <td className="px-4 py-4 text-slate-700">
+                        {item.totalCompletionTime == null
+                          ? "—"
+                          : `${item.totalCompletionTime} min`}
+                      </td>
+
+                      <td className="px-4 py-4">
+                        {item.efficiency == null ? (
+                          "—"
+                        ) : (
+                          <span className="font-semibold text-blue-700">
+                            {item.efficiency}%
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-4 text-slate-700">
+                        {item.remarks?.delayFast || "—"}
+                      </td>
+
+                      <td className="min-w-48 whitespace-pre-wrap px-4 py-4 text-slate-600">
+                        {item.remarks?.reason || "—"}
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <span
+                          className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getStatusStyle(
+                            item.approvalStatus || "Pending"
+                          )}`}
+                        >
+                          {item.approvalStatus || "Pending"}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-4 text-slate-600">
+                        {typeof item.auditedBy === "object"
+                          ? item.auditedBy?.name || "—"
+                          : "—"}
+                      </td>
+
+                      <td className="min-w-52 px-4 py-4 text-slate-600">
+                        {formatDateTime(item.createdAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
+
+      <style>{`
+        /* Sticky table header while scrolling vertically */
+        .ts-table thead th {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          background-color: #f8fafc;
+        }
+
+        /* Always-visible, slim scrollbars for the table area */
+        .ts-top-scroll::-webkit-scrollbar,
+        .ts-table-scroll::-webkit-scrollbar {
+          height: 12px;
+          width: 12px;
+        }
+
+        .ts-top-scroll::-webkit-scrollbar-track,
+        .ts-table-scroll::-webkit-scrollbar-track {
+          background: #f1f5f9;
+        }
+
+        .ts-top-scroll::-webkit-scrollbar-thumb,
+        .ts-table-scroll::-webkit-scrollbar-thumb {
+          background: #94a3b8;
+          border-radius: 9999px;
+          border: 3px solid #f1f5f9;
+        }
+
+        .ts-top-scroll::-webkit-scrollbar-thumb:hover,
+        .ts-table-scroll::-webkit-scrollbar-thumb:hover {
+          background: #64748b;
+        }
+
+        /* Hide only the bottom horizontal scrollbar of the table
+           (top scrollbar and right vertical scrollbar stay) */
+        .ts-table-scroll::-webkit-scrollbar:horizontal {
+          display: none;
+          height: 0;
+        }
+      `}</style>
     </div>
   );
 };

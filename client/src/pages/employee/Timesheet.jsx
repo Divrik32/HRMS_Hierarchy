@@ -1,5 +1,4 @@
-
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
   Clock3,
@@ -14,6 +13,8 @@ import {
   Clock,
   Pencil,
   BriefcaseBusiness,
+  Play,
+  Square,
 } from "lucide-react";
 
 import api from "../../api/axios";
@@ -37,12 +38,73 @@ const formatDateTime = (value) => {
   if (Number.isNaN(date.getTime())) return "—";
 
   return date.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
     day: "2-digit",
     month: "short",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    hour12: true,
   });
+};
+
+const formatDateOnly = (value) => {
+  if (!value) return "";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toLocaleDateString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+const formatTimeOnly = (value) => {
+  if (!value) return "";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toLocaleTimeString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
+
+const getISTDateTime = () => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+
+  const values = {};
+
+  parts.forEach(({ type, value }) => {
+    values[type] = value;
+  });
+
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    time: `${values.hour}:${values.minute}`,
+  };
+};
+
+const convertISTToISOString = (date, time) => {
+  if (!date || !time) return null;
+
+  return new Date(`${date}T${time}:00+05:30`).toISOString();
 };
 
 const toDateTimeLocal = (value) => {
@@ -59,6 +121,88 @@ const toDateTimeLocal = (value) => {
   return localDate.toISOString().slice(0, 16);
 };
 
+const TaskTimeCell = ({ value, variant, loading, disabled, onClick }) => {
+  const isStart = variant === "start";
+  const hasValue = Boolean(value);
+
+  const theme = isStart
+    ? {
+        badge: "bg-blue-100 text-blue-600",
+        time: "text-blue-900",
+        ring: "ring-blue-100",
+        edit: "text-blue-500 hover:bg-blue-100 hover:text-blue-700",
+        action:
+          "bg-gradient-to-br from-blue-600 to-indigo-500 shadow-blue-200 hover:shadow-blue-300",
+      }
+    : {
+        badge: "bg-emerald-100 text-emerald-600",
+        time: "text-emerald-900",
+        ring: "ring-emerald-100",
+        edit: "text-emerald-500 hover:bg-emerald-100 hover:text-emerald-700",
+        action:
+          "bg-gradient-to-br from-emerald-600 to-teal-500 shadow-emerald-200 hover:shadow-emerald-300",
+      };
+
+  const Icon = isStart ? Play : Square;
+
+  // Not set yet: one clean action button
+  if (!hasValue) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled || loading}
+        className={`group inline-flex w-44 items-center justify-center gap-2 rounded-full px-4 py-2.5 text-xs font-semibold text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${theme.action}`}
+      >
+        {loading ? (
+          <RefreshCw size={14} className="animate-spin" />
+        ) : (
+          <Icon size={13} className="fill-white" />
+        )}
+
+        {loading ? "Saving..." : isStart ? "Start Task" : "End Task"}
+      </button>
+    );
+  }
+
+  // Already set: compact time chip with a small round edit button
+  return (
+    <div
+      className={`flex w-44 items-center gap-3 rounded-2xl bg-white p-2 pr-2.5 shadow-sm ring-1 ${theme.ring}`}
+    >
+      <div
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${theme.badge}`}
+      >
+        <Icon size={15} className="fill-current" />
+      </div>
+
+      <div className="min-w-0 flex-1 leading-tight">
+        <p className={`text-sm font-bold ${theme.time}`}>
+          {formatTimeOnly(value)}
+        </p>
+        <p className="mt-0.5 text-[11px] text-slate-400">
+          {formatDateOnly(value)}
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled || loading}
+        title={isStart ? "Modify Start Time" : "Modify End Time"}
+        aria-label={isStart ? "Modify Start Time" : "Modify End Time"}
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all duration-150 active:scale-90 disabled:cursor-not-allowed disabled:opacity-40 ${theme.edit}`}
+      >
+        {loading ? (
+          <RefreshCw size={14} className="animate-spin" />
+        ) : (
+          <Pencil size={14} />
+        )}
+      </button>
+    </div>
+  );
+};
+
 const InlineEditableCell = ({
   field,
   value,
@@ -68,7 +212,7 @@ const InlineEditableCell = ({
   disabled = false,
   displayValue,
 }) => {
-  const [editing, setEditing] = useState(false);
+    const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
   const startEditing = () => {
     if (disabled) return;
@@ -220,6 +364,24 @@ const Timesheet = () => {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
+    const [timeModal, setTimeModal] = useState({
+      open: false,
+      timesheet: null,
+      field: "",
+      title: "",
+    });
+    
+    const [modifiedDate, setModifiedDate] = useState("");
+    const [modifiedTime, setModifiedTime] = useState("");
+    const [timeSaving, setTimeSaving] = useState(false);
+    const [timeActionId, setTimeActionId] = useState("");
+
+    // Table scroll helpers (top horizontal scrollbar + vertical scroll)
+    const topScrollRef = useRef(null);
+    const tableScrollRef = useRef(null);
+    const tableRef = useRef(null);
+    const [tableWidth, setTableWidth] = useState(2800);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -348,6 +510,94 @@ const handleInlineUpdate = async (timesheet, field, value) => {
     );
 
     return false;
+  }
+};
+
+const handleTaskTime = async (timesheet, field) => {
+  if (timesheet.approvalStatus === "Approved") return;
+
+  const existingTime = timesheet[field];
+
+  // If time is already set, open modification modal.
+  if (existingTime) {
+    const currentIST = getISTDateTime();
+
+    setTimeModal({
+      open: true,
+      timesheet,
+      field,
+      title: field === "startTime"
+        ? "Modify Start Time"
+        : "Modify End Time",
+    });
+
+    setModifiedDate(currentIST.date);
+    setModifiedTime(currentIST.time);
+
+    return;
+  }
+
+  // First click: save current time automatically.
+  const currentTime = new Date().toISOString();
+
+  setTimeActionId(`${timesheet._id}-${field}`);
+
+  const success = await handleInlineUpdate(
+    timesheet,
+    field,
+    currentTime
+  );
+
+  setTimeActionId("");
+
+  if (success) {
+    toast.success(
+      field === "startTime"
+        ? "Task started successfully."
+        : "Task ended successfully."
+    );
+  }
+};
+
+const handleModifiedTimeSave = async () => {
+  if (!modifiedDate || !modifiedTime) {
+    toast.error("Please select both date and time.");
+    return;
+  }
+
+  const selectedTime = convertISTToISOString(
+    modifiedDate,
+    modifiedTime
+  );
+
+  if (!selectedTime) {
+    toast.error("Invalid date or time.");
+    return;
+  }
+
+  const { timesheet, field } = timeModal;
+
+  if (!timesheet || !field) return;
+
+  setTimeSaving(true);
+
+  try {
+    const success = await handleInlineUpdate(
+      timesheet,
+      field,
+      selectedTime
+    );
+
+    if (success) {
+      setTimeModal({
+        open: false,
+        timesheet: null,
+        field: "",
+        title: "",
+      });
+    }
+  } finally {
+    setTimeSaving(false);
   }
 };
 
@@ -519,6 +769,42 @@ const filteredTimesheets = useMemo(() => {
       ).length,
     };
   }, [timesheets]);
+
+  // Keep the top scrollbar width equal to the real table width.
+  useEffect(() => {
+    const updateTableWidth = () => {
+      if (tableRef.current) {
+        setTableWidth(tableRef.current.scrollWidth);
+      }
+    };
+
+    updateTableWidth();
+
+    window.addEventListener("resize", updateTableWidth);
+
+    return () => {
+      window.removeEventListener("resize", updateTableWidth);
+    };
+  }, [loading, filteredTimesheets.length]);
+
+  // Sync top scrollbar <-> table horizontal scroll.
+  const handleTopScroll = () => {
+    const top = topScrollRef.current;
+    const table = tableScrollRef.current;
+
+    if (top && table && table.scrollLeft !== top.scrollLeft) {
+      table.scrollLeft = top.scrollLeft;
+    }
+  };
+
+  const handleTableScroll = () => {
+    const top = topScrollRef.current;
+    const table = tableScrollRef.current;
+
+    if (top && table && top.scrollLeft !== table.scrollLeft) {
+      top.scrollLeft = table.scrollLeft;
+    }
+  };
 
   if (loading) {
     return (
@@ -716,8 +1002,26 @@ const filteredTimesheets = useMemo(() => {
       </button>
     </div>
   ) : (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[2800px] text-left text-sm">
+    <>
+      {/* Top horizontal scrollbar (synced with the table) */}
+      <div
+        ref={topScrollRef}
+        onScroll={handleTopScroll}
+        className="ts-top-scroll overflow-x-auto overflow-y-hidden border-b border-slate-100 bg-slate-50"
+      >
+        <div style={{ width: tableWidth, height: 1 }} />
+      </div>
+
+      {/* Table: vertical scroll on the right + horizontal scroll */}
+      <div
+        ref={tableScrollRef}
+        onScroll={handleTableScroll}
+        className="ts-table-scroll max-h-[70vh] overflow-auto"
+      >
+        <table
+          ref={tableRef}
+          className="ts-table w-full min-w-[2800px] text-left text-sm"
+        >
         <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-4 py-4">Employee</th>
@@ -725,6 +1029,7 @@ const filteredTimesheets = useMemo(() => {
             <th className="px-4 py-4">Description</th>
             <th className="px-4 py-4">Project</th>
             <th className="px-4 py-4">Project Name</th>
+            <th className="px-4 py-4">Allocation Time</th>
             <th className="px-4 py-4">Training Time</th>
             <th className="px-4 py-4">Working Time</th>
             <th className="px-4 py-4">Idle Time</th>
@@ -867,6 +1172,11 @@ options={[
                   />
                 </td>
 
+                {/* Allocation Time */}
+<td className="min-w-52 px-4 py-4 whitespace-nowrap text-slate-700">
+  {formatDateTime(item.createdAt)}
+</td>
+
                 {/* Training Time */}
                 <td className="min-w-36 px-4 py-4">
                   <InlineEditableCell
@@ -909,33 +1219,27 @@ options={[
                   />
                 </td>
 
-                {/* Start Time */}
-                <td className="min-w-56 px-4 py-4">
-                  <InlineEditableCell
-                    field="startTime"
-                    value={item.startTime}
-                    type="datetime-local"
-                    displayValue={formatDateTime(item.startTime)}
-                    onSave={(field, value) =>
-                      handleInlineUpdate(item, field, value)
-                    }
-                    disabled={isApproved}
-                  />
-                </td>
+{/* Start Time */}
+<td className="min-w-52 px-4 py-4">
+  <TaskTimeCell
+    variant="start"
+    value={item.startTime}
+    disabled={isApproved}
+    loading={timeActionId === `${item._id}-startTime`}
+    onClick={() => handleTaskTime(item, "startTime")}
+  />
+</td>
 
-                {/* End Time */}
-                <td className="min-w-56 px-4 py-4">
-                  <InlineEditableCell
-                    field="endTime"
-                    value={item.endTime}
-                    type="datetime-local"
-                    displayValue={formatDateTime(item.endTime)}
-                    onSave={(field, value) =>
-                      handleInlineUpdate(item, field, value)
-                    }
-                    disabled={isApproved}
-                  />
-                </td>
+{/* End Time */}
+<td className="min-w-52 px-4 py-4">
+  <TaskTimeCell
+    variant="end"
+    value={item.endTime}
+    disabled={isApproved}
+    loading={timeActionId === `${item._id}-endTime`}
+    onClick={() => handleTaskTime(item, "endTime")}
+  />
+</td>
 
                 {/* Total Completion Time - calculated/read only */}
                 <td className="min-w-40 px-4 py-4 text-slate-700">
@@ -1030,10 +1334,260 @@ options={[
             );
           })}
         </tbody>
-      </table>
-    </div>
+        </table>
+      </div>
+    </>
   )}
 </section>
+
+{/* Modify Start / End Time Modal */}
+{timeModal.open && (() => {
+  const isStart = timeModal.field === "startTime";
+  const currentValue = timeModal.timesheet?.[timeModal.field];
+
+  const accent = isStart
+    ? {
+        headerBg: "from-blue-600 to-blue-500",
+        iconBg: "bg-white/20",
+        softBox: "border-blue-100 bg-blue-50",
+        softText: "text-blue-700",
+        focus:
+          "focus:border-blue-500 focus:ring-4 focus:ring-blue-100",
+        button:
+          "bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 shadow-blue-200",
+      }
+    : {
+        headerBg: "from-emerald-600 to-emerald-500",
+        iconBg: "bg-white/20",
+        softBox: "border-emerald-100 bg-emerald-50",
+        softText: "text-emerald-700",
+        focus:
+          "focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100",
+        button:
+          "bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 shadow-emerald-200",
+      };
+
+  const closeModal = () => {
+    if (timeSaving) return;
+
+    setTimeModal({
+      open: false,
+      timesheet: null,
+      field: "",
+      title: "",
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+      onClick={closeModal}
+    >
+      <div
+        className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {/* Header */}
+        <div
+          className={`relative bg-gradient-to-r ${accent.headerBg} px-6 py-5 text-white`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className={`rounded-2xl ${accent.iconBg} p-3`}>
+                <Clock3 size={22} />
+              </div>
+
+              <div>
+                <h2 className="text-lg font-bold leading-tight">
+                  {timeModal.title}
+                </h2>
+                <p className="mt-0.5 text-xs text-white/80">
+                  Indian Standard Time (IST)
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={closeModal}
+              disabled={timeSaving}
+              aria-label="Close"
+              className="rounded-xl p-2 text-white/80 transition hover:bg-white/20 hover:text-white disabled:opacity-50"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="space-y-5 p-6">
+          {/* Current saved time */}
+          <div className={`rounded-2xl border p-4 ${accent.softBox}`}>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Current {isStart ? "Start" : "End"} Time
+            </p>
+            <p className={`mt-1 text-base font-bold ${accent.softText}`}>
+              {formatDateTime(currentValue)}
+            </p>
+          </div>
+
+          {/* Inputs */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+                <CalendarDays size={15} className="text-slate-400" />
+                New Date
+              </label>
+
+              <input
+                type="date"
+                value={modifiedDate}
+                onChange={(event) => setModifiedDate(event.target.value)}
+                disabled={timeSaving}
+                className={`w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition ${accent.focus} disabled:bg-slate-100`}
+              />
+            </div>
+
+<div>
+  <label className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+    <Clock3 size={15} className="text-slate-400" />
+    New Time
+  </label>
+
+  {(() => {
+    const [currentHour = "00", currentMinute = "00"] =
+      (modifiedTime || "00:00").split(":");
+
+    const hourNumber = Number(currentHour);
+
+    const displayHour = String(
+      hourNumber % 12 || 12
+    ).padStart(2, "0");
+
+    const period = hourNumber >= 12 ? "PM" : "AM";
+
+    const updateTime = (hour, minute, ampm) => {
+      let convertedHour = Number(hour);
+
+      if (ampm === "AM") {
+        convertedHour = convertedHour === 12 ? 0 : convertedHour;
+      } else {
+        convertedHour = convertedHour === 12 ? 12 : convertedHour + 12;
+      }
+
+      setModifiedTime(
+        `${String(convertedHour).padStart(2, "0")}:${minute}`
+      );
+    };
+
+    return (
+      <div className="grid grid-cols-3 gap-2">
+        {/* Hour */}
+        <select
+          value={displayHour}
+          onChange={(event) =>
+            updateTime(
+              event.target.value,
+              currentMinute,
+              period
+            )
+          }
+          disabled={timeSaving}
+          className={`w-full rounded-xl border border-slate-300 bg-white px-2 py-2.5 text-sm text-slate-800 outline-none transition ${accent.focus} disabled:bg-slate-100`}
+        >
+          {Array.from({ length: 12 }, (_, index) => {
+            const hour = String(index + 1).padStart(2, "0");
+
+            return (
+              <option key={hour} value={hour}>
+                {hour}
+              </option>
+            );
+          })}
+        </select>
+
+        {/* Minute */}
+        <select
+          value={currentMinute}
+          onChange={(event) =>
+            updateTime(
+              displayHour,
+              event.target.value,
+              period
+            )
+          }
+          disabled={timeSaving}
+          className={`w-full rounded-xl border border-slate-300 bg-white px-2 py-2.5 text-sm text-slate-800 outline-none transition ${accent.focus} disabled:bg-slate-100`}
+        >
+          {Array.from({ length: 60 }, (_, index) => {
+            const minute = String(index).padStart(2, "0");
+
+            return (
+              <option key={minute} value={minute}>
+                {minute}
+              </option>
+            );
+          })}
+        </select>
+
+        {/* AM / PM */}
+        <select
+          value={period}
+          onChange={(event) =>
+            updateTime(
+              displayHour,
+              currentMinute,
+              event.target.value
+            )
+          }
+          disabled={timeSaving}
+          className={`w-full rounded-xl border border-slate-300 bg-white px-2 py-2.5 text-sm font-semibold text-slate-800 outline-none transition ${accent.focus} disabled:bg-slate-100`}
+        >
+          <option value="AM">AM</option>
+          <option value="PM">PM</option>
+        </select>
+      </div>
+    );
+  })()}
+</div>
+          </div>
+
+          <p className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">
+            <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+            Time zone: Asia/Kolkata (UTC +05:30)
+          </p>
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4">
+          <button
+            type="button"
+            onClick={closeModal}
+            disabled={timeSaving}
+            className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            onClick={handleModifiedTimeSave}
+            disabled={timeSaving || !modifiedDate || !modifiedTime}
+            className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-md transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 ${accent.button}`}
+          >
+            {timeSaving ? (
+              <RefreshCw size={16} className="animate-spin" />
+            ) : (
+              <CheckCircle2 size={16} />
+            )}
+
+            {timeSaving ? "Updating..." : "Update Time"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+})()}
 
         {/* Create / edit modal */}
         {showForm && (
@@ -1229,6 +1783,45 @@ options={[
 
         .form-input-custom::placeholder {
           color: #94a3b8;
+        }
+
+        /* Sticky table header while scrolling vertically */
+        .ts-table thead th {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          background-color: #f8fafc;
+        }
+
+        /* Always-visible, slim scrollbars for the table area */
+        .ts-top-scroll::-webkit-scrollbar,
+        .ts-table-scroll::-webkit-scrollbar {
+          height: 12px;
+          width: 12px;
+        }
+
+        .ts-top-scroll::-webkit-scrollbar-track,
+        .ts-table-scroll::-webkit-scrollbar-track {
+          background: #f1f5f9;
+        }
+
+        .ts-top-scroll::-webkit-scrollbar-thumb,
+        .ts-table-scroll::-webkit-scrollbar-thumb {
+          background: #94a3b8;
+          border-radius: 9999px;
+          border: 3px solid #f1f5f9;
+        }
+
+        .ts-top-scroll::-webkit-scrollbar-thumb:hover,
+        .ts-table-scroll::-webkit-scrollbar-thumb:hover {
+          background: #64748b;
+        }
+
+        /* Hide only the bottom horizontal scrollbar of the table
+           (top scrollbar and right vertical scrollbar stay) */
+        .ts-table-scroll::-webkit-scrollbar:horizontal {
+          display: none;
+          height: 0;
         }
       `}</style>
     </div>
