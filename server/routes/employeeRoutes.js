@@ -23,10 +23,12 @@ import {
   verifyOtp,
   resetPassword,
   resendOtp,
+  getAllCompanyEmployees,
 } from "../controllers/employeeController.js";
 
 import superAdminAuth from "../middleware/superAdminAuth.js";
 import employeeAuth from "../middleware/employeeAuth.js";
+import superAdminCompanyAuth from "../middleware/superAdminCompanyAuth.js";
 
 const router = express.Router();
 
@@ -141,5 +143,22 @@ router.patch(
 );
 
 router.delete("/:employeeId", superAdminAuth, deleteEmployee);
+// =========================================
+// COMPANY EMPLOYEES
+// =========================================
+
+// Super Admin: Fetch employees of selected company
+router.get(
+  "/company/employees",
+  superAdminCompanyAuth,
+  getAllCompanyEmployees
+);
+
+// Employee / HR: Fetch employees of own company
+router.get(
+  "/my-company/employees",
+  employeeAuth,
+  getAllCompanyEmployees
+);
 
 export default router;

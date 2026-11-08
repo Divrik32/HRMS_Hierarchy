@@ -1330,3 +1330,49 @@ export const resendOtp = async (req, res) => {
     });
   }
 };
+
+// =========================================
+// GET ALL EMPLOYEES OF AUTHENTICATED COMPANY
+// For Super Admin + Employee
+// =========================================
+export const getAllCompanyEmployees = async (req, res) => {
+  try {
+    const companyId =
+      req.user?.role === "superadmin"
+        ? req.companyId
+        : req.user?.companyId;
+
+    if (!companyId || !mongoose.Types.ObjectId.isValid(companyId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid company ID.",
+      });
+    }
+
+    const employees = await Employee.find({
+      companyId,
+      status: "active",
+    })
+      .select(
+        "_id empId name email phone departmentId roleId profilePic status"
+      )
+      .populate("departmentId", "departmentName")
+      .populate("roleId", "roleName")
+      .sort({ name: 1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      totalEmployees: employees.length,
+      employees,
+    });
+  } catch (error) {
+    console.error("Get All Company Employees Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch company employees.",
+      error: error.message,
+    });
+  }
+};

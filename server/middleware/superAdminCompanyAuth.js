@@ -1,4 +1,3 @@
-
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import SuperAdmin from "../models/SuperAdmin.js";

@@ -1053,6 +1053,7 @@ const closeModal = () => {
                 <div>
                   <label className={labelClass}>Employee ID *</label>
                   <input
+                    disabled
                     required
                     name="empId"
                     value={form.empId}

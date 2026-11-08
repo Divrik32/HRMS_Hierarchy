@@ -577,3 +577,191 @@ export const getAttendanceByMonth = async (req, res) => {
     });
   }
 };
+
+// =====================================================
+// HR UPDATE / ADD EMPLOYEE ATTENDANCE TIME
+// =====================================================
+export const updateEmployeeAttendanceTime = async (req, res) => {
+  try {
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid company information is required.",
+      });
+    }
+
+    // Only HR / Head Recruiter employee can update attendance.
+    if (req.user?.role !== "employee") {
+      return res.status(403).json({
+        success: false,
+        message: "Only HR can modify employee attendance.",
+      });
+    }
+
+    const hr = await Employee.findOne({
+      _id: req.user.id,
+      companyId,
+      status: "active",
+    })
+      .populate("roleId", "roleName")
+      .select("_id roleId");
+
+    const roleName = hr?.roleId?.roleName?.trim().toLowerCase();
+
+    if (!hr || !["hr", "head recruiter"].includes(roleName)) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to modify attendance.",
+      });
+    }
+
+    const { employeeId, date, checkInTime, checkOutTime } = req.body;
+
+    if (
+      !employeeId ||
+      !mongoose.Types.ObjectId.isValid(employeeId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid employee ID is required.",
+      });
+    }
+
+    // Validate date
+    const isValidDate = (value) => {
+      if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return false;
+      }
+
+      const parsed = new Date(`${value}T00:00:00.000Z`);
+
+      return (
+        !Number.isNaN(parsed.getTime()) &&
+        parsed.toISOString().slice(0, 10) === value
+      );
+    };
+
+    if (!isValidDate(date)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid date in YYYY-MM-DD format is required.",
+      });
+    }
+
+    // At least one time must be provided.
+    if (checkInTime === undefined && checkOutTime === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide check-in or check-out time.",
+      });
+    }
+
+    // Validate time format
+    const isValidTime = (value) =>
+      typeof value === "string" &&
+      /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+
+    if (
+      checkInTime !== undefined &&
+      !isValidTime(checkInTime)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid check-in time. Use HH:mm format.",
+      });
+    }
+
+    if (
+      checkOutTime !== undefined &&
+      !isValidTime(checkOutTime)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid check-out time. Use HH:mm format.",
+      });
+    }
+
+    // Verify employee belongs to the same company.
+    const employee = await Employee.findOne({
+      _id: employeeId,
+      companyId,
+      status: "active",
+    }).select("_id name empId");
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "Active employee not found in this company.",
+      });
+    }
+
+    // Convert India local date and time into Date objects.
+    const createIndiaDateTime = (time) => {
+      if (time === null) return null;
+
+      return new Date(`${date}T${time}:00+05:30`);
+    };
+
+    // Find existing attendance or create a new one.
+    let attendance = await Attendance.findOne({
+      employeeId: employee._id,
+      companyId,
+      attendanceDate: date,
+    });
+
+    if (!attendance) {
+      attendance = new Attendance({
+        employeeId: employee._id,
+        companyId,
+        attendanceDate: date,
+      });
+    }
+
+    // Update only the fields provided by HR.
+    if (checkInTime !== undefined) {
+      attendance.checkIn = createIndiaDateTime(checkInTime);
+    }
+
+    if (checkOutTime !== undefined) {
+      attendance.checkOut = createIndiaDateTime(checkOutTime);
+    }
+
+    // Checkout cannot be earlier than or equal to check-in.
+    if (
+      attendance.checkIn &&
+      attendance.checkOut &&
+      attendance.checkOut <= attendance.checkIn
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Check-out time must be later than check-in time.",
+      });
+    }
+
+    attendance.status = attendance.checkOut
+      ? "Present"
+      : "Incomplete";
+
+    await attendance.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Employee attendance updated successfully.",
+      employee: {
+        employeeId: employee._id,
+        name: employee.name,
+        empId: employee.empId,
+      },
+      attendance,
+    });
+  } catch (error) {
+    console.error("Update Employee Attendance Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to update employee attendance.",
+    });
+  }
+};

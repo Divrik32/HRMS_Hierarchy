@@ -14,8 +14,12 @@ import projectRoutes from "./routes/projectRoutes.js";
 import employeeRoutes from "./routes/employeeRoutes.js";
 import timesheetRoutes from "./routes/timesheetRoutes.js";
 import attendanceRoutes from "./routes/attendanceRoutes.js";
+import holidayRoutes from "./routes/holidayRoutes.js";
+import leaveRoutes from "./routes/leaveRoutes.js";
+import roleHierarchyRoutes from "./routes/roleHierarchyRoutes.js";
+import absentRoutes from "./routes/absentRoutes.js";
 import { startWeeklyTimesheetReminderCron } from "./services/weeklyTimesheetReminder.js";
-
+import { startLeaveAccrualJob } from "./jobs/leaveAccrualJob.js";
 dotenv.config();
 
 dns.setServers(["1.1.1.1", "8.8.8.8"]);
@@ -57,6 +61,10 @@ app.use("/api/projects", projectRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/timesheets", timesheetRoutes);
 app.use("/api/attendance", attendanceRoutes);
+app.use("/api/holidays", holidayRoutes);
+app.use("/api/leaves", leaveRoutes);
+app.use("/api/role-hierarchy", roleHierarchyRoutes);
+app.use("/api/absent", absentRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -66,11 +74,22 @@ app.get("/", (req, res) => {
   });
 });
 
-// Server
 const PORT = process.env.PORT || 5003;
 
-app.listen(PORT, () => {
-  console.log(`HRMS Server running on port ${PORT}`);
-  // Start weekly timesheet reminder cron job
-  startWeeklyTimesheetReminderCron();
-});
+const startServer = async () => {
+  try {
+    await connectDB();
+
+    await startLeaveAccrualJob();
+
+    app.listen(PORT, () => {
+      console.log(`HRMS Server running on port ${PORT}`);
+      startWeeklyTimesheetReminderCron();
+    });
+  } catch (error) {
+    console.error("Server startup failed:", error);
+    process.exit(1);
+  }
+};
+
+startServer();

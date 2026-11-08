@@ -7,6 +7,7 @@ import {
   getAttendanceByDateRange,
   getAttendanceByMonth,
   getMyAttendance,
+  updateEmployeeAttendanceTime,
 } from "../controllers/attendanceController.js";
 
 import employeeAuth from "../middleware/employeeAuth.js";
@@ -74,6 +75,11 @@ router.get(
   "/super-admin/monthly",
   superAdminCompanyAuth,
   getAttendanceByMonth
+);
+router.put(
+  "/update-employee-time",
+  employeeAuth,
+  updateEmployeeAttendanceTime
 );
 
 export default router;
