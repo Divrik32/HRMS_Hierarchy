@@ -62,10 +62,19 @@ registeredEmail: {
   ],
 },
 
-    password: {
-      type: String,
-      required: [true, "Password is required"],
+password: {
+  type: String,
+  required: [true, "Password is required"],
+  validate: {
+    validator: function (value) {
+      return /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9\s])\S{8,}$/.test(
+        value
+      );
     },
+    message:
+      "Password must contain at least 8 characters, including a letter, number and special character.",
+  },
+},
 
     resetOtp: {
       type: String,
@@ -77,12 +86,18 @@ registeredEmail: {
       default: null,
     },
 
-    phone: {
-      type: String,
-      required: [true, "Phone number is required"],
-      trim: true,
-      match: [/^[6-9]\d{9}$/, "Enter a valid 10-digit mobile number."],
+phone: {
+  type: String,
+  required: [true, "Phone number is required"],
+  trim: true,
+  validate: {
+    validator: function (value) {
+      return /^\+[1-9]\d{0,2}\d{10}$/.test(value);
     },
+    message:
+      "Phone number must contain a country code and exactly 10 digits.",
+  },
+},
 
     website: {
       type: String,

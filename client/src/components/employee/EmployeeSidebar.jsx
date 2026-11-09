@@ -33,6 +33,25 @@ const EmployeeSidebar = ({ open, employee }) => {
   const isHR = ["hr", "head recruiter"].includes(
     roleName.toLowerCase()
   );
+const normalizedDepartmentName =
+  (employee?.departmentId?.departmentName || "").trim().toLowerCase();
+
+const normalizedRoleName = roleName.toLowerCase();
+
+const itDepartments = [
+  "it",
+  "information technology",
+  "accessibility",
+  "functional testing",
+];
+
+const isITDepartment = itDepartments.includes(
+  normalizedDepartmentName
+);
+
+const isITVicePresident =
+  isITDepartment &&
+  normalizedRoleName.includes("vice president");
 
   // Check whether employee's role has child roles
   useEffect(() => {
@@ -98,6 +117,15 @@ const EmployeeSidebar = ({ open, employee }) => {
       path: `${basePath}/projects`,
       icon: FolderKanban,
     },
+    ...(isITVicePresident
+  ? [
+      {
+        label: "Project Management",
+        path: `${basePath}/project-management`,
+        icon: FolderKanban,
+      },
+    ]
+  : []),
     {
       label: "Role & Project Access",
       path: `${basePath}/access`,

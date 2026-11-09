@@ -27,41 +27,44 @@ import {
   getAssignableEmployees,
   getActiveProjectsByCompany,
   grantProjectAccessBySuperAdmin,
+  getMyCreatedProjects,
 } from "../controllers/projectController.js";
+
 import superAdminAuth from "../middleware/superAdminAuth.js";
 import employeeOrSuperAdminAuth from "../middleware/employeeOrSuperAdminAuth.js";
 import employeeAuth from "../middleware/employeeAuth.js";
 
 const router = express.Router();
 
-// Create and list projects
+// =====================================================
+// SUPER ADMIN — EXISTING ROUTES
+// =====================================================
+
 router.post("/", superAdminAuth, createProject);
 router.get("/", superAdminAuth, getAllProjects);
 
-// Root-role assignment — Super Admin only
 router.put("/:projectId/root-roles", superAdminAuth, assignRootRoles);
 
-// Get modules — Super Admin or authorized Employee
-router.get("/:projectId/modules", employeeOrSuperAdminAuth, getProjectModules);
-// Get employees eligible for module assignment — Authorized Employee only
-router.get(
-  "/:projectId/modules/eligible-employees",
-  employeeAuth,
-  getEmployeesForModuleAssignment
+// Super Admin access grant/revoke — keep before dynamic :roleId route
+router.post(
+  "/:projectId/access/super-admin",
+  superAdminAuth,
+  grantProjectAccessBySuperAdmin
 );
 
-// Assign module to self or an eligible employee — Authorized Employee only
-router.patch(
-  "/:projectId/modules/:moduleId/assign",
-  employeeAuth,
-  assignProjectModule
+router.delete(
+  "/:projectId/access/:employeeId/super-admin",
+  superAdminAuth,
+  revokeProjectAccessBySuperAdmin
 );
 
-// Add module — Super Admin only
 router.post("/:projectId/modules", superAdminAuth, addProjectModule);
 
-// Update module name and/or status — Super Admin only
-router.put("/:projectId/modules/:moduleId", superAdminAuth, updateProjectModule);
+router.put(
+  "/:projectId/modules/:moduleId",
+  superAdminAuth,
+  updateProjectModule
+);
 
 router.delete(
   "/:projectId/modules/:moduleId",
@@ -69,52 +72,8 @@ router.delete(
   deleteProjectModule
 );
 
-// Update module status — Super Admin or Employee
-// Ei route-er jonno duita middleware-er moddhe ekta choose korte hobe,
-// ba dedicated combined-auth middleware lagbe.
-router.patch(
-  "/:projectId/modules/:moduleId/status",
-  employeeOrSuperAdminAuth,
-  updateProjectModuleStatus
-);
-
-// Role-based project access delegation — Employee only
-router.post("/:projectId/access", employeeAuth, grantProjectAccess);
-
-router.delete(
-  "/:projectId/access/:roleId",
-  employeeAuth,
-  revokeProjectAccess
-);
-
-// =====================================================
-// SUPER ADMIN — GRANT / REVOKE PROJECT ROLE ACCESS
-// =====================================================
-
-router.post(
-  "/:projectId/access/super-admin",
-  superAdminAuth,
-  grantProjectAccessBySuperAdmin
-);
-
-
-router.delete(
-  "/:projectId/access/:roleId/super-admin",
-  superAdminAuth,
-  revokeProjectAccessBySuperAdmin
-);
-
-router.get(
-  "/:projectId/my-granted-access",
-  employeeAuth,
-  getMyGrantedProjectAccess
-);
-// Get all projects accessible to the logged-in employee.
-router.get("/my-accessible-projects", employeeAuth, getMyAccessibleProjects);
-
-// Role access details
-router.get("/:projectId/role-access", employeeOrSuperAdminAuth, getProjectRoleAccess);
-
+router.put("/:projectId", superAdminAuth, updateProject);
+router.delete("/:projectId", superAdminAuth, deleteProject);
 
 router.get("/deleted", superAdminAuth, getDeletedProjects);
 
@@ -130,7 +89,111 @@ router.delete(
   permanentlyDeleteProject
 );
 
-// Get modules assigned to the logged-in employee
+// =====================================================
+// EMPLOYEE — PROJECT MANAGEMENT ROUTES
+// These use the same controllers with employeeAuth.
+// =====================================================
+
+// Create project
+router.post("/employee", employeeAuth, createProject);
+
+// Update / delete project
+router.put("/:projectId/employee", employeeAuth, updateProject);
+router.delete("/:projectId/employee", employeeAuth, deleteProject);
+
+// Add / update / delete project modules
+router.post(
+  "/:projectId/modules/employee",
+  employeeAuth,
+  addProjectModule
+);
+
+router.put(
+  "/:projectId/modules/:moduleId/employee",
+  employeeAuth,
+  updateProjectModule
+);
+
+router.delete(
+  "/:projectId/modules/:moduleId/employee",
+  employeeAuth,
+  deleteProjectModule
+);
+
+// Employee deleted-project management
+router.get("/deleted/employee", employeeAuth, getDeletedProjects);
+
+router.post(
+  "/deleted/:deletedProjectId/restore/employee",
+  employeeAuth,
+  restoreDeletedProject
+);
+
+router.delete(
+  "/deleted/:deletedProjectId/permanent/employee",
+  employeeAuth,
+  permanentlyDeleteProject
+);
+
+// =====================================================
+// EMPLOYEE — PROJECT ACCESS
+// =====================================================
+
+router.post("/:projectId/access", employeeAuth, grantProjectAccess);
+
+router.delete(
+  "/:projectId/access/:employeeId",
+  employeeAuth,
+  revokeProjectAccess
+);
+
+router.get(
+  "/:projectId/my-granted-access",
+  employeeAuth,
+  getMyGrantedProjectAccess
+);
+
+router.get(
+  "/my-accessible-projects",
+  employeeAuth,
+  getMyAccessibleProjects
+);
+
+// Role access details — accessible to Employee and Super Admin
+router.get(
+  "/:projectId/role-access",
+  employeeOrSuperAdminAuth,
+  getProjectRoleAccess
+);
+
+// =====================================================
+// EMPLOYEE — MODULE ACCESS
+// =====================================================
+
+router.get(
+  "/:projectId/modules",
+  employeeOrSuperAdminAuth,
+  getProjectModules
+);
+
+router.get(
+  "/:projectId/modules/eligible-employees",
+  employeeAuth,
+  getEmployeesForModuleAssignment
+);
+
+router.patch(
+  "/:projectId/modules/:moduleId/assign",
+  employeeAuth,
+  assignProjectModule
+);
+
+router.patch(
+  "/:projectId/modules/:moduleId/status",
+  employeeOrSuperAdminAuth,
+  updateProjectModuleStatus
+);
+
 router.get(
   "/my-assigned-modules",
   employeeAuth,
@@ -143,14 +206,22 @@ router.get(
   getAssignableEmployees
 );
 
-// Project details
-router.get("/:projectId", employeeOrSuperAdminAuth, getProjectById);
+// =====================================================
+// PROJECT DETAILS
+// =====================================================
+router.get(
+  "/my-created-projects",
+  employeeAuth,
+  getMyCreatedProjects
+);
 
-// Update and delete — Super Admin only
-router.put("/:projectId", superAdminAuth, updateProject);
-router.delete("/:projectId", superAdminAuth, deleteProject);
+router.get(
+  "/:projectId",
+  employeeOrSuperAdminAuth,
+  getProjectById
+);
 
-// Get active projects for a particular company
+// Active projects by company
 router.get(
   "/company/:companyId/active-projects",
   employeeOrSuperAdminAuth,

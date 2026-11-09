@@ -24,12 +24,13 @@ export const getProjectForEmployee = async (projectId, employee) => {
     return { error: "Project is inactive", status: 403 };
   }
 
-  if (
-    !employee?.roleId ||
-    !project.roleAccess?.some(
-      (id) => id.toString() === employee.roleId.toString()
-    )
-  ) {
+  const employeeId = employee?._id || employee?.id;
+
+const hasAccess = project.employeeAccess?.some(
+  (id) => String(id?._id || id) === String(employeeId)
+);
+
+  if (!hasAccess) {
     return {
       error: "You do not have access to this project",
       status: 403,

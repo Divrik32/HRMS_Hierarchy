@@ -34,14 +34,15 @@ const EMPTY_FORM = {
   projectDescription: "",
   remarks: "",
   companyId: "",
-  roleAccess: [],
+  employeeAccess: [],
   modules: [],
   status: "active",
 };
 
 const getErrorMessage = (error) =>
   error.response?.data?.message ||
-  error.message || "Something went wrong.";
+  error.message ||
+  "Something went wrong.";
 
 const getList = (response, key) => {
   const data = response.data;
@@ -58,15 +59,43 @@ const idOf = (value) =>
     ? String(value._id || value.id || "")
     : String(value || "");
 
+const getEmployeeRoleId = (employee) =>
+  idOf(employee.roleId || employee.role);
+
+const getEmployeeName = (employee) =>
+  employee.employeeName ||
+  employee.name ||
+  employee.fullName ||
+  employee.firstName ||
+  employee.email ||
+  employee.employeeId ||
+  "Unnamed Employee";
+
+const getEmployeeLabel = (employee) => {
+  const name = getEmployeeName(employee);
+  const employeeCode = employee.employeeId;
+  const email = employee.email;
+
+  const details = [
+    employeeCode && employeeCode !== name ? employeeCode : null,
+    email && email !== name ? email : null,
+  ].filter(Boolean);
+
+  return details.length
+    ? `${name} (${details.join(" · ")})`
+    : name;
+};
+
 const Projects = () => {
   const { companyId } = useParams();
 
-const [projects, setProjects] = useState([]);
-const [companies, setCompanies] = useState([]);
-const [roles, setRoles] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [employees, setEmployees] = useState([]);
 
-const [deletedProjects, setDeletedProjects] = useState([]);
-const [deletedLoading, setDeletedLoading] = useState(false);
+  const [deletedProjects, setDeletedProjects] = useState([]);
+  const [deletedLoading, setDeletedLoading] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -89,10 +118,12 @@ const [deletedLoading, setDeletedLoading] = useState(false);
     useState("Not Assigned");
 
   const [roleSearch, setRoleSearch] = useState("");
+  const [employeeSearch, setEmployeeSearch] = useState("");
 
   // =====================================================
   // FETCH PROJECTS
   // =====================================================
+
   const fetchProjects = useCallback(async () => {
     if (!companyId) {
       setProjects([]);
@@ -116,64 +147,70 @@ const [deletedLoading, setDeletedLoading] = useState(false);
   }, [companyId]);
 
   // =====================================================
-// FETCH DELETED PROJECTS
-// GET /projects/deleted?companyId=...
-// =====================================================
-const fetchDeletedProjects = useCallback(async () => {
-  setDeletedLoading(true);
+  // FETCH DELETED PROJECTS
+  // =====================================================
 
-  try {
-    const response = await api.get("/projects/deleted", {
-      params: companyId ? { companyId } : {},
-    });
+  const fetchDeletedProjects = useCallback(async () => {
+    setDeletedLoading(true);
 
-    setDeletedProjects(getList(response, "projects"));
-  } catch (error) {
-    toast.error(
-      `Could not load deleted projects: ${getErrorMessage(error)}`
-    );
-  } finally {
-    setDeletedLoading(false);
-  }
-}, [companyId]);
+    try {
+      const response = await api.get("/projects/deleted", {
+        params: companyId ? { companyId } : {},
+      });
+
+      setDeletedProjects(getList(response, "projects"));
+    } catch (error) {
+      toast.error(
+        `Could not load deleted projects: ${getErrorMessage(error)}`
+      );
+    } finally {
+      setDeletedLoading(false);
+    }
+  }, [companyId]);
 
   // =====================================================
   // FETCH COMPANIES
   // =====================================================
+
   const fetchCompanies = useCallback(async () => {
     try {
       const response = await api.get("/companies");
       setCompanies(getList(response, "companies"));
     } catch (error) {
-toast.error(
-  `Could not load companies: ${getErrorMessage(error)}`
-);
+      toast.error(
+        `Could not load companies: ${getErrorMessage(error)}`
+      );
     }
   }, []);
 
   // =====================================================
-  // FETCH ROOT ROLES
+  // FETCH COMPANY ROLES AND EMPLOYEES
   // =====================================================
-const fetchRoles = useCallback(async (selectedCompanyId) => {
-  if (!selectedCompanyId) {
-    setRoles([]);
-    return;
-  }
 
-  try {
-    const response = await api.get(
-      `/roles/company/${selectedCompanyId}`
-    );
+  const fetchCompanyData = useCallback(async (selectedCompanyId) => {
+    if (!selectedCompanyId) {
+      setRoles([]);
+      setEmployees([]);
+      return;
+    }
 
-    setRoles(getList(response, "roles"));
-  } catch (error) {
-    setRoles([]);
+    try {
+      const [roleResponse, employeeResponse] = await Promise.all([
+        api.get(`/roles/company/${selectedCompanyId}`),
+        api.get(`/employees/company/${selectedCompanyId}`),
+      ]);
 
-    toast.error(
-      `Could not load company roles: ${getErrorMessage(error)}`
-    );
-  }
-}, []);
+      setRoles(getList(roleResponse, "roles"));
+      setEmployees(getList(employeeResponse, "employees"));
+    } catch (error) {
+      setRoles([]);
+      setEmployees([]);
+
+      toast.error(
+        `Could not load company employees and roles: ${getErrorMessage(error)}`
+      );
+    }
+  }, []);
 
   useEffect(() => {
     fetchCompanies();
@@ -184,16 +221,13 @@ const fetchRoles = useCallback(async (selectedCompanyId) => {
   }, [fetchProjects]);
 
   useEffect(() => {
-    if (form.companyId) {
-      fetchRoles(form.companyId);
-    } else {
-      setRoles([]);
-    }
-  }, [form.companyId, fetchRoles]);
+    fetchCompanyData(form.companyId);
+  }, [form.companyId, fetchCompanyData]);
 
   // =====================================================
   // PROJECT STATISTICS
   // =====================================================
+
   const stats = useMemo(
     () => ({
       total: projects.length,
@@ -210,6 +244,7 @@ const fetchRoles = useCallback(async (selectedCompanyId) => {
   // =====================================================
   // SEARCH AND COMPANY FILTER
   // =====================================================
+
   const filteredProjects = useMemo(() => {
     const query = search.trim().toLowerCase();
 
@@ -256,6 +291,7 @@ const fetchRoles = useCallback(async (selectedCompanyId) => {
   // =====================================================
   // OPEN CREATE MODAL
   // =====================================================
+
   const openCreate = () => {
     setSelectedProject(null);
 
@@ -265,12 +301,14 @@ const fetchRoles = useCallback(async (selectedCompanyId) => {
     });
 
     setRoleSearch("");
+    setEmployeeSearch("");
     setModal("create");
   };
 
   // =====================================================
   // OPEN EDIT PROJECT MODAL
   // =====================================================
+
   const openEdit = (project) => {
     setSelectedProject(project);
 
@@ -282,19 +320,22 @@ const fetchRoles = useCallback(async (selectedCompanyId) => {
       projectDescription: project.projectDescription || "",
       remarks: project.remarks || "",
       companyId: idOf(project.companyId),
-      roleAccess: (project.roleAccess || []).map(idOf),
+      employeeAccess: (project.employeeAccess || [])
+        .map(idOf)
+        .filter(Boolean),
       modules: project.modules || [],
       status: project.status || "active",
     });
 
     setRoleSearch("");
+    setEmployeeSearch("");
     setModal("edit");
   };
 
   // =====================================================
   // OPEN PROJECT DETAILS AND FETCH MODULES
-  // GET /projects/:projectId/modules
   // =====================================================
+
   const openDetails = async (project) => {
     setSelectedProject(project);
     setModal("details");
@@ -324,232 +365,306 @@ const fetchRoles = useCallback(async (selectedCompanyId) => {
   };
 
   // =====================================================
-  // ROOT ROLE SELECTION
+  // EMPLOYEE ACCESS SELECTION
   // =====================================================
 
-const toggleRole = (roleId) => {
-  if (saving) return;
+  const toggleEmployee = (employeeId) => {
+    if (saving) return;
 
-  setForm((previous) => ({
-    ...previous,
-    roleAccess: previous.roleAccess.includes(roleId)
-      ? previous.roleAccess.filter((id) => id !== roleId)
-      : [...previous.roleAccess, roleId],
-  }));
-};
+    setForm((previous) => ({
+      ...previous,
+      employeeAccess: previous.employeeAccess.includes(employeeId)
+        ? previous.employeeAccess.filter((id) => id !== employeeId)
+        : [...previous.employeeAccess, employeeId],
+    }));
+  };
 
+  // Select / Deselect all employees under one role
+  const toggleAllEmployeesInRole = (roleId) => {
+    if (saving) return;
 
-  const toggleAllRoles = () => {
-    const visibleIds = roles
+    const roleEmployeeIds = employees
+      .filter(
+        (employee) => getEmployeeRoleId(employee) === roleId
+      )
+      .map(idOf)
+      .filter(Boolean);
+
+    setForm((previous) => {
+      const allSelected =
+        roleEmployeeIds.length > 0 &&
+        roleEmployeeIds.every((id) =>
+          previous.employeeAccess.includes(id)
+        );
+
+      return {
+        ...previous,
+        employeeAccess: allSelected
+          ? previous.employeeAccess.filter(
+              (id) => !roleEmployeeIds.includes(id)
+            )
+          : [
+              ...new Set([
+                ...previous.employeeAccess,
+                ...roleEmployeeIds,
+              ]),
+            ],
+      };
+    });
+  };
+
+  // Select / Deselect all visible employees
+  const toggleAllEmployees = () => {
+    if (saving) return;
+
+    const visibleEmployeeIds = roles
       .filter((role) =>
         role.roleName
           ?.toLowerCase()
           .includes(roleSearch.toLowerCase())
       )
-      .map(idOf);
-
-    const allSelected =
-      visibleIds.length > 0 &&
-      visibleIds.every((id) => form.roleAccess.includes(id));
-
-    setForm((previous) => ({
-      ...previous,
-      roleAccess: allSelected
-        ? previous.roleAccess.filter(
-            (id) => !visibleIds.includes(id)
+      .flatMap((role) =>
+        employees
+          .filter(
+            (employee) =>
+              getEmployeeRoleId(employee) === idOf(role)
           )
-        : [...new Set([...previous.roleAccess, ...visibleIds])],
-    }));
+          .filter((employee) => {
+            const query = employeeSearch.trim().toLowerCase();
+
+            if (!query) return true;
+
+            return [
+              getEmployeeName(employee),
+              employee.employeeId,
+              employee.email,
+            ]
+              .filter(Boolean)
+              .some((value) =>
+                String(value).toLowerCase().includes(query)
+              );
+          })
+          .map(idOf)
+      )
+      .filter(Boolean);
+
+    setForm((previous) => {
+      const allSelected =
+        visibleEmployeeIds.length > 0 &&
+        visibleEmployeeIds.every((id) =>
+          previous.employeeAccess.includes(id)
+        );
+
+      return {
+        ...previous,
+        employeeAccess: allSelected
+          ? previous.employeeAccess.filter(
+              (id) => !visibleEmployeeIds.includes(id)
+            )
+          : [
+              ...new Set([
+                ...previous.employeeAccess,
+                ...visibleEmployeeIds,
+              ]),
+            ],
+      };
+    });
   };
 
   // =====================================================
   // CREATE / UPDATE PROJECT
   // =====================================================
-const saveProject = async (event) => {
-  event.preventDefault();
 
-  if (saving) return;
+  const saveProject = async (event) => {
+    event.preventDefault();
 
-  try {
-    setSaving(true);
+    if (saving) return;
 
-    if (!form.projectName.trim() || !form.clientName.trim()) {
-      toast.error("Project name and client name are required");
-      return;
-    }
+    try {
+      setSaving(true);
 
-    // CREATE PROJECT
-    if (modal === "create") {
-      await api.post("/projects", {
-        ...form,
-        projectName: form.projectName.trim(),
-        clientName: form.clientName.trim(),
-        companyId: form.companyId,
-        roleAccess: form.roleAccess,
-        modules: form.modules,
-      });
+      if (!form.projectName.trim() || !form.clientName.trim()) {
+        toast.error("Project name and client name are required");
+        return;
+      }
 
-      toast.success("Project created successfully");
-    }
-
-    // UPDATE PROJECT
-    else if (modal === "edit" && selectedProject) {
-      const projectId = idOf(selectedProject);
-
-      // Update project details
-      await api.put(`/projects/${projectId}`, {
-        projectName: form.projectName.trim(),
-        clientName: form.clientName.trim(),
-        projectDetails: form.projectDetails,
-        projectDescription: form.projectDescription,
-        remarks: form.remarks,
-        status: form.status,
-      });
-
-      const originalRoleIds = [
-        ...new Set(
-          (selectedProject.roleAccess || [])
-            .map(idOf)
-            .filter(Boolean)
-        ),
-      ];
-
-      const selectedRoleIds = [
-        ...new Set(
-          (form.roleAccess || [])
-            .map(idOf)
-            .filter(Boolean)
-        ),
-      ];
-
-      // Newly selected roles
-      const rolesToAssign = selectedRoleIds.filter(
-        (roleId) => !originalRoleIds.includes(roleId)
-      );
-
-      // Previously assigned roles that were unchecked
-      const rolesToRevoke = originalRoleIds.filter(
-        (roleId) => !selectedRoleIds.includes(roleId)
-      );
-
-      // Add newly selected roles
-      if (rolesToAssign.length > 0) {
-        await api.put(`/projects/${projectId}/root-roles`, {
-          roleIds: rolesToAssign,
+      // CREATE PROJECT
+      if (modal === "create") {
+        await api.post("/projects", {
+          ...form,
+          projectName: form.projectName.trim(),
+          clientName: form.clientName.trim(),
+          companyId: form.companyId,
+          employeeAccess: form.employeeAccess,
+          modules: form.modules,
         });
+
+        toast.success("Project created successfully");
       }
 
-      // Revoke unchecked roles
-      for (const roleId of rolesToRevoke) {
-        await api.delete(
-          `/projects/${projectId}/access/${roleId}/super-admin`
+      // UPDATE PROJECT
+      else if (modal === "edit" && selectedProject) {
+        const projectId = idOf(selectedProject);
+
+        // Update project details
+        await api.put(`/projects/${projectId}`, {
+          projectName: form.projectName.trim(),
+          clientName: form.clientName.trim(),
+          projectDetails: form.projectDetails,
+          projectDescription: form.projectDescription,
+          remarks: form.remarks,
+          status: form.status,
+        });
+
+        const originalEmployeeIds = [
+          ...new Set(
+            (selectedProject.employeeAccess || [])
+              .map(idOf)
+              .filter(Boolean)
+          ),
+        ];
+
+        const selectedEmployeeIds = [
+          ...new Set(
+            (form.employeeAccess || [])
+              .map(idOf)
+              .filter(Boolean)
+          ),
+        ];
+
+        // Newly selected employees
+        const employeesToAssign = selectedEmployeeIds.filter(
+          (employeeId) =>
+            !originalEmployeeIds.includes(employeeId)
         );
+
+        // Previously assigned employees that were unchecked
+        const employeesToRevoke = originalEmployeeIds.filter(
+          (employeeId) =>
+            !selectedEmployeeIds.includes(employeeId)
+        );
+
+        // Grant access to newly selected employees
+        if (employeesToAssign.length > 0) {
+          await api.post(
+            `/projects/${projectId}/access/super-admin`,
+            {
+              employeeIds: employeesToAssign,
+            }
+          );
+        }
+
+        // Revoke access only from unchecked employees
+        for (const employeeId of employeesToRevoke) {
+          await api.delete(
+            `/projects/${projectId}/access/${employeeId}/super-admin`
+          );
+        }
+
+        toast.success("Project updated successfully");
       }
 
-      toast.success("Project updated successfully");
-    }
-
-    setModal(null);
-    await fetchProjects();
-  } catch (error) {
-    console.error("Save Project Error:", error);
-    toast.error(getErrorMessage(error));
-  } finally {
-    setSaving(false);
-  }
-};
-
-
-// =====================================================
-// MOVE PROJECT TO DELETED PROJECTS
-// DELETE /projects/:projectId
-// =====================================================
-const deleteProject = async (project) => {
-  const confirmed = window.confirm(
-    `Move project "${project.projectName}" to Deleted Projects?\n\nYou can restore it later.`
-  );
-
-  if (!confirmed) return;
-
-  try {
-    await api.delete(`/projects/${idOf(project)}`);
-
-    toast.success("Project moved to Deleted Projects.");
-
-    if (
-      selectedProject &&
-      idOf(selectedProject) === idOf(project)
-    ) {
-      setSelectedProject(null);
       setModal(null);
+      await fetchProjects();
+    } catch (error) {
+      console.error("Save Project Error:", error);
+      toast.error(getErrorMessage(error));
+    } finally {
+      setSaving(false);
     }
+  };
 
-    await fetchProjects();
-  } catch (error) {
-    toast.error(getErrorMessage(error));
-  }
-};
+  // =====================================================
+  // MOVE PROJECT TO DELETED PROJECTS
+  // =====================================================
 
-// =====================================================
-// RESTORE DELETED PROJECT
-// POST /projects/deleted/:deletedProjectId/restore
-// =====================================================
-const restoreProject = async (deletedProject) => {
-  const deletedProjectId = idOf(deletedProject);
-
-  const confirmed = window.confirm(
-    `Restore project "${deletedProject.projectName}"?\n\nThe project will return to the active Projects list.`
-  );
-
-  if (!confirmed) return;
-
-  try {
-    await api.post(
-      `/projects/deleted/${deletedProjectId}/restore`
+  const deleteProject = async (project) => {
+    const confirmed = window.confirm(
+      `Move project "${project.projectName}" to Deleted Projects?\n\nYou can restore it later.`
     );
 
-    toast.success("Project restored successfully.");
+    if (!confirmed) return;
 
-    await Promise.all([
-      fetchProjects(),
-      fetchDeletedProjects(),
-    ]);
-  } catch (error) {
-    toast.error(
-      `Could not restore project: ${getErrorMessage(error)}`
+    try {
+      await api.delete(`/projects/${idOf(project)}`);
+
+      toast.success("Project moved to Deleted Projects.");
+
+      if (
+        selectedProject &&
+        idOf(selectedProject) === idOf(project)
+      ) {
+        setSelectedProject(null);
+        setModal(null);
+      }
+
+      await fetchProjects();
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    }
+  };
+
+  // =====================================================
+  // RESTORE DELETED PROJECT
+  // =====================================================
+
+  const restoreProject = async (deletedProject) => {
+    const deletedProjectId = idOf(deletedProject);
+
+    const confirmed = window.confirm(
+      `Restore project "${deletedProject.projectName}"?\n\nThe project will return to the active Projects list.`
     );
-  }
-};
 
-// =====================================================
-// PERMANENTLY DELETE ARCHIVED PROJECT
-// DELETE /projects/deleted/:deletedProjectId/permanent
-// =====================================================
-const permanentlyDeleteProject = async (deletedProject) => {
-  const confirmed = window.confirm(
-    `Permanently delete "${deletedProject.projectName}"?\n\nThis action cannot be undone. The project will not be recoverable.`
-  );
+    if (!confirmed) return;
 
-  if (!confirmed) return;
+    try {
+      await api.post(
+        `/projects/deleted/${deletedProjectId}/restore`
+      );
 
-  try {
-    await api.delete(
-      `/projects/deleted/${idOf(deletedProject)}/permanent`
+      toast.success("Project restored successfully.");
+
+      await Promise.all([
+        fetchProjects(),
+        fetchDeletedProjects(),
+      ]);
+    } catch (error) {
+      toast.error(
+        `Could not restore project: ${getErrorMessage(error)}`
+      );
+    }
+  };
+
+  // =====================================================
+  // PERMANENTLY DELETE ARCHIVED PROJECT
+  // =====================================================
+
+  const permanentlyDeleteProject = async (deletedProject) => {
+    const confirmed = window.confirm(
+      `Permanently delete "${deletedProject.projectName}"?\n\nThis action cannot be undone. The project will not be recoverable.`
     );
 
-    toast.success("Project permanently deleted.");
+    if (!confirmed) return;
 
-    await fetchDeletedProjects();
-  } catch (error) {
-    toast.error(
-      `Could not permanently delete project: ${getErrorMessage(error)}`
-    );
-  }
-};
+    try {
+      await api.delete(
+        `/projects/deleted/${idOf(deletedProject)}/permanent`
+      );
+
+      toast.success("Project permanently deleted.");
+
+      await fetchDeletedProjects();
+    } catch (error) {
+      toast.error(
+        `Could not permanently delete project: ${getErrorMessage(error)}`
+      );
+    }
+  };
 
   // =====================================================
   // REFRESH PROJECT MODULES
   // =====================================================
+
   const refreshProjectModules = async (project) => {
     const response = await api.get(
       `/projects/${idOf(project)}/modules`
@@ -568,13 +683,13 @@ const permanentlyDeleteProject = async (deletedProject) => {
 
   // =====================================================
   // ADD MODULE
-  // POST /projects/:projectId/modules
   // =====================================================
+
   const addModule = async (project) => {
     const moduleName = newModuleName.trim();
 
     if (!moduleName) {
-      toast.error( "Enter a module name first.");
+      toast.error("Enter a module name first.");
       return;
     }
 
@@ -590,7 +705,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
 
       await refreshProjectModules(project);
 
-      toast.success( "Module added successfully.");
+      toast.success("Module added successfully.");
     } catch (error) {
       toast.error(getErrorMessage(error));
     } finally {
@@ -601,12 +716,11 @@ const permanentlyDeleteProject = async (deletedProject) => {
   // =====================================================
   // START EDIT MODULE
   // =====================================================
+
   const startEditModule = (module) => {
     setEditingModuleId(idOf(module));
     setEditModuleName(module.moduleName || "");
-    setEditModuleStatus(
-      module.status || "Not Assigned"
-    );
+    setEditModuleStatus(module.status || "Not Assigned");
   };
 
   const cancelEditModule = () => {
@@ -617,18 +731,18 @@ const permanentlyDeleteProject = async (deletedProject) => {
 
   // =====================================================
   // UPDATE MODULE NAME AND STATUS
-  // PUT /projects/:projectId/modules/:moduleId
   // =====================================================
+
   const saveModule = async (project, module) => {
     const moduleName = editModuleName.trim();
 
     if (!moduleName) {
-      toast.error( "Module name cannot be empty.");
+      toast.error("Module name cannot be empty.");
       return;
     }
 
     if (!MODULE_STATUSES.includes(editModuleStatus)) {
-      toast.error( "Please select a valid module status.");
+      toast.error("Please select a valid module status.");
       return;
     }
 
@@ -647,7 +761,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
 
       await refreshProjectModules(project);
 
-      toast.success( "Module updated successfully.");
+      toast.success("Module updated successfully.");
     } catch (error) {
       toast.error(getErrorMessage(error));
     } finally {
@@ -657,8 +771,8 @@ const permanentlyDeleteProject = async (deletedProject) => {
 
   // =====================================================
   // DELETE MODULE
-  // DELETE /projects/:projectId/modules/:moduleId
   // =====================================================
+
   const deleteModule = async (project, module) => {
     const confirmed = window.confirm(
       `Delete module "${module.moduleName}"?`
@@ -679,7 +793,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
 
       await refreshProjectModules(project);
 
-      toast.success( "Module deleted successfully.");
+      toast.success("Module deleted successfully.");
     } catch (error) {
       toast.error(getErrorMessage(error));
     } finally {
@@ -690,14 +804,13 @@ const permanentlyDeleteProject = async (deletedProject) => {
   // =====================================================
   // COMPANY NAME
   // =====================================================
+
   const companyName = (project) => {
     if (
       project.companyId &&
       typeof project.companyId === "object"
     ) {
-      return (
-        project.companyId.companyName || "Unknown company"
-      );
+      return project.companyId.companyName || "Unknown company";
     }
 
     return (
@@ -706,6 +819,24 @@ const permanentlyDeleteProject = async (deletedProject) => {
           idOf(company) === idOf(project.companyId)
       )?.companyName || "Unknown company"
     );
+  };
+
+  // =====================================================
+  // SELECTED EMPLOYEE DETAILS
+  // =====================================================
+
+  const getSelectedEmployees = (project) => {
+    return (project.employeeAccess || [])
+      .map((employeeRef) => {
+        if (typeof employeeRef === "object" && employeeRef !== null) {
+          return employeeRef;
+        }
+
+        return employees.find(
+          (employee) => idOf(employee) === idOf(employeeRef)
+        );
+      })
+      .filter(Boolean);
   };
 
   const inputClass =
@@ -721,10 +852,26 @@ const permanentlyDeleteProject = async (deletedProject) => {
     }
   };
 
+  // =====================================================
+  // ROLE FILTERING
+  // =====================================================
+
+  const visibleRoles = roles.filter((role) =>
+    role.roleName
+      ?.toLowerCase()
+      .includes(roleSearch.toLowerCase())
+  );
+
+  // =====================================================
+  // RENDER
+  // =====================================================
+
   return (
     <div className="min-h-screen bg-slate-50 p-4 text-black-800 sm:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
+
         {/* HEADER */}
+
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm text-indigo-600">
@@ -737,49 +884,51 @@ const permanentlyDeleteProject = async (deletedProject) => {
             </h1>
 
             <p className="mt-1 text-sm text-black-500">
-              Manage projects, root-role assignments and project modules.
+              Manage projects, individual employee access and project modules.
             </p>
           </div>
 
-<div className="flex flex-wrap gap-2">
-  <button
-    type="button"
-    onClick={() => {
-      fetchProjects();
-      if (modal === "deleted") {
-        fetchDeletedProjects();
-      }
-    }}
-    className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium hover:bg-slate-100"
-  >
-    <RefreshCw size={16} />
-    Refresh
-  </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                fetchProjects();
 
-  <button
-    type="button"
-    onClick={async () => {
-      setModal("deleted");
-      await fetchDeletedProjects();
-    }}
-    className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 hover:bg-amber-100"
-  >
-    <Trash2 size={17} />
-    Deleted Projects
-  </button>
+                if (modal === "deleted") {
+                  fetchDeletedProjects();
+                }
+              }}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium hover:bg-slate-100"
+            >
+              <RefreshCw size={16} />
+              Refresh
+            </button>
 
-  <button
-    type="button"
-    onClick={openCreate}
-    className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
-  >
-    <Plus size={17} />
-    Create Project
-  </button>
-</div>
+            <button
+              type="button"
+              onClick={async () => {
+                setModal("deleted");
+                await fetchDeletedProjects();
+              }}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 hover:bg-amber-100"
+            >
+              <Trash2 size={17} />
+              Deleted Projects
+            </button>
+
+            <button
+              type="button"
+              onClick={openCreate}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+            >
+              <Plus size={17} />
+              Create Project
+            </button>
+          </div>
         </div>
 
         {/* SUMMARY CARDS */}
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {[
             {
@@ -833,6 +982,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
         </div>
 
         {/* SEARCH AND COMPANY FILTER */}
+
         <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row">
           <div className="relative flex-1">
             <Search
@@ -878,6 +1028,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
         </div>
 
         {/* PROJECTS TABLE */}
+
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
             <div>
@@ -915,7 +1066,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                     <th className="px-5 py-3 font-semibold">Project</th>
                     <th className="px-5 py-3 font-semibold">Company</th>
                     <th className="px-5 py-3 font-semibold">Client</th>
-                    <th className="px-5 py-3 font-semibold">Root Roles</th>
+                    <th className="px-5 py-3 font-semibold">Employees</th>
                     <th className="px-5 py-3 font-semibold">Modules</th>
                     <th className="px-5 py-3 font-semibold">Status</th>
                     <th className="px-5 py-3 text-right font-semibold">
@@ -957,7 +1108,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                       <td className="px-5 py-4">
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700">
                           <Users size={13} />
-                          {project.roleAccess?.length || 0}
+                          {project.employeeAccess?.length || 0}
                         </span>
                       </td>
 
@@ -1019,10 +1170,14 @@ const permanentlyDeleteProject = async (deletedProject) => {
         </div>
       </div>
 
-      {/* CREATE / EDIT PROJECT MODAL */}
+      {/* =====================================================
+          CREATE / EDIT PROJECT MODAL
+      ===================================================== */}
+
       {(modal === "create" || modal === "edit") && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/50 p-3 sm:p-6">
           <div className="my-auto max-h-[95vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 sm:px-6">
               <div>
                 <h2 className="text-lg font-bold">
@@ -1030,7 +1185,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                 </h2>
 
                 <p className="mt-1 text-xs text-black-500">
-                  Enter project information and assign root roles.
+                  Enter project information and select individual employees.
                 </p>
               </div>
 
@@ -1044,6 +1199,9 @@ const permanentlyDeleteProject = async (deletedProject) => {
             </div>
 
             <form onSubmit={saveProject} className="space-y-5 p-5 sm:p-6">
+
+              {/* PROJECT INFORMATION */}
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className={labelClass}>Project Name *</label>
@@ -1158,89 +1316,227 @@ const permanentlyDeleteProject = async (deletedProject) => {
                 )}
               </div>
 
-              {/* ROOT ROLE ASSIGNMENT */}
+              {/* =====================================================
+                  INDIVIDUAL EMPLOYEE ACCESS ASSIGNMENT
+              ===================================================== */}
+
               <div className="rounded-xl border border-slate-200 p-4">
+
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div>
-<h3 className="font-semibold">
-  Role Assignment
-</h3>
+                    <h3 className="font-semibold">
+                      Employee Access Assignment
+                    </h3>
 
-<p className="mt-1 text-xs text-black-500">
-  All roles belonging to this company are shown, including child and descendant roles.
-</p>
+                    <p className="mt-1 text-xs text-black-500">
+                      Expand a role and select only the employees who should access this project.
+                    </p>
                   </div>
 
                   <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
-                    {form.roleAccess.length} selected
+                    {form.employeeAccess.length} selected
                   </span>
                 </div>
 
-                <div className="mb-3 flex flex-wrap gap-2">
+                {/* SEARCH */}
+
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row">
                   <input
                     value={roleSearch}
-                    onChange={(event) => setRoleSearch(event.target.value)}
-                    className={`${inputClass} min-w-[180px] flex-1`}
-                    placeholder="Search company roles..."
+                    onChange={(event) =>
+                      setRoleSearch(event.target.value)
+                    }
+                    className={`${inputClass} flex-1`}
+                    placeholder="Search role..."
                     disabled={!form.companyId}
                   />
 
+                  <input
+                    value={employeeSearch}
+                    onChange={(event) =>
+                      setEmployeeSearch(event.target.value)
+                    }
+                    className={`${inputClass} flex-1`}
+                    placeholder="Search employee name, ID or email..."
+                    disabled={!form.companyId}
+                  />
+                </div>
+
+                {/* SELECT ALL */}
+
+                <div className="mb-3 flex justify-end">
                   <button
                     type="button"
-                    onClick={toggleAllRoles}
-                    disabled={!roles.length}
+                    onClick={toggleAllEmployees}
+                    disabled={
+                      saving ||
+                      !visibleRoles.length ||
+                      !employees.length
+                    }
                     className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
                   >
-                    Select / Deselect All
+                    Select / Deselect All Visible Employees
                   </button>
                 </div>
 
                 {!form.companyId ? (
                   <p className="rounded-lg bg-slate-50 p-4 text-sm text-black-500">
-                    Select a company to load all its roles.
+                    Select a company to load its roles and employees.
                   </p>
-                ) : roles.length === 0 ? (
+                ) : visibleRoles.length === 0 ? (
                   <p className="rounded-lg bg-amber-50 p-4 text-sm text-amber-700">
-                    No root roles were found for this company.
+                    No roles were found for this company.
                   </p>
                 ) : (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {roles
-                      .filter((role) =>
-                        role.roleName
-                          ?.toLowerCase()
-                          .includes(roleSearch.toLowerCase())
-                      )
-                      .map((role) => (
-                        <label
-                          key={idOf(role)}
-                          className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-200 p-3 hover:bg-slate-50"
-                        >
-                          <input
-  type="checkbox"
-  checked={form.roleAccess.includes(idOf(role))}
-  onChange={() => toggleRole(idOf(role))}
-  disabled={saving}
-  className="h-4 w-4 accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
-/>
+                  <div className="space-y-2">
 
-                          <span className="text-sm font-medium">
-                            {role.roleName}
-                          </span>
-                        </label>
-                      ))}
+                    {visibleRoles.map((role) => {
+                      const roleId = idOf(role);
+
+                      const roleEmployees = employees.filter(
+                        (employee) =>
+                          getEmployeeRoleId(employee) === roleId
+                      );
+
+                      const filteredEmployees = roleEmployees.filter(
+                        (employee) => {
+                          const query = employeeSearch
+                            .trim()
+                            .toLowerCase();
+
+                          if (!query) return true;
+
+                          return [
+                            getEmployeeName(employee),
+                            employee.employeeId,
+                            employee.email,
+                          ]
+                            .filter(Boolean)
+                            .some((value) =>
+                              String(value)
+                                .toLowerCase()
+                                .includes(query)
+                            );
+                        }
+                      );
+
+                      const selectedCount = roleEmployees.filter(
+                        (employee) =>
+                          form.employeeAccess.includes(idOf(employee))
+                      ).length;
+
+                      const allRoleEmployeesSelected =
+                        roleEmployees.length > 0 &&
+                        roleEmployees.every((employee) =>
+                          form.employeeAccess.includes(idOf(employee))
+                        );
+
+                      return (
+                        <details
+                          key={roleId}
+                          className="group rounded-lg border border-slate-200 bg-white"
+                        >
+                          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg p-3 hover:bg-slate-50">
+
+                            <div className="flex min-w-0 items-center gap-3">
+                              <ChevronDown
+                                size={17}
+                                className="shrink-0 text-black-400 transition-transform group-open:rotate-180"
+                              />
+
+                              <div className="min-w-0">
+                                <p className="font-medium text-black-800">
+                                  {role.roleName}
+                                </p>
+
+                                <p className="mt-0.5 text-xs text-black-500">
+                                  {roleEmployees.length} employee(s)
+                                </p>
+                              </div>
+                            </div>
+
+                            <span className="shrink-0 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                              {selectedCount} / {roleEmployees.length} selected
+                            </span>
+                          </summary>
+
+                          <div className="border-t border-slate-100 p-3">
+
+                            {roleEmployees.length > 0 && (
+                              <div className="mb-3 flex items-center justify-between gap-2">
+                                <span className="text-xs font-medium text-black-500">
+                                  Employees under {role.roleName}
+                                </span>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    toggleAllEmployeesInRole(roleId)
+                                  }
+                                  disabled={saving}
+                                  className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+                                >
+                                  {allRoleEmployeesSelected
+                                    ? "Deselect All"
+                                    : "Select All"}
+                                </button>
+                              </div>
+                            )}
+
+                            {filteredEmployees.length === 0 ? (
+                              <p className="rounded-lg bg-slate-50 p-3 text-sm text-black-500">
+                                {roleEmployees.length === 0
+                                  ? "No employees are assigned to this role."
+                                  : "No employees match your search."}
+                              </p>
+                            ) : (
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                {filteredEmployees.map((employee) => {
+                                  const employeeId = idOf(employee);
+
+                                  return (
+                                    <label
+                                      key={employeeId}
+                                      className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 hover:bg-slate-50"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={form.employeeAccess.includes(
+                                          employeeId
+                                        )}
+                                        onChange={() =>
+                                          toggleEmployee(employeeId)
+                                        }
+                                        disabled={saving}
+                                        className="mt-0.5 h-4 w-4 accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                      />
+
+                                      <span className="min-w-0 text-sm font-medium text-black-700">
+                                        {getEmployeeLabel(employee)}
+                                      </span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      );
+                    })}
                   </div>
                 )}
 
                 {modal === "edit" && (
                   <p className="mt-3 text-xs leading-5 text-amber-700">
-                    Select or deselect root roles to update project access.
+                    Select or deselect individual employees to update project access.
+                    Unchecking an employee will revoke access only for that employee.
                     Changes will be applied when you save the project.
                   </p>
                 )}
               </div>
 
               {/* INITIAL MODULES DURING PROJECT CREATION */}
+
               {modal === "create" && (
                 <div className="rounded-xl border border-slate-200 p-4">
                   <h3 className="mb-1 font-semibold">Project Modules</h3>
@@ -1266,7 +1562,9 @@ const permanentlyDeleteProject = async (deletedProject) => {
                       )
                     }
                     className={inputClass}
-                    placeholder={"Customer Portal\nInventory Tracking\nOrder Processing"}
+                    placeholder={
+                      "Customer Portal\nInventory Tracking\nOrder Processing"
+                    }
                     rows={4}
                   />
 
@@ -1275,6 +1573,8 @@ const permanentlyDeleteProject = async (deletedProject) => {
                   </p>
                 </div>
               )}
+
+              {/* FOOTER BUTTONS */}
 
               <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
                 <button
@@ -1305,10 +1605,14 @@ const permanentlyDeleteProject = async (deletedProject) => {
         </div>
       )}
 
-      {/* PROJECT DETAILS AND MODULE MANAGEMENT */}
+      {/* =====================================================
+          PROJECT DETAILS AND MODULE MANAGEMENT
+      ===================================================== */}
+
       {modal === "details" && selectedProject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/50 p-3 sm:p-6">
           <div className="my-auto max-h-[95vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 sm:px-6">
               <div>
                 <h2 className="text-lg font-bold">
@@ -1331,6 +1635,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
             </div>
 
             <div className="space-y-6 p-5 sm:p-6">
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="rounded-lg bg-slate-50 p-4">
                   <p className="text-xs text-black-500">Client</p>
@@ -1378,6 +1683,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
               </div>
 
               {/* PROJECT MODULES */}
+
               <div className="rounded-xl border border-slate-200 p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <div>
@@ -1394,6 +1700,7 @@ const permanentlyDeleteProject = async (deletedProject) => {
                 </div>
 
                 {/* ADD MODULE */}
+
                 <form
                   onSubmit={(event) => {
                     event.preventDefault();
@@ -1441,7 +1748,6 @@ const permanentlyDeleteProject = async (deletedProject) => {
                           className="rounded-lg border border-slate-200 p-3"
                         >
                           {isEditing ? (
-                            /* EDIT MODULE */
                             <div className="space-y-3">
                               <div>
                                 <label className={labelClass}>
@@ -1519,7 +1825,6 @@ const permanentlyDeleteProject = async (deletedProject) => {
                               </div>
                             </div>
                           ) : (
-                            /* MODULE DETAILS */
                             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                               <div className="min-w-0">
                                 <p className="break-words font-medium text-black-800">
@@ -1578,30 +1883,43 @@ const permanentlyDeleteProject = async (deletedProject) => {
                 )}
               </div>
 
-              {/* ASSIGNED ROOT ROLES */}
-              <div className="rounded-xl border border-slate-200 p-4">
-                <h3 className="mb-3 font-semibold">
-                  Assigned Root Roles
-                </h3>
+              {/* ASSIGNED EMPLOYEES */}
 
-                {!selectedProject.roleAccess?.length ? (
+              <div className="rounded-xl border border-slate-200 p-4">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h3 className="font-semibold">
+                    Assigned Employees
+                  </h3>
+
+                  <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+                    {selectedProject.employeeAccess?.length || 0} employees
+                  </span>
+                </div>
+
+                {!selectedProject.employeeAccess?.length ? (
                   <p className="text-sm text-black-500">
-                    No roles assigned.
+                    No employees assigned.
                   </p>
                 ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {selectedProject.roleAccess.map((role) => (
-                      <span
-                        key={idOf(role)}
-                        className="rounded-full bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700"
-                      >
-                        {typeof role === "object"
-                          ? role.roleName || "Assigned role"
-                          : roles.find(
-                              (item) => idOf(item) === idOf(role)
-                            )?.roleName || "Assigned role"}
-                      </span>
-                    ))}
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {getSelectedEmployees(selectedProject).map(
+                      (employee) => (
+                        <div
+                          key={idOf(employee)}
+                          className="rounded-lg border border-slate-200 bg-slate-50 p-3"
+                        >
+                          <p className="text-sm font-medium text-black-800">
+                            {getEmployeeName(employee)}
+                          </p>
+
+                          {employee.email && (
+                            <p className="mt-1 text-xs text-black-500">
+                              {employee.email}
+                            </p>
+                          )}
+                        </div>
+                      )
+                    )}
                   </div>
                 )}
               </div>
@@ -1620,191 +1938,197 @@ const permanentlyDeleteProject = async (deletedProject) => {
         </div>
       )}
 
-      {/* DELETED PROJECTS MODAL */}
-{modal === "deleted" && (
-  <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-950/50 p-3 sm:p-6">
-    <div className="my-auto max-h-[95vh] w-full max-w-6xl overflow-hidden rounded-2xl bg-white shadow-2xl">
-      {/* HEADER */}
-      <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:px-6">
-        <div>
-          <h2 className="text-lg font-bold text-black-800">
-            Deleted Projects
-          </h2>
+      {/* =====================================================
+          DELETED PROJECTS MODAL
+      ===================================================== */}
 
-          <p className="mt-1 text-sm text-black-500">
-            Restore archived projects or permanently delete them.
-          </p>
-        </div>
+      {modal === "deleted" && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-950/50 p-3 sm:p-6">
+          <div className="my-auto max-h-[95vh] w-full max-w-6xl overflow-hidden rounded-2xl bg-white shadow-2xl">
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={fetchDeletedProjects}
-            disabled={deletedLoading}
-            title="Refresh deleted projects"
-            className="rounded-lg border border-slate-300 p-2 text-black-600 hover:bg-slate-100 disabled:opacity-50"
-          >
-            <RefreshCw
-              size={17}
-              className={deletedLoading ? "animate-spin" : ""}
-            />
-          </button>
+            {/* HEADER */}
 
-          <button
-            type="button"
-            onClick={closeModal}
-            className="rounded-lg p-2 text-black-500 hover:bg-slate-100"
-          >
-            <X size={20} />
-          </button>
-        </div>
-      </div>
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:px-6">
+              <div>
+                <h2 className="text-lg font-bold text-black-800">
+                  Deleted Projects
+                </h2>
 
-      {/* CONTENT */}
-      <div className="max-h-[calc(95vh-85px)] overflow-y-auto p-4 sm:p-6">
-        {deletedLoading ? (
-          <div className="flex items-center justify-center gap-3 py-20 text-sm text-black-500">
-            <RefreshCw className="animate-spin" size={18} />
-            Loading deleted projects...
-          </div>
-        ) : deletedProjects.length === 0 ? (
-          <div className="py-16 text-center">
-            <Trash2
-              size={36}
-              className="mx-auto mb-3 text-black-300"
-            />
+                <p className="mt-1 text-sm text-black-500">
+                  Restore archived projects or permanently delete them.
+                </p>
+              </div>
 
-            <h3 className="font-semibold text-black-800">
-              No deleted projects
-            </h3>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={fetchDeletedProjects}
+                  disabled={deletedLoading}
+                  title="Refresh deleted projects"
+                  className="rounded-lg border border-slate-300 p-2 text-black-600 hover:bg-slate-100 disabled:opacity-50"
+                >
+                  <RefreshCw
+                    size={17}
+                    className={deletedLoading ? "animate-spin" : ""}
+                  />
+                </button>
 
-            <p className="mt-1 text-sm text-black-500">
-              Projects moved to Deleted Projects will appear here.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-200">
-            <table className="w-full min-w-[850px] text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-black-500">
-                <tr>
-                  <th className="px-4 py-3 font-semibold">
-                    Project
-                  </th>
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="rounded-lg p-2 text-black-500 hover:bg-slate-100"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
 
-                  <th className="px-4 py-3 font-semibold">
-                    Company
-                  </th>
+            {/* CONTENT */}
 
-                  <th className="px-4 py-3 font-semibold">
-                    Client
-                  </th>
+            <div className="max-h-[calc(95vh-85px)] overflow-y-auto p-4 sm:p-6">
+              {deletedLoading ? (
+                <div className="flex items-center justify-center gap-3 py-20 text-sm text-black-500">
+                  <RefreshCw className="animate-spin" size={18} />
+                  Loading deleted projects...
+                </div>
+              ) : deletedProjects.length === 0 ? (
+                <div className="py-16 text-center">
+                  <Trash2
+                    size={36}
+                    className="mx-auto mb-3 text-black-300"
+                  />
 
-                  <th className="px-4 py-3 font-semibold">
-                    Modules
-                  </th>
+                  <h3 className="font-semibold text-black-800">
+                    No deleted projects
+                  </h3>
 
-                  <th className="px-4 py-3 font-semibold">
-                    Deleted At
-                  </th>
+                  <p className="mt-1 text-sm text-black-500">
+                    Projects moved to Deleted Projects will appear here.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full min-w-[850px] text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-black-500">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">
+                          Project
+                        </th>
 
-                  <th className="px-4 py-3 text-right font-semibold">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
+                        <th className="px-4 py-3 font-semibold">
+                          Company
+                        </th>
 
-              <tbody className="divide-y divide-slate-100">
-                {deletedProjects.map((project) => {
-                  const deletedCompanyName =
-                    typeof project.companyId === "object"
-                      ? project.companyId?.companyName
-                      : companies.find(
-                          (company) =>
-                            idOf(company) === idOf(project.companyId)
-                        )?.companyName;
+                        <th className="px-4 py-3 font-semibold">
+                          Client
+                        </th>
 
-                  return (
-                    <tr
-                      key={idOf(project)}
-                      className="hover:bg-slate-50"
-                    >
-                      <td className="px-4 py-4">
-                        <p className="font-semibold text-black-800">
-                          {project.projectName || "Unnamed project"}
-                        </p>
+                        <th className="px-4 py-3 font-semibold">
+                          Modules
+                        </th>
 
-                        <p className="mt-1 text-xs text-black-500">
-                          {project.projectCode || "No project code"}
-                        </p>
-                      </td>
+                        <th className="px-4 py-3 font-semibold">
+                          Deleted At
+                        </th>
 
-                      <td className="px-4 py-4">
-                        {deletedCompanyName || "Unknown company"}
-                      </td>
+                        <th className="px-4 py-3 text-right font-semibold">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
 
-                      <td className="px-4 py-4">
-                        {project.clientName || "—"}
-                      </td>
+                    <tbody className="divide-y divide-slate-100">
+                      {deletedProjects.map((project) => {
+                        const deletedCompanyName =
+                          typeof project.companyId === "object"
+                            ? project.companyId?.companyName
+                            : companies.find(
+                                (company) =>
+                                  idOf(company) === idOf(project.companyId)
+                              )?.companyName;
 
-                      <td className="px-4 py-4">
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700">
-                          <Layers size={13} />
-                          {project.modules?.length || 0}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-4">
-                        {project.deletedAt
-                          ? new Date(
-                              project.deletedAt
-                            ).toLocaleString()
-                          : "—"}
-                      </td>
-
-                      <td className="px-4 py-4">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => restoreProject(project)}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                        return (
+                          <tr
+                            key={idOf(project)}
+                            className="hover:bg-slate-50"
                           >
-                            <RefreshCw size={14} />
-                            Restore
-                          </button>
+                            <td className="px-4 py-4">
+                              <p className="font-semibold text-black-800">
+                                {project.projectName || "Unnamed project"}
+                              </p>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              permanentlyDeleteProject(project)
-                            }
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100"
-                          >
-                            <Trash2 size={14} />
-                            Delete Forever
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                              <p className="mt-1 text-xs text-black-500">
+                                {project.projectCode || "No project code"}
+                              </p>
+                            </td>
+
+                            <td className="px-4 py-4">
+                              {deletedCompanyName || "Unknown company"}
+                            </td>
+
+                            <td className="px-4 py-4">
+                              {project.clientName || "—"}
+                            </td>
+
+                            <td className="px-4 py-4">
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700">
+                                <Layers size={13} />
+                                {project.modules?.length || 0}
+                              </span>
+                            </td>
+
+                            <td className="px-4 py-4">
+                              {project.deletedAt
+                                ? new Date(
+                                    project.deletedAt
+                                  ).toLocaleString()
+                                : "—"}
+                            </td>
+
+                            <td className="px-4 py-4">
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => restoreProject(project)}
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                                >
+                                  <RefreshCw size={14} />
+                                  Restore
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    permanentlyDeleteProject(project)
+                                  }
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100"
+                                >
+                                  <Trash2 size={14} />
+                                  Delete Forever
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="mt-4 flex justify-end border-t border-slate-100 pt-4">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="rounded-lg border border-slate-300 px-5 py-2.5 text-sm font-medium hover:bg-slate-50"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
-        )}
-
-        <div className="mt-4 flex justify-end border-t border-slate-100 pt-4">
-          <button
-            type="button"
-            onClick={closeModal}
-            className="rounded-lg border border-slate-300 px-5 py-2.5 text-sm font-medium hover:bg-slate-50"
-          >
-            Close
-          </button>
         </div>
-      </div>
-    </div>
-  </div>
-)}
+      )}
     </div>
   );
 };

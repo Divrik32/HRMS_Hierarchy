@@ -56,6 +56,7 @@ import CompanyLeaveApprovals from "./pages/company/CompanyLeaveApprovals";
 import CompanyCompOffApprovals from "./pages/company/CompanyCompOffApprovals";
 import AllEmployeeLeaves from "./pages/company/AllEmployeeLeaves";
 import AttendanceManagement from "./pages/employee/AttendanceManagement";
+import ProjectManagement from "./pages/employee/ProjectManagement";
 
 const router = createBrowserRouter([
   // =====================================================
@@ -212,6 +213,10 @@ const router = createBrowserRouter([
         element: <EmployeeProjects />,
       },
       {
+  path: "project-management",
+  element: <ProjectManagement />,
+},
+      {
         path: "access",
         element: <EmployeeRoleAccess />,
       },
@@ -228,9 +233,9 @@ const router = createBrowserRouter([
         element: <EmployeeAttendance />,
       },
       {
-  path: "attendance-management",
-  element: <AttendanceManagement />,
-},
+        path: "attendance-management",
+        element: <AttendanceManagement />,
+      },
       {
         path: "holidays",
         element: <EmployeeHolidays />,

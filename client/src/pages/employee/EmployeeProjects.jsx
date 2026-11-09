@@ -20,9 +20,61 @@ const STATUSES = [
   "Completed",
 ];
 
+const normalizeName = (value) =>
+  String(value || "").trim().toLowerCase();
+
+const isEligibleProjectManager = (employee) => {
+  const roleName = normalizeName(employee?.roleId?.roleName);
+  const departmentName = normalizeName(
+    employee?.departmentId?.departmentName
+  );
+
+  const allowedRoles = ["vice president", "vp"];
+
+  const allowedDepartments = [
+    "it",
+    "information technology",
+    "functional testing",
+    "accessibility",
+  ];
+
+  // Explicit department names
+  const isAllowedDepartment =
+    allowedDepartments.includes(departmentName);
+
+  // Other clearly IT-related department names
+  const itKeywords = [
+    "information technology",
+    "software",
+    "technical",
+    "technology",
+    "engineering",
+    "quality assurance",
+    "testing",
+    "accessibility",
+    "cyber security",
+    "cybersecurity",
+    "network",
+    "infrastructure",
+    "data science",
+    "database",
+    "development",
+  ];
+
+  const isITRelatedDepartment = itKeywords.some((keyword) =>
+    departmentName.includes(keyword)
+  );
+
+  return (
+    allowedRoles.includes(roleName) &&
+    (isAllowedDepartment || isITRelatedDepartment)
+  );
+};
+
 const EmployeeProjects = () => {
   const { employeeId } = useParams();
-
+  const [employeeProfile, setEmployeeProfile] = useState(null);
+  const [showProjectManagement, setShowProjectManagement] = useState(false);
   const [projects, setProjects] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [projectDetails, setProjectDetails] = useState(null);

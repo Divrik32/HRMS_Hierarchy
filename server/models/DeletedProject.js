@@ -1,19 +1,26 @@
-
 import mongoose from "mongoose";
 
 const deletedModuleSchema = new mongoose.Schema(
   {
     _id: mongoose.Schema.Types.ObjectId,
+
     moduleName: {
       type: String,
       required: true,
       trim: true,
     },
+
     status: {
       type: String,
-      enum: ["Not Assigned", "Assigned", "In Progress", "Completed"],
+      enum: [
+        "Not Assigned",
+        "Assigned",
+        "In Progress",
+        "Completed",
+      ],
       default: "Not Assigned",
     },
+
     createdAt: Date,
     updatedAt: Date,
   },
@@ -69,10 +76,18 @@ const deletedProjectSchema = new mongoose.Schema(
       index: true,
     },
 
+    // Super Admin-created project
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "SuperAdmin",
-      required: true,
+      default: null,
+    },
+
+    // Employee-created project
+    createdByEmployee: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Employee",
+      default: null,
     },
 
     roleAccess: [
@@ -81,6 +96,17 @@ const deletedProjectSchema = new mongoose.Schema(
         ref: "Role",
       },
     ],
+
+    // Employees who have project access
+    employeeAccess: {
+      type: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Employee",
+        },
+      ],
+      default: [],
+    },
 
     modules: {
       type: [deletedModuleSchema],
@@ -96,10 +122,18 @@ const deletedProjectSchema = new mongoose.Schema(
     originalCreatedAt: Date,
     originalUpdatedAt: Date,
 
+    // Super Admin who deleted the project
     deletedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "SuperAdmin",
-      required: true,
+      default: null,
+    },
+
+    // Employee who deleted the project
+    deletedByEmployee: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Employee",
+      default: null,
     },
 
     deletedAt: {

@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 import crypto from "crypto";
 
@@ -21,7 +22,6 @@ const generateProjectCode = (projectName, clientName) => {
 };
 
 // One project can contain many modules
-
 const moduleSchema = new mongoose.Schema(
   {
     moduleName: {
@@ -41,14 +41,12 @@ const moduleSchema = new mongoose.Schema(
       default: "Not Assigned",
     },
 
-    // Employee responsible for this module
     assignedEmployee: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Employee",
       default: null,
     },
 
-    // Employee who assigned this module
     assignedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Employee",
@@ -64,7 +62,6 @@ const moduleSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
-
 
 const projectSchema = new mongoose.Schema(
   {
@@ -117,9 +114,16 @@ const projectSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "SuperAdmin",
-      required: true,
+      default: null,
     },
 
+    createdByEmployee: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Employee",
+      default: null,
+    },
+
+    // Legacy role access field
     roleAccess: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -127,7 +131,14 @@ const projectSchema = new mongoose.Schema(
       },
     ],
 
-    // One project can contain many modules.
+    // Individually selected employees who can access this project
+    employeeAccess: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Employee",
+      },
+    ],
+
     modules: {
       type: [moduleSchema],
       default: [],

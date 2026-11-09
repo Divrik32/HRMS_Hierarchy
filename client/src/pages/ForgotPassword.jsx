@@ -404,27 +404,28 @@ const ForgotPassword = () => {
                   Minimum 6 characters.
                 </p>
               </div>
+<div className="relative">
+  <input
+    id="confirmPassword"
+    type={showPassword ? "text" : "password"}
+    value={confirmPassword}
+    onChange={(e) => setConfirmPassword(e.target.value)}
+    placeholder="Re-enter new password"
+    autoComplete="new-password"
+    minLength={6}
+    required
+    className={`${inputClass} pr-12`}
+  />
 
-              <div>
-                <label
-                  htmlFor="confirmPassword"
-                  className="mb-2 block text-sm font-medium text-slate-700"
-                >
-                  Confirm New Password
-                </label>
-
-                <input
-                  id="confirmPassword"
-                  type={showPassword ? "text" : "password"}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Re-enter new password"
-                  autoComplete="new-password"
-                  minLength={6}
-                  required
-                  className={inputClass}
-                />
-              </div>
+  <button
+    type="button"
+    onClick={() => setShowPassword((previous) => !previous)}
+    aria-label={showPassword ? "Hide password" : "Show password"}
+    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-blue-700"
+  >
+    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+  </button>
+</div>
 
               <button
                 type="submit"

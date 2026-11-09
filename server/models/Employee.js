@@ -137,12 +137,18 @@ const employeeSchema = new mongoose.Schema(
       default: "",
     },
 
-    phone: {
-      type: String,
-      required: true,
-      trim: true,
-      match: [/^[6-9]\d{9}$/, "Enter a valid 10-digit mobile number."],
+phone: {
+  type: String,
+  required: true,
+  trim: true,
+  validate: {
+    validator: function (value) {
+      return /^\+[1-9]\d{0,2}\d{10}$/.test(value);
     },
+    message:
+      "Phone number must contain a country code and exactly 10 digits.",
+  },
+},
 
     presentAddress: {
       type: String,

@@ -25,6 +25,9 @@ import {
 } from "lucide-react";
 import ImageCropper from "../../components/common/ImageCropper";
 import api from "../../api/axios";
+import PhoneInput from "react-phone-number-input";
+import "react-phone-number-input/style.css";
+import { parsePhoneNumber } from "libphonenumber-js";
 
 const initialForm = {
   name: "",
@@ -481,10 +484,14 @@ const handleProfileImageCrop = (croppedFile) => {
       return;
     }
 
-    if (!/^[6-9]\d{9}$/.test(form.phone.trim())) {
-      toast.error("Enter a valid 10-digit Indian mobile number.");
-      return;
-    }
+const parsedPhone = form.phone
+  ? parsePhoneNumber(form.phone)
+  : null;
+
+if (!parsedPhone || !/^\d{10}$/.test(parsedPhone.nationalNumber)) {
+  toast.error("Enter a valid 10-digit phone number.");
+  return;
+}
 
     if (!form.departmentId || !form.roleId) {
       toast.error("Please select a department and role.");
@@ -1105,24 +1112,24 @@ const closeModal = () => {
     </div>
   </div>
 )}
+<div>
+  <label className={labelClass}>Phone *</label>
 
-              <div>
-                <label className={labelClass}>Phone *</label>
-                <input
-                  required
-                  type="tel"
-                  name="phone"
-                  value={form.phone}
-                  onChange={handleInput}
-                  inputMode="numeric"
-                  maxLength={10}
-                  minLength={10}
-                  pattern="[6-9][0-9]{9}"
-                  title="Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9."
-                  className={inputClass}
-                  placeholder="10-digit mobile number"
-                />
-              </div>
+  <PhoneInput
+    international
+    defaultCountry="IN"
+    countryCallingCodeEditable={false}
+    value={form.phone}
+    onChange={(value) =>
+      setForm((prev) => ({
+        ...prev,
+        phone: value || "",
+      }))
+    }
+    placeholder="Enter phone number"
+    className="employee-phone-input"
+  />
+</div>
 
               <div>
                 <label className={labelClass}>Gender *</label>

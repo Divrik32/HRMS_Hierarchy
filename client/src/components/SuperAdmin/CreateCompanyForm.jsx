@@ -3,6 +3,8 @@ import { toast } from "react-toastify";
 import api from "../../api/axios";
 import { Eye, EyeOff } from "lucide-react";
 import ImageCropper from "../../components/common/ImageCropper";
+import PhoneInput from "react-phone-number-input";
+import "react-phone-number-input/style.css";
 
 const initialForm = {
   companyName: "",
@@ -84,10 +86,19 @@ const handleFileChange = (e, target) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (loading) return;
+if (loading) return;
 
-    setLoading(true);
+const passwordRegex =
+  /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9\s])\S{8,}$/;
 
+if (!passwordRegex.test(formData.password)) {
+  toast.error(
+    "Password must contain at least 8 characters, including a letter, number and special character."
+  );
+  return;
+}
+
+setLoading(true);
     const toastId = toast.loading("Creating company...");
 
     try {
@@ -285,31 +296,56 @@ const handleFileChange = (e, target) => {
     Phone Number *
   </label>
 
-  <div className="flex">
-    <div className="flex items-center justify-center px-4 border border-slate-300 border-r-0 rounded-l-lg bg-slate-100 text-slate-700 font-medium">
-      +91
-    </div>
+  <PhoneInput
+    international
+    defaultCountry="IN"
+    value={formData.phone}
+    onChange={(value) =>
+      setFormData((prev) => ({
+        ...prev,
+        phone: value || "",
+      }))
+    }
+    placeholder="Enter phone number"
+    required
+    style={{
+      display: "flex",
+      alignItems: "center",
+      width: "100%",
+      border: "1px solid #cbd5e1",
+      borderRadius: "8px",
+      padding: "12px",
+      gap: "10px",
+      fontSize: "14px",
+    }}
+  />
 
-    <input
-      type="tel"
-      name="phone"
-      value={formData.phone}
-      onChange={(e) =>
-        setFormData((prev) => ({
-          ...prev,
-          phone: e.target.value.replace(/\D/g, "").slice(0, 10),
-        }))
-      }
-      placeholder="Enter mobile number"
-      inputMode="numeric"
-      maxLength={10}
-      minLength={10}
-      pattern="[6-9][0-9]{9}"
-      title="Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9."
-      className="w-full min-w-0 border border-slate-300 p-3 rounded-r-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-      required
-    />
-  </div>
+  <style>{`
+    .PhoneInputInput {
+      width: 100%;
+      min-width: 0;
+      border: none;
+      outline: none;
+      background: transparent;
+      font-size: 14px;
+      color: #334155;
+    }
+
+    .PhoneInputCountry {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .PhoneInputCountrySelect {
+      cursor: pointer;
+    }
+
+    .PhoneInput:focus-within {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    }
+  `}</style>
 </div>
 
 
