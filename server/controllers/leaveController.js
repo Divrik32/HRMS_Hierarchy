@@ -80,11 +80,270 @@ const isHR = (role) => {
   );
 };
 
+
 const getBalanceField = (leaveType) => ({
   "Casual Leave": "casualLeave",
   "Sick Leave": "sickLeave",
   "Paid Leave": "paidLeave",
 })[leaveType];
+
+// =====================================================
+// NORMALIZE LEAVE BREAKDOWN
+// =====================================================
+
+const normalizeLeaveBreakdown = (leaveBreakdown) => {
+  if (!Array.isArray(leaveBreakdown) || !leaveBreakdown.length) {
+    return null;
+  }
+
+  const allowedTypes = [
+    "Casual Leave",
+    "Sick Leave",
+    "Paid Leave",
+    "Unpaid Leave",
+  ];
+
+  const seenTypes = new Set();
+
+  const normalized = [];
+
+  for (const item of leaveBreakdown) {
+    const leaveType = String(item?.leaveType || "").trim();
+    const days = Number(item?.days);
+
+    if (!allowedTypes.includes(leaveType)) return null;
+    if (seenTypes.has(leaveType)) return null;
+
+    if (
+      !Number.isFinite(days) ||
+      days < 0.5 ||
+      Math.abs(days * 2 - Math.round(days * 2)) > 0.000001
+    ) {
+      return null;
+    }
+
+    seenTypes.add(leaveType);
+
+    normalized.push({
+      leaveType,
+      days,
+    });
+  }
+
+  return normalized;
+};
+
+// =====================================================
+// GET REQUEST LEAVE BREAKDOWN
+// Supports legacy records.
+// =====================================================
+
+const getRequestLeaveBreakdown = (request) => {
+  if (
+    Array.isArray(request.leaveBreakdown) &&
+    request.leaveBreakdown.length > 0
+  ) {
+    return request.leaveBreakdown;
+  }
+
+  // Old records compatibility.
+  if (request.leaveType && Number(request.totalDays) > 0) {
+    return [
+      {
+        leaveType: request.isUnpaid
+          ? "Unpaid Leave"
+          : request.leaveType,
+        days: Number(request.totalDays),
+      },
+    ];
+  }
+
+  // Old unpaid records may not have a leaveType.
+  if (
+    request.isUnpaid &&
+    Number(request.totalDays) > 0
+  ) {
+    return [
+      {
+        leaveType: "Unpaid Leave",
+        days: Number(request.totalDays),
+      },
+    ];
+  }
+
+  return [];
+};
+
+// =====================================================
+// GET PAID LEAVE BREAKDOWN
+// =====================================================
+
+const getPaidLeaveBreakdown = (request) => {
+  return getRequestLeaveBreakdown(request).filter(
+    (item) => item.leaveType !== "Unpaid Leave"
+  );
+};
+
+// =====================================================
+// GET UNPAID LEAVE DAYS
+// =====================================================
+
+const getUnpaidLeaveDays = (request) => {
+  const breakdown = getRequestLeaveBreakdown(request);
+
+  // Legacy unpaid request.
+  if (
+    request.isUnpaid &&
+    !breakdown.some((item) => item.leaveType === "Unpaid Leave")
+  ) {
+    return Number(request.totalDays) || 0;
+  }
+
+  return breakdown
+    .filter((item) => item.leaveType === "Unpaid Leave")
+    .reduce((sum, item) => sum + Number(item.days || 0), 0);
+};
+
+// =====================================================
+// VALIDATE LEAVE BREAKDOWN TOTAL
+// =====================================================
+
+const validateLeaveBreakdownTotal = (breakdown, totalDays) => {
+  const breakdownTotal = breakdown.reduce(
+    (sum, item) => sum + item.days,
+    0
+  );
+
+  return Math.abs(breakdownTotal - totalDays) < 0.000001;
+};
+
+// =====================================================
+// NORMALIZE DAILY BREAKDOWN
+// Employee selects Full Day / Half Day dates.
+// =====================================================
+
+const normalizeDailyBreakdown = (
+  dailyBreakdown,
+  startDate,
+  endDate,
+  totalDays
+) => {
+  if (!Array.isArray(dailyBreakdown) || !dailyBreakdown.length) {
+    return null;
+  }
+
+  const expectedDateCount =
+    Math.round(
+      (endDate.getTime() - startDate.getTime()) /
+        86400000
+    ) + 1;
+
+  // 7.5 days requires 8 calendar dates.
+  if (
+    expectedDateCount !== Math.ceil(totalDays) ||
+    dailyBreakdown.length !== expectedDateCount
+  ) {
+    return null;
+  }
+
+  const normalized = [];
+  const seenDates = new Set();
+
+  for (const item of dailyBreakdown) {
+    const date = normalizeDate(item?.date);
+    const dayType = item?.dayType;
+    const days = Number(item?.days);
+
+    if (!date) return null;
+
+    if (
+      !["Full Day", "Half Day"].includes(dayType)
+    ) {
+      return null;
+    }
+
+    if (
+      (dayType === "Full Day" && days !== 1) ||
+      (dayType === "Half Day" && days !== 0.5)
+    ) {
+      return null;
+    }
+
+    const dateKey = date.toISOString().slice(0, 10);
+
+    if (seenDates.has(dateKey)) return null;
+    seenDates.add(dateKey);
+
+    normalized.push({
+      date,
+      dayType,
+      days,
+    });
+  }
+
+  normalized.sort(
+    (a, b) => a.date.getTime() - b.date.getTime()
+  );
+
+  // First date must equal startDate.
+  if (
+    normalized[0].date.getTime() !== startDate.getTime()
+  ) {
+    return null;
+  }
+
+  // Last date must equal endDate.
+  if (
+    normalized[normalized.length - 1].date.getTime() !==
+    endDate.getTime()
+  ) {
+    return null;
+  }
+
+  // Dates must be consecutive.
+  for (let i = 0; i < normalized.length; i++) {
+    const expectedDate = new Date(
+      startDate.getTime() + i * 86400000
+    );
+
+    if (
+      normalized[i].date.getTime() !== expectedDate.getTime()
+    ) {
+      return null;
+    }
+  }
+
+  const dailyTotal = normalized.reduce(
+    (sum, item) => sum + item.days,
+    0
+  );
+
+  if (Math.abs(dailyTotal - totalDays) >= 0.000001) {
+    return null;
+  }
+
+// Validate Half Day count.
+// Example:
+// 1.5 days = 2 calendar dates = 1 Half Day
+// 7.5 days = 8 calendar dates = 1 Half Day
+// 7 days   = 7 calendar dates = 0 Half Day
+// 0.5 days = 1 calendar date  = 1 Half Day
+
+const halfDayCount = normalized.filter(
+  (item) => item.dayType === "Half Day"
+).length;
+
+const expectedHalfDayCount = Math.round(
+  (expectedDateCount - totalDays) * 2
+);
+
+if (halfDayCount !== expectedHalfDayCount) {
+  return null;
+}
+
+  return normalized;
+};
+
 
 const getApproverInfo = async (req, applicant) => {
   if (isSuperAdmin(req)) {
@@ -198,6 +457,7 @@ export const getMyLeaveBalance = async (req, res) => {
   }
 };
 
+
 // =====================================================
 // NORMAL APPLY LEAVE REQUEST — ALL EMPLOYEES INCLUDING HR
 // =====================================================
@@ -210,8 +470,8 @@ export const createLeaveRequest = async (req, res) => {
     const companyId = getCompanyId(req);
 
     const {
-      leaveCategory,
-      leaveType,
+      leaveBreakdown,
+      dailyBreakdown,
       startDate,
       endDate,
       totalDays,
@@ -219,15 +479,11 @@ export const createLeaveRequest = async (req, res) => {
     } = req.body;
 
     if (!employeeId || !companyId) {
-      return sendError(res, 401, "Employee authentication information missing.");
-    }
-
-    if (!["Paid Leave", "Unpaid Leave"].includes(leaveCategory)) {
-      return sendError(res, 400, "Invalid leave category.");
-    }
-
-    if (!["Casual Leave", "Sick Leave", "Paid Leave"].includes(leaveType)) {
-      return sendError(res, 400, "Invalid leave type.");
+      return sendError(
+        res,
+        401,
+        "Employee authentication information missing."
+      );
     }
 
     if (!reason?.trim()) {
@@ -245,13 +501,74 @@ export const createLeaveRequest = async (req, res) => {
     if (
       !Number.isFinite(days) ||
       days <= 0 ||
-      !Number.isInteger(days * 2)
+      Math.abs(days * 2 - Math.round(days * 2)) > 0.000001
     ) {
       return sendError(
         res,
         400,
         "Leave duration must be in multiples of 0.5 days."
       );
+    }
+
+    // =========================================
+    // VALIDATE LEAVE TYPE BREAKDOWN
+    // =========================================
+
+    const breakdown = normalizeLeaveBreakdown(leaveBreakdown);
+
+    if (!breakdown) {
+      return sendError(
+        res,
+        400,
+        "Invalid leave breakdown. Duplicate leave types are not allowed."
+      );
+    }
+
+    if (!validateLeaveBreakdownTotal(breakdown, days)) {
+      return sendError(
+        res,
+        400,
+        "Total leave days must match the sum of leave types."
+      );
+    }
+
+    // =========================================
+    // VALIDATE DAILY BREAKDOWN
+    // =========================================
+
+    const normalizedDailyBreakdown = normalizeDailyBreakdown(
+      dailyBreakdown,
+      start,
+      end,
+      days
+    );
+
+    if (!normalizedDailyBreakdown) {
+      return sendError(
+        res,
+        400,
+        "Invalid daily breakdown. Check your date range and Full Day / Half Day selections."
+      );
+    }
+
+    // =========================================
+    // DERIVE LEAVE CATEGORY
+    // =========================================
+
+    const hasPaidLeave = breakdown.some(
+      (item) => item.leaveType !== "Unpaid Leave"
+    );
+
+    const hasUnpaidLeave = breakdown.some(
+      (item) => item.leaveType === "Unpaid Leave"
+    );
+
+    let leaveCategory = "Paid Leave";
+
+    if (hasPaidLeave && hasUnpaidLeave) {
+      leaveCategory = "Mixed Leave";
+    } else if (hasUnpaidLeave) {
+      leaveCategory = "Unpaid Leave";
     }
 
     const employee = await Employee.findOne({
@@ -263,12 +580,22 @@ export const createLeaveRequest = async (req, res) => {
       return sendError(res, 404, "Employee not found.");
     }
 
-    const isUnpaid = leaveCategory === "Unpaid Leave";
-    const balanceField = getBalanceField(leaveType);
+    const paidBreakdown = breakdown.filter(
+      (item) => item.leaveType !== "Unpaid Leave"
+    );
+
+    const hasPaidBalanceDeduction = paidBreakdown.length > 0;
+
+    // isUnpaid means the complete request is unpaid.
+    const isUnpaid = !hasPaidLeave && hasUnpaidLeave;
 
     let createdRequest;
 
     await session.withTransaction(async () => {
+      // =========================================
+      // CHECK OVERLAPPING REQUESTS
+      // =========================================
+
       const overlappingRequest = await LeaveRequest.findOne({
         employeeId,
         companyId,
@@ -283,17 +610,28 @@ export const createLeaveRequest = async (req, res) => {
         );
       }
 
-      // Deduct immediately for Paid Leave category.
-      if (!isUnpaid) {
+      // =========================================
+      // DEDUCT EACH PAID LEAVE TYPE
+      // =========================================
+
+      for (const item of paidBreakdown) {
+        const balanceField = getBalanceField(item.leaveType);
+
+        if (!balanceField) {
+          throw new Error(
+            `Invalid balance field for ${item.leaveType}.`
+          );
+        }
+
         const balanceUpdate = await LeaveBalance.updateOne(
           {
             employeeId,
             companyId,
-            [balanceField]: { $gte: days },
+            [balanceField]: { $gte: item.days },
           },
           {
             $inc: {
-              [balanceField]: -days,
+              [balanceField]: -item.days,
             },
           },
           { session }
@@ -309,25 +647,41 @@ export const createLeaveRequest = async (req, res) => {
             throw new Error("Employee leave balance not found.");
           }
 
-          throw new Error("Insufficient leave balance.");
+          throw new Error(
+            `Insufficient ${item.leaveType} balance. Required: ${item.days} days.`
+          );
         }
       }
+
+      // =========================================
+      // CREATE LEAVE REQUEST
+      // =========================================
 
       const [request] = await LeaveRequest.create(
         [
           {
             companyId,
             employeeId,
+
             leaveCategory,
-            leaveType,
+            leaveBreakdown: breakdown,
+
             startDate: start,
             endDate: end,
+
+            dailyBreakdown: normalizedDailyBreakdown,
+
             totalDays: days,
             reason: reason.trim(),
+
             status: "Pending",
+
             isUnpaid,
-            balanceDeducted: !isUnpaid,
+
+            balanceDeducted: hasPaidBalanceDeduction,
+
             payrollProcessed: false,
+
             actionHistory: [
               {
                 action: "Submitted",
@@ -351,6 +705,7 @@ export const createLeaveRequest = async (req, res) => {
     });
   } catch (error) {
     console.error("Create Leave Request Error:", error);
+
     return sendError(res, 400, error.message);
   } finally {
     await session.endSession();
@@ -583,19 +938,25 @@ export const getPendingLeaveRequests = async (req, res) => {
       return sendError(res, 404, "Employee not found.");
     }
 
-    const requests = await LeaveRequest.find({
-      companyId,
-      status: "Pending",
-    })
-      .populate({
-        path: "employeeId",
-        select: "name empId companyId roleId departmentId",
-        populate: {
-          path: "roleId",
-          select: "roleName parentRoleId",
-        },
-      })
-      .sort({ createdAt: -1 });
+const requests = await LeaveRequest.find({
+  companyId,
+  status: "Pending",
+})
+  .populate({
+    path: "employeeId",
+    select: "name empId companyId roleId departmentId",
+    populate: [
+      {
+        path: "roleId",
+        select: "roleName parentRoleId",
+      },
+      {
+        path: "departmentId",
+        select: "departmentName",
+      },
+    ],
+  })
+  .sort({ createdAt: -1 });
 
     const currentRoleId = getId(currentEmployee.roleId);
     const currentIsHR = isHR(currentEmployee.roleId);
@@ -674,6 +1035,7 @@ export const getSuperAdminPendingLeaveRequests = async (req, res) => {
 // APPROVE LEAVE REQUEST
 // =====================================================
 
+
 export const approveLeaveRequest = async (req, res) => {
   const session = await mongoose.startSession();
 
@@ -725,11 +1087,18 @@ export const approveLeaveRequest = async (req, res) => {
       }
 
       if (!allowed) {
-        throw new Error("You are not authorized to approve this request.");
+        throw new Error(
+          "You are not authorized to approve this request."
+        );
       }
 
-      // Unpaid leave is added to payroll deduction tracking on approval.
-      if (request.isUnpaid) {
+      // =========================================
+      // ADD ONLY UNPAID DAYS TO EXTRA LEAVE
+      // =========================================
+
+      const unpaidDays = getUnpaidLeaveDays(request);
+
+      if (unpaidDays > 0) {
         await LeaveBalance.findOneAndUpdate(
           {
             employeeId: request.employeeId,
@@ -737,7 +1106,7 @@ export const approveLeaveRequest = async (req, res) => {
           },
           {
             $inc: {
-              extraLeaveTaken: request.totalDays,
+              extraLeaveTaken: unpaidDays,
             },
           },
           {
@@ -747,19 +1116,41 @@ export const approveLeaveRequest = async (req, res) => {
         );
       }
 
-      // Paid leave balance was already deducted during submission.
+      // =========================================
+      // UPDATE APPROVAL INFORMATION
+      // =========================================
+
+      const superAdminApproval = isSuperAdmin(req);
+
       request.status = "Approved";
-      request.approvedBy = currentUserId;
+
+      request.approvedBy = superAdminApproval
+        ? null
+        : currentUserId;
+
+      request.approvedBySuperAdmin = superAdminApproval
+        ? currentUserId
+        : null;
+
       request.approvedAt = new Date();
 
       request.actionHistory.push({
         action: "Approved",
-        performedBy: currentUserId,
+
+        performedBy: superAdminApproval
+          ? null
+          : currentUserId,
+
+        performedBySuperAdmin: superAdminApproval
+          ? currentUserId
+          : null,
+
         performedAt: new Date(),
         remarks: req.body?.remarks || "",
       });
 
       await request.save({ session });
+
       result = request;
     });
 
@@ -769,6 +1160,8 @@ export const approveLeaveRequest = async (req, res) => {
       request: result,
     });
   } catch (error) {
+    console.error("Approve Leave Request Error:", error);
+
     return sendError(
       res,
       error.message.includes("not authorized") ? 403 : 400,
@@ -783,17 +1176,24 @@ export const approveLeaveRequest = async (req, res) => {
 // REJECT LEAVE REQUEST — REFUND PAID BALANCE
 // =====================================================
 
+
 export const rejectLeaveRequest = async (req, res) => {
   const session = await mongoose.startSession();
 
   try {
     const { leaveRequestId } = req.params;
+
     const currentUserId = getCurrentUserId(req);
     const companyId = getCompanyId(req);
+
     const rejectionReason = req.body?.rejectionReason;
 
-    if (!mongoose.Types.ObjectId.isValid(leaveRequestId)) {
-      return sendError(res, 400, "Invalid leave request ID.");
+    if (
+      !mongoose.Types.ObjectId.isValid(leaveRequestId) ||
+      !currentUserId ||
+      !companyId
+    ) {
+      return sendError(res, 400, "Invalid leave request information.");
     }
 
     if (!rejectionReason?.trim()) {
@@ -832,51 +1232,97 @@ export const rejectLeaveRequest = async (req, res) => {
       }
 
       if (!allowed) {
-        throw new Error("You are not authorized to reject this request.");
+        throw new Error(
+          "You are not authorized to reject this request."
+        );
       }
 
-      // Refund only if paid balance was deducted earlier.
-      if (request.balanceDeducted && !request.isUnpaid) {
-        const balanceField = getBalanceField(request.leaveType);
+      // =========================================
+      // REFUND ONLY PAID LEAVE TYPES
+      // =========================================
 
-        await LeaveBalance.updateOne(
-          {
-            employeeId: request.employeeId,
-            companyId,
-          },
-          {
-            $inc: {
-              [balanceField]: request.totalDays,
+      if (request.balanceDeducted) {
+        const paidBreakdown = getPaidLeaveBreakdown(request);
+
+        for (const item of paidBreakdown) {
+          const balanceField = getBalanceField(item.leaveType);
+
+          if (!balanceField) {
+            throw new Error(
+              `Invalid balance field for ${item.leaveType}.`
+            );
+          }
+
+          const refund = await LeaveBalance.updateOne(
+            {
+              employeeId: request.employeeId,
+              companyId,
             },
-          },
-          { session }
-        );
+            {
+              $inc: {
+                [balanceField]: item.days,
+              },
+            },
+            { session }
+          );
+
+          if (refund.matchedCount === 0) {
+            throw new Error(
+              "Employee leave balance not found during refund."
+            );
+          }
+        }
 
         request.balanceDeducted = false;
       }
 
+      // =========================================
+      // UPDATE REJECTION INFORMATION
+      // =========================================
+
+      const superAdminRejection = isSuperAdmin(req);
+
       request.status = "Rejected";
-      request.rejectedBy = currentUserId;
+
+      request.rejectedBy = superAdminRejection
+        ? null
+        : currentUserId;
+
+      request.rejectedBySuperAdmin = superAdminRejection
+        ? currentUserId
+        : null;
+
       request.rejectedAt = new Date();
       request.rejectionReason = rejectionReason.trim();
 
       request.actionHistory.push({
         action: "Rejected",
-        performedBy: currentUserId,
+
+        performedBy: superAdminRejection
+          ? null
+          : currentUserId,
+
+        performedBySuperAdmin: superAdminRejection
+          ? currentUserId
+          : null,
+
         performedAt: new Date(),
         remarks: rejectionReason.trim(),
       });
 
       await request.save({ session });
+
       result = request;
     });
 
     return res.status(200).json({
       success: true,
-      message: "Leave request rejected and applicable balance refunded.",
+      message: "Leave request rejected and applicable paid balance refunded.",
       request: result,
     });
   } catch (error) {
+    console.error("Reject Leave Request Error:", error);
+
     return sendError(
       res,
       error.message.includes("not authorized") ? 403 : 400,
@@ -891,16 +1337,22 @@ export const rejectLeaveRequest = async (req, res) => {
 // EMPLOYEE — WITHDRAW OWN PENDING LEAVE REQUEST
 // =====================================================
 
+
 export const withdrawLeaveRequest = async (req, res) => {
   const session = await mongoose.startSession();
 
   try {
     const { leaveRequestId } = req.params;
+
     const employeeId = getCurrentUserId(req);
     const companyId = getCompanyId(req);
 
-    if (!mongoose.Types.ObjectId.isValid(leaveRequestId)) {
-      return sendError(res, 400, "Invalid leave request ID.");
+    if (
+      !mongoose.Types.ObjectId.isValid(leaveRequestId) ||
+      !employeeId ||
+      !companyId
+    ) {
+      return sendError(res, 400, "Invalid leave request information.");
     }
 
     let result;
@@ -919,24 +1371,48 @@ export const withdrawLeaveRequest = async (req, res) => {
         );
       }
 
-      if (request.balanceDeducted && !request.isUnpaid) {
-        const balanceField = getBalanceField(request.leaveType);
+      // =========================================
+      // REFUND ONLY PAID LEAVE TYPES
+      // =========================================
 
-        await LeaveBalance.updateOne(
-          {
-            employeeId,
-            companyId,
-          },
-          {
-            $inc: {
-              [balanceField]: request.totalDays,
+      if (request.balanceDeducted) {
+        const paidBreakdown = getPaidLeaveBreakdown(request);
+
+        for (const item of paidBreakdown) {
+          const balanceField = getBalanceField(item.leaveType);
+
+          if (!balanceField) {
+            throw new Error(
+              `Invalid balance field for ${item.leaveType}.`
+            );
+          }
+
+          const refund = await LeaveBalance.updateOne(
+            {
+              employeeId,
+              companyId,
             },
-          },
-          { session }
-        );
+            {
+              $inc: {
+                [balanceField]: item.days,
+              },
+            },
+            { session }
+          );
+
+          if (refund.matchedCount === 0) {
+            throw new Error(
+              "Employee leave balance not found during refund."
+            );
+          }
+        }
 
         request.balanceDeducted = false;
       }
+
+      // =========================================
+      // UPDATE REQUEST STATUS
+      // =========================================
 
       request.status = "Withdrawn";
 
@@ -948,20 +1424,25 @@ export const withdrawLeaveRequest = async (req, res) => {
       });
 
       await request.save({ session });
+
       result = request;
     });
 
     return res.status(200).json({
       success: true,
-      message: "Leave request withdrawn successfully. Applicable balance refunded.",
+      message:
+        "Leave request withdrawn successfully. Applicable paid balance refunded.",
       request: result,
     });
   } catch (error) {
+    console.error("Withdraw Leave Request Error:", error);
+
     return sendError(res, 400, error.message);
   } finally {
     await session.endSession();
   }
 };
+
 
 export const getCompOffEmployees = async (req, res) => {
   try {

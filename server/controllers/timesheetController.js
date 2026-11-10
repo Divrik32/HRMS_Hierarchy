@@ -4,16 +4,208 @@ import Project from "../models/Project.js";
 import Employee from "../models/Employee.js";
 import Role from "../models/Role.js";
 
+// =====================================================
+// COMMON HELPERS
+// =====================================================
+// =====================================================
+// DATE FILTER HELPER — DAY / WEEK / MONTH / CUSTOM
+// =====================================================
 
+const getTimesheetDateFilter = (query) => {
+  const { period, date, startDate, endDate } = query;
+
+  const isValidDate = (value) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) {
+      return false;
+    }
+
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+
+    return (
+      !Number.isNaN(parsed.getTime()) &&
+      parsed.toISOString().slice(0, 10) === value
+    );
+  };
+
+  // Custom date range
+  if (startDate || endDate) {
+    if (
+      !startDate ||
+      !endDate ||
+      !isValidDate(startDate) ||
+      !isValidDate(endDate)
+    ) {
+      return {
+        error: "Please provide valid startDate and endDate in YYYY-MM-DD format.",
+      };
+    }
+
+    const start = new Date(`${startDate}T00:00:00.000Z`);
+    const end = new Date(`${endDate}T00:00:00.000Z`);
+
+    if (start > end) {
+      return {
+        error: "endDate must be on or after startDate.",
+      };
+    }
+
+    end.setUTCDate(end.getUTCDate() + 1);
+
+    return {
+      filter: {
+        $gte: start,
+        $lt: end,
+      },
+    };
+  }
+
+  // No period means all dates
+  if (!period) {
+    return { filter: null };
+  }
+
+  if (!["day", "week", "month"].includes(period)) {
+    return {
+      error: "Period must be day, week or month.",
+    };
+  }
+
+  const anchorDate = date || new Date().toISOString().slice(0, 10);
+
+  if (!isValidDate(anchorDate)) {
+    return {
+      error: "Please provide a valid date in YYYY-MM-DD format.",
+    };
+  }
+
+  const start = new Date(`${anchorDate}T00:00:00.000Z`);
+  const end = new Date(start);
+
+  if (period === "day") {
+    end.setUTCDate(end.getUTCDate() + 1);
+  }
+
+  if (period === "week") {
+    // Monday is the first day of the week.
+    const day = start.getUTCDay();
+    const difference = day === 0 ? -6 : 1 - day;
+
+    start.setUTCDate(start.getUTCDate() + difference);
+
+    end.setTime(start.getTime());
+    end.setUTCDate(end.getUTCDate() + 7);
+  }
+
+  if (period === "month") {
+    start.setUTCDate(1);
+
+    end.setTime(start.getTime());
+    end.setUTCMonth(end.getUTCMonth() + 1);
+  }
+
+  return {
+    filter: {
+      $gte: start,
+      $lt: end,
+    },
+  };
+};
+const isValidObjectId = (id) =>
+  Boolean(id && mongoose.Types.ObjectId.isValid(id));
+
+const getEmployeeId = (req) =>
+  req.user?._id ||
+  req.user?.employeeId ||
+  req.user?.id;
+
+const isSuperAdmin = (req) =>
+  req.user?.role === "superadmin" ||
+  req.user?.role === "Super Admin";
+
+const isEmployee = (req) =>
+  req.user?.role === "employee";
+
+const getCompanyId = (req) =>
+  isSuperAdmin(req)
+    ? req.params.companyId || req.companyId
+    : req.user?.companyId;
+
+const getAuthenticatedEmployee = async (req, companyId) => {
+  const employeeId = getEmployeeId(req);
+
+  if (!isValidObjectId(employeeId)) {
+    return null;
+  }
+
+  return Employee.findOne({
+    _id: employeeId,
+    companyId,
+  }).select("_id name empId roleId companyId");
+};
+
+// All duration values are stored in minutes.
+const getMinutes = (value) => {
+  const number = Number(value);
+
+  if (
+    value === "" ||
+    value === null ||
+    value === undefined ||
+    !Number.isFinite(number) ||
+    number < 0 ||
+    !Number.isInteger(number)
+  ) {
+    return null;
+  }
+
+  return number;
+};
+
+// Calculate fields derived from task start/end time.
+const calculateTaskTime = (timesheet) => {
+  if (!timesheet.startTime || !timesheet.endTime) {
+    timesheet.totalCompletionTime = null;
+    timesheet.estimatedError = null;
+    timesheet.efficiency = null;
+    return;
+  }
+
+  const durationMs =
+    new Date(timesheet.endTime).getTime() -
+    new Date(timesheet.startTime).getTime();
+
+  if (durationMs <= 0) {
+    throw new Error("End time must be later than start time.");
+  }
+
+  const totalMinutes = Math.round(durationMs / 60000);
+
+  timesheet.totalCompletionTime = totalMinutes;
+
+  timesheet.estimatedError =
+    totalMinutes - Number(timesheet.estimatedTime);
+
+  // Efficiency = Estimated Time / Actual Completion Time * 100
+  timesheet.efficiency =
+    totalMinutes > 0
+      ? Number(
+          (
+            (Number(timesheet.estimatedTime) / totalMinutes) *
+            100
+          ).toFixed(2)
+        )
+      : null;
+};
 
 // =====================================================
 // GET ALL EMPLOYEES OF LOGGED-IN EMPLOYEE'S COMPANY
 // =====================================================
+
 export const getCompanyEmployeesForTimesheet = async (req, res) => {
   try {
     const companyId = req.user?.companyId;
 
-    if (!companyId || !mongoose.Types.ObjectId.isValid(companyId)) {
+    if (!isValidObjectId(companyId)) {
       return res.status(400).json({
         success: false,
         message: "A valid company ID is required.",
@@ -23,7 +215,8 @@ export const getCompanyEmployeesForTimesheet = async (req, res) => {
     const employees = await Employee.find({
       companyId,
     })
-      .select("_id name empId")
+      .select("_id name empId roleId")
+      .populate("roleId", "roleName")
       .sort({ name: 1 })
       .lean();
 
@@ -44,147 +237,193 @@ export const getCompanyEmployeesForTimesheet = async (req, res) => {
 };
 
 // =====================================================
-// CREATE TIMESHEET — LOGGED-IN EMPLOYEE
+// GET ALL ACTIVE PROJECTS OF COMPANY
+// No roleAccess / employeeAccess filtering
 // =====================================================
-export const createTimesheet = async (req, res) => {
+
+export const getProjectsForTimesheet = async (req, res) => {
   try {
     const companyId = req.user?.companyId;
 
-    const {
-      employeeId,
-      task,
-      description,
-      projectId,
-      projectName,
-      allocatedTime,
-    } = req.body;
+    if (!isValidObjectId(companyId)) {
+      return res.status(400).json({
+        success: false,
+        message: "A valid company ID is required.",
+      });
+    }
 
-    if (!companyId) {
+    const projects = await Project.find({
+      companyId,
+      status: "active",
+    })
+      .select("_id projectName projectCode modules")
+      .sort({ projectName: 1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      count: projects.length,
+      projects,
+    });
+  } catch (error) {
+    console.error("Get Timesheet Projects Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch projects.",
+      error: error.message,
+    });
+  }
+};
+
+// =====================================================
+// CREATE TIMESHEET — LOGGED-IN EMPLOYEE
+// =====================================================
+
+export const createTimesheet = async (req, res) => {
+  try {
+    if (!isEmployee(req)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only employees can create their timesheets.",
+      });
+    }
+
+    const companyId = req.user?.companyId;
+    const employeeId = getEmployeeId(req);
+
+    if (
+      !isValidObjectId(companyId) ||
+      !isValidObjectId(employeeId)
+    ) {
       return res.status(401).json({
         success: false,
-        message: "Company authentication details are missing.",
+        message: "Employee authentication details are missing.",
       });
     }
 
-    if (
-      !mongoose.Types.ObjectId.isValid(companyId) ||
-      !employeeId ||
-      !mongoose.Types.ObjectId.isValid(employeeId)
-    ) {
+    const {
+      taskType = "Project",
+      projectId,
+      moduleId,
+      task,
+      description,
+      estimatedTime,
+    } = req.body;
+
+    if (!["Project", "Learning", "Training"].includes(taskType)) {
       return res.status(400).json({
         success: false,
-        message: "Valid employee and company details are required.",
+        message: "Invalid task type.",
       });
     }
 
-    if (typeof task !== "string" || !task.trim()) {
+    const estimatedMinutes = getMinutes(estimatedTime);
+
+    if (estimatedMinutes === null || estimatedMinutes <= 0) {
       return res.status(400).json({
         success: false,
-        message: "Task is required.",
+        message: "Estimated time must be a positive number of minutes.",
       });
     }
 
-    // =========================================
-    // PROJECT IS OPTIONAL
-    // =========================================
-    let selectedProject = null;
-
-    if (projectId) {
-      if (!mongoose.Types.ObjectId.isValid(projectId)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid project ID.",
-        });
-      }
-
-      selectedProject = await Project.findOne({
-        _id: projectId,
-        companyId,
-        status: "active",
-      }).select("_id projectName");
-
-      if (!selectedProject) {
-        return res.status(404).json({
-          success: false,
-          message: "Active project not found for this company.",
-        });
-      }
-    }
-
-    // =========================================
-    // TRAINING AND WORKING TIME ARE MANDATORY
-    // =========================================
-    if (
-      !allocatedTime ||
-      allocatedTime.trainingTime === undefined ||
-      allocatedTime.trainingTime === null ||
-      allocatedTime.workingTime === undefined ||
-      allocatedTime.workingTime === null
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Training time and working time are required.",
-      });
-    }
-
-    const trainingTime = Number(allocatedTime.trainingTime);
-    const workingTime = Number(allocatedTime.workingTime);
-
-    if (
-      !Number.isFinite(trainingTime) ||
-      trainingTime < 0 ||
-      !Number.isFinite(workingTime) ||
-      workingTime < 0
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Training time and working time must be valid non-negative numbers.",
-      });
-    }
-
-    // =========================================
-    // VERIFY EMPLOYEE BELONGS TO THE COMPANY
-    // =========================================
-    const selectedEmployee = await Employee.findOne({
+    const employee = await Employee.findOne({
       _id: employeeId,
       companyId,
     }).select("_id");
 
-    if (!selectedEmployee) {
+    if (!employee) {
       return res.status(404).json({
         success: false,
-        message: "Selected employee not found in this company.",
+        message: "Logged-in employee was not found in this company.",
       });
     }
 
+    let selectedProjectId = null;
+    let selectedModuleId = null;
+    let selectedTask = "";
+
     // =========================================
-    // CREATE TIMESHEET
+    // PROJECT TASK
     // =========================================
+
+    if (taskType === "Project") {
+      if (
+        !isValidObjectId(projectId) ||
+        !isValidObjectId(moduleId)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Please select a valid project and task.",
+        });
+      }
+
+      // All active company projects are allowed here.
+      // No roleAccess / employeeAccess filtering.
+      const project = await Project.findOne({
+        _id: projectId,
+        companyId,
+        status: "active",
+      }).select("_id modules");
+
+      if (!project) {
+        return res.status(404).json({
+          success: false,
+          message: "Active project not found in this company.",
+        });
+      }
+
+      // modules is an embedded array in Project.
+      const selectedModule = project.modules.id(moduleId);
+
+      if (!selectedModule) {
+        return res.status(404).json({
+          success: false,
+          message: "Selected task/module does not belong to this project.",
+        });
+      }
+
+      selectedProjectId = project._id;
+      selectedModuleId = selectedModule._id;
+      selectedTask = selectedModule.moduleName;
+    }
+
+    // =========================================
+    // LEARNING / TRAINING TASK
+    // =========================================
+
+    if (taskType === "Learning" || taskType === "Training") {
+      if (typeof description !== "string" || !description.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: `Description is required for ${taskType.toLowerCase()}.`,
+        });
+      }
+
+      // Task name is fixed by taskType.
+      selectedTask = taskType;
+    }
+
     const timesheet = await Timesheet.create({
       companyId,
-      employeeId: selectedEmployee._id,
+      employeeId: employee._id,
 
-      task: task.trim(),
+      taskType,
+
+      projectId: selectedProjectId,
+      moduleId: selectedModuleId,
+
+      task: selectedTask,
+
       description:
         typeof description === "string"
           ? description.trim()
           : "",
 
-      projectId: selectedProject?._id || null,
+      estimatedTime: estimatedMinutes,
 
-projectName:
-  typeof projectName === "string"
-    ? projectName.trim()
-    : "",
-
-      allocatedTime: {
-        trainingTime,
-        workingTime,
-        // idleTime will use the schema default (0)
-      },
-
-      // Other fields will use their schema defaults.
+      // date, idleTime, taskStatus and approvalStatus
+      // will use their schema defaults.
     });
 
     return res.status(201).json({
@@ -203,39 +442,22 @@ projectName:
   }
 };
 
+// =====================================================
+// GET GLOBAL TIMESHEETS — EMPLOYEE & SUPER ADMIN
+// =====================================================
 
-/* =====================================================
-   GET GLOBAL TIMESHEETS — EMPLOYEE & SUPER ADMIN
-===================================================== */
 export const getTimesheetsByCompany = async (req, res) => {
   try {
-    const isSuperAdmin =
-      req.user?.role === "superadmin" ||
-      req.user?.role === "Super Admin";
+    if (!isSuperAdmin(req) && !isEmployee(req)) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to view timesheets.",
+      });
+    }
 
-let companyId;
+    const companyId = getCompanyId(req);
 
-if (
-  req.user?.role === "superadmin" ||
-  req.user?.role === "Super Admin"
-) {
-  companyId = req.companyId;
-} else if (req.user?.role === "employee") {
-  companyId = req.user.companyId;
-}
-
-// console.log("TIMESHEET COMPANY DEBUG:", {
-//   role: req.user?.role,
-//   userCompanyId: req.user?.companyId,
-//   requestCompanyId: req.companyId,
-//   params: req.params,
-//   resolvedCompanyId: companyId,
-// });
-
-    if (
-      !companyId ||
-      !mongoose.Types.ObjectId.isValid(companyId)
-    ) {
+    if (!isValidObjectId(companyId)) {
       return res.status(400).json({
         success: false,
         message: "A valid company ID is required.",
@@ -245,9 +467,17 @@ if (
     const timesheets = await Timesheet.find({
       companyId,
     })
-      .populate("employeeId", "name empId")
+      .populate({
+        path: "employeeId",
+        select: "name empId roleId",
+        populate: {
+          path: "roleId",
+          select: "roleName",
+        },
+      })
       .populate("projectId", "projectName projectCode")
       .populate("auditedBy", "name empId")
+      .populate("rejectedBy", "name empId")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -267,37 +497,29 @@ if (
   }
 };
 
+// =====================================================
+// UPDATE GLOBAL TIMESHEET — EMPLOYEE & SUPER ADMIN
+// Manual time editing is not allowed.
+// Start/End/Break have separate endpoints.
+// =====================================================
 
-/* =====================================================
-   UPDATE GLOBAL TIMESHEET — EMPLOYEE & SUPER ADMIN
-===================================================== */
 export const updateTimesheet = async (req, res) => {
   try {
     const { id } = req.params;
     const { field, value } = req.body;
 
-    const isSuperAdmin =
-      req.user?.role === "superadmin" ||
-      req.user?.role === "Super Admin";
-
-    const isEmployee = req.user?.role === "employee";
-
-    if (!isSuperAdmin && !isEmployee) {
+    if (!isSuperAdmin(req) && !isEmployee(req)) {
       return res.status(403).json({
         success: false,
         message: "You are not allowed to update timesheets.",
       });
     }
 
-    // Super Admin: companyId from URL params.
-    // Employee: companyId from authenticated user.
-    const companyId = isSuperAdmin
-      ? req.params.companyId
-      : req.user.companyId;
+    const companyId = getCompanyId(req);
 
     if (
-      !mongoose.Types.ObjectId.isValid(id) ||
-      !mongoose.Types.ObjectId.isValid(companyId)
+      !isValidObjectId(id) ||
+      !isValidObjectId(companyId)
     ) {
       return res.status(400).json({
         success: false,
@@ -305,20 +527,17 @@ export const updateTimesheet = async (req, res) => {
       });
     }
 
-const allowedFields = [
-  "employeeId",
-  "task",
-  "description",
-  "projectId",
-  "projectName",
-  "allocatedTime.trainingTime",
-  "allocatedTime.workingTime",
-  "allocatedTime.idleTime",
-  "startTime",
-  "endTime",
-  "remarks.delayFast",
-  "remarks.reason",
-];
+    const allowedFields = [
+      "taskType",
+      "projectId",
+      "moduleId",
+      "task",
+      "description",
+      "estimatedTime",
+      "idleTime",
+      "remarks.delayFast",
+      "remarks.reason",
+    ];
 
     if (!allowedFields.includes(field)) {
       return res.status(400).json({
@@ -327,7 +546,6 @@ const allowedFields = [
       });
     }
 
-    // Find timesheet using its ID and company ID.
     const timesheet = await Timesheet.findOne({
       _id: id,
       companyId,
@@ -340,7 +558,6 @@ const allowedFields = [
       });
     }
 
-    // Approved timesheets cannot be modified.
     if (timesheet.approvalStatus === "Approved") {
       return res.status(403).json({
         success: false,
@@ -348,54 +565,185 @@ const allowedFields = [
       });
     }
 
+    // Employees can update only their own timesheets.
+    if (
+      isEmployee(req) &&
+      String(timesheet.employeeId) !== String(getEmployeeId(req))
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only update your own timesheets.",
+      });
+    }
+
+    // Completed tasks cannot be edited.
+    if (timesheet.taskStatus === "Completed") {
+      return res.status(403).json({
+        success: false,
+        message: "Completed tasks cannot be modified.",
+      });
+    }
+
     switch (field) {
       // =========================================
-// EMPLOYEE
-// =========================================
-case "employeeId": {
-  if (
-    !value ||
-    !mongoose.Types.ObjectId.isValid(value)
-  ) {
-    return res.status(400).json({
-      success: false,
-      message: "Please select a valid employee.",
-    });
-  }
-
-  const selectedEmployee = await Employee.findOne({
-    _id: value,
-    companyId,
-  }).select("_id");
-
-  if (!selectedEmployee) {
-    return res.status(404).json({
-      success: false,
-      message: "Selected employee not found in this company.",
-    });
-  }
-
-  timesheet.employeeId = selectedEmployee._id;
-  break;
-}
+      // TASK TYPE
       // =========================================
-      // TASK
-      // =========================================
-      case "task": {
-        if (typeof value !== "string" || !value.trim()) {
+
+      case "taskType": {
+        if (!["Project", "Learning", "Training"].includes(value)) {
           return res.status(400).json({
             success: false,
-            message: "Task is required.",
+            message: "Invalid task type.",
           });
         }
 
-        timesheet.task = value.trim();
+        timesheet.taskType = value;
+
+        // Reset project/module/task when type changes.
+        timesheet.projectId = null;
+        timesheet.moduleId = null;
+        timesheet.task = value;
+
+        if (value === "Project") {
+          timesheet.task = "";
+        }
+
+        break;
+      }
+
+      // =========================================
+      // PROJECT
+      // =========================================
+
+      case "projectId": {
+        if (timesheet.taskType !== "Project") {
+          return res.status(400).json({
+            success: false,
+            message: "Project can only be selected for Project task type.",
+          });
+        }
+
+        if (!isValidObjectId(value)) {
+          return res.status(400).json({
+            success: false,
+            message: "Please select a valid project.",
+          });
+        }
+
+        const project = await Project.findOne({
+          _id: value,
+          companyId,
+          status: "active",
+        }).select("_id");
+
+        if (!project) {
+          return res.status(404).json({
+            success: false,
+            message: "Active project not found.",
+          });
+        }
+
+        timesheet.projectId = project._id;
+        timesheet.moduleId = null;
+        timesheet.task = "";
+
+        break;
+      }
+
+      // =========================================
+      // PROJECT MODULE
+      // =========================================
+
+      case "moduleId": {
+        if (
+          timesheet.taskType !== "Project" ||
+          !timesheet.projectId
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: "Select a project first.",
+          });
+        }
+
+        if (!isValidObjectId(value)) {
+          return res.status(400).json({
+            success: false,
+            message: "Please select a valid task/module.",
+          });
+        }
+
+        const project = await Project.findOne({
+          _id: timesheet.projectId,
+          companyId,
+          status: "active",
+        }).select("modules");
+
+        const selectedModule = project?.modules.id(value);
+
+        if (!selectedModule) {
+          return res.status(404).json({
+            success: false,
+            message: "Selected task/module was not found in this project.",
+          });
+        }
+
+        timesheet.moduleId = selectedModule._id;
+        timesheet.task = selectedModule.moduleName;
+
+        break;
+      }
+
+      // =========================================
+      // TASK
+      // =========================================
+
+      case "task": {
+        if (
+          timesheet.taskType !== "Project" ||
+          !timesheet.projectId ||
+          !timesheet.moduleId
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: "Select a project and module first.",
+          });
+        }
+
+        const project = await Project.findOne({
+          _id: timesheet.projectId,
+          companyId,
+        }).select("modules");
+
+        const selectedModule = project?.modules.id(
+          timesheet.moduleId
+        );
+
+        if (!selectedModule) {
+          return res.status(404).json({
+            success: false,
+            message: "Selected module was not found.",
+          });
+        }
+
+        // Task name must match the selected embedded module.
+        if (
+          typeof value !== "string" ||
+          value.trim() !== selectedModule.moduleName
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: "Task name must match the selected project module.",
+          });
+        }
+
+        timesheet.task = selectedModule.moduleName;
         break;
       }
 
       // =========================================
       // DESCRIPTION
       // =========================================
+
       case "description": {
         if (typeof value !== "string") {
           return res.status(400).json({
@@ -404,114 +752,65 @@ case "employeeId": {
           });
         }
 
+        if (
+          ["Learning", "Training"].includes(timesheet.taskType) &&
+          !value.trim()
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: "Description is required for Learning and Training.",
+          });
+        }
+
         timesheet.description = value.trim();
         break;
       }
 
       // =========================================
-      // PROJECT (OPTIONAL)
+      // ESTIMATED TIME
       // =========================================
-case "projectId": {
-  // Empty or null value removes only the project reference.
-  if (
-    value === null ||
-    value === undefined ||
-    value === ""
-  ) {
-    timesheet.projectId = null;
-    break;
-  }
 
-  if (!mongoose.Types.ObjectId.isValid(value)) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid project ID.",
-    });
-  }
+      case "estimatedTime": {
+        const minutes = getMinutes(value);
 
-  const project = await Project.findOne({
-    _id: value,
-    companyId,
-    status: "active",
-  }).select("_id");
-
-  if (!project) {
-    return res.status(404).json({
-      success: false,
-      message: "Active project not found for this company.",
-    });
-  }
-
-  timesheet.projectId = project._id;
-  break;
-}
-
-      // =========================================
-      // PROJECT / ACTIVITY NAME
-      // =========================================
-      case "projectName": {
-        if (typeof value !== "string") {
+        if (minutes === null || minutes <= 0) {
           return res.status(400).json({
             success: false,
-            message: "Project or activity name must be text.",
+            message: "Estimated time must be a positive number of minutes.",
           });
         }
 
-        timesheet.projectName = value.trim();
+        timesheet.estimatedTime = minutes;
+
+        if (timesheet.endTime) {
+          calculateTaskTime(timesheet);
+        }
+
         break;
       }
 
       // =========================================
-      // TRAINING / WORKING / IDLE TIME
+      // IDLE TIME
       // =========================================
-      case "allocatedTime.trainingTime":
-      case "allocatedTime.workingTime":
-      case "allocatedTime.idleTime": {
-        if (
-          value === "" ||
-          value === null ||
-          value === undefined ||
-          !Number.isFinite(Number(value)) ||
-          Number(value) < 0
-        ) {
+
+      case "idleTime": {
+        const minutes = getMinutes(value);
+
+        if (minutes === null) {
           return res.status(400).json({
             success: false,
-            message: "Time must be a valid non-negative number.",
+            message: "Idle time must be a valid non-negative number of minutes.",
           });
         }
 
-        const timeField = field.split(".")[1];
-
-        timesheet.allocatedTime[timeField] = Number(value);
-        break;
-      }
-
-      // =========================================
-      // START TIME / END TIME
-      // =========================================
-      case "startTime":
-      case "endTime": {
-        if (value === null || value === "") {
-          timesheet[field] = null;
-          break;
-        }
-
-        const date = new Date(value);
-
-        if (Number.isNaN(date.getTime())) {
-          return res.status(400).json({
-            success: false,
-            message: `Invalid ${field}.`,
-          });
-        }
-
-        timesheet[field] = date;
+        timesheet.idleTime = minutes;
         break;
       }
 
       // =========================================
       // DELAY / FAST
       // =========================================
+
       case "remarks.delayFast": {
         if (!["", "Delay", "Fast"].includes(value)) {
           return res.status(400).json({
@@ -525,8 +824,9 @@ case "projectId": {
       }
 
       // =========================================
-      // REASON
+      // REMARKS REASON
       // =========================================
+
       case "remarks.reason": {
         if (typeof value !== "string") {
           return res.status(400).json({
@@ -540,38 +840,28 @@ case "projectId": {
       }
     }
 
-    // =========================================
-    // RECALCULATE COMPLETION TIME & EFFICIENCY
-    // =========================================
-    if (timesheet.startTime && timesheet.endTime) {
-      const durationMs =
-        new Date(timesheet.endTime).getTime() -
-        new Date(timesheet.startTime).getTime();
+    // Final validation for Learning / Training.
+    if (
+      ["Learning", "Training"].includes(timesheet.taskType) &&
+      !timesheet.description?.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Description is required for Learning and Training.",
+      });
+    }
 
-      if (durationMs <= 0) {
-        return res.status(400).json({
-          success: false,
-          message: "End time must be later than start time.",
-        });
-      }
-
-      const totalMinutes = Math.round(durationMs / 60000);
-
-      timesheet.totalCompletionTime = totalMinutes;
-
-      const workingTime = Number(
-        timesheet.allocatedTime?.workingTime || 0
-      );
-
-      timesheet.efficiency =
-        workingTime > 0 && totalMinutes > 0
-          ? Number(
-              ((workingTime / totalMinutes) * 100).toFixed(2)
-            )
-          : null;
-    } else {
-      timesheet.totalCompletionTime = null;
-      timesheet.efficiency = null;
+    // Final validation for Project task.
+    if (
+      timesheet.taskType === "Project" &&
+      (!timesheet.projectId ||
+        !timesheet.moduleId ||
+        !timesheet.task?.trim())
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Project and task/module are required.",
+      });
     }
 
     await timesheet.save();
@@ -592,23 +882,370 @@ case "projectId": {
   }
 };
 
-/* =====================================================
-   Audit timesheet — approve or reject
-===================================================== */
+// =====================================================
+// START TASK
+// Backend records the timestamp.
+// =====================================================
+
+export const startTask = async (req, res) => {
+  try {
+    if (!isEmployee(req)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only employees can start tasks.",
+      });
+    }
+
+    const companyId = req.user?.companyId;
+    const employeeId = getEmployeeId(req);
+    const { id } = req.params;
+
+    if (
+      !isValidObjectId(companyId) ||
+      !isValidObjectId(employeeId) ||
+      !isValidObjectId(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid employee, company or timesheet ID.",
+      });
+    }
+
+    const timesheet = await Timesheet.findOne({
+      _id: id,
+      companyId,
+      employeeId,
+    });
+
+    if (!timesheet) {
+      return res.status(404).json({
+        success: false,
+        message: "Your timesheet was not found.",
+      });
+    }
+
+    if (timesheet.approvalStatus !== "Pending") {
+      return res.status(403).json({
+        success: false,
+        message: "Only pending timesheets can be started.",
+      });
+    }
+
+    if (
+      timesheet.taskStatus !== "Not Started" ||
+      timesheet.startTime ||
+      timesheet.endTime
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "This task has already been started or completed.",
+      });
+    }
+
+    timesheet.startTime = new Date();
+    timesheet.taskStatus = "In Progress";
+
+    await timesheet.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Task started successfully.",
+      timesheet,
+    });
+  } catch (error) {
+    console.error("Start Task Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to start task.",
+      error: error.message,
+    });
+  }
+};
+
+// =====================================================
+// END TASK
+// totalCompletionTime = endTime - startTime
+// =====================================================
+
+export const endTask = async (req, res) => {
+  try {
+    if (!isEmployee(req)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only employees can end tasks.",
+      });
+    }
+
+    const companyId = req.user?.companyId;
+    const employeeId = getEmployeeId(req);
+    const { id } = req.params;
+
+    if (
+      !isValidObjectId(companyId) ||
+      !isValidObjectId(employeeId) ||
+      !isValidObjectId(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid employee, company or timesheet ID.",
+      });
+    }
+
+    const timesheet = await Timesheet.findOne({
+      _id: id,
+      companyId,
+      employeeId,
+    });
+
+    if (!timesheet) {
+      return res.status(404).json({
+        success: false,
+        message: "Your timesheet was not found.",
+      });
+    }
+
+    if (
+      timesheet.taskStatus !== "In Progress" ||
+      !timesheet.startTime ||
+      timesheet.endTime
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Task must be in progress before it can be ended.",
+      });
+    }
+
+    if (
+      timesheet.breakTime &&
+      !timesheet.breakTime.endTime
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Resume your break before ending the task.",
+      });
+    }
+
+    timesheet.endTime = new Date();
+
+    try {
+      calculateTaskTime(timesheet);
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    timesheet.taskStatus = "Completed";
+
+    await timesheet.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Task completed successfully.",
+      timesheet,
+    });
+  } catch (error) {
+    console.error("End Task Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to end task.",
+      error: error.message,
+    });
+  }
+};
+
+// =====================================================
+// START BREAK — ONLY ONE BREAK PER TASK
+// =====================================================
+
+export const startBreak = async (req, res) => {
+  try {
+    if (!isEmployee(req)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only employees can start a break.",
+      });
+    }
+
+    const companyId = req.user?.companyId;
+    const employeeId = getEmployeeId(req);
+    const { id } = req.params;
+
+    if (
+      !isValidObjectId(companyId) ||
+      !isValidObjectId(employeeId) ||
+      !isValidObjectId(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid employee, company or timesheet ID.",
+      });
+    }
+
+    const timesheet = await Timesheet.findOne({
+      _id: id,
+      companyId,
+      employeeId,
+    });
+
+    if (!timesheet) {
+      return res.status(404).json({
+        success: false,
+        message: "Your timesheet was not found.",
+      });
+    }
+
+    if (
+      timesheet.taskStatus !== "In Progress" ||
+      !timesheet.startTime ||
+      timesheet.endTime
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "A break can only be started while a task is in progress.",
+      });
+    }
+
+    if (timesheet.breakTime) {
+      return res.status(400).json({
+        success: false,
+        message: "Only one break is allowed for each task.",
+      });
+    }
+
+    timesheet.breakTime = {
+      startTime: new Date(),
+      endTime: null,
+      duration: null,
+    };
+
+    timesheet.taskStatus = "On Break";
+
+    await timesheet.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Break started successfully.",
+      timesheet,
+    });
+  } catch (error) {
+    console.error("Start Break Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to start break.",
+      error: error.message,
+    });
+  }
+};
+
+// =====================================================
+// RESUME TASK AFTER BREAK
+// =====================================================
+
+export const resumeTask = async (req, res) => {
+  try {
+    if (!isEmployee(req)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only employees can resume a task.",
+      });
+    }
+
+    const companyId = req.user?.companyId;
+    const employeeId = getEmployeeId(req);
+    const { id } = req.params;
+
+    if (
+      !isValidObjectId(companyId) ||
+      !isValidObjectId(employeeId) ||
+      !isValidObjectId(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid employee, company or timesheet ID.",
+      });
+    }
+
+    const timesheet = await Timesheet.findOne({
+      _id: id,
+      companyId,
+      employeeId,
+    });
+
+    if (!timesheet) {
+      return res.status(404).json({
+        success: false,
+        message: "Your timesheet was not found.",
+      });
+    }
+
+    if (
+      timesheet.taskStatus !== "On Break" ||
+      !timesheet.breakTime ||
+      timesheet.breakTime.endTime
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "There is no active break to resume.",
+      });
+    }
+
+    const breakEndTime = new Date();
+
+    const breakDurationMs =
+      breakEndTime.getTime() -
+      new Date(timesheet.breakTime.startTime).getTime();
+
+    if (breakDurationMs < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid break time.",
+      });
+    }
+
+    timesheet.breakTime.endTime = breakEndTime;
+    timesheet.breakTime.duration = Math.round(
+      breakDurationMs / 60000
+    );
+
+    timesheet.taskStatus = "In Progress";
+
+    await timesheet.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Task resumed successfully.",
+      timesheet,
+    });
+  } catch (error) {
+    console.error("Resume Task Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to resume task.",
+      error: error.message,
+    });
+  }
+};
+
+// =====================================================
+// AUDIT TIMESHEET — APPROVE OR REJECT
+// Only parent / grandparent role can audit.
+// =====================================================
+
 export const auditTimesheet = async (req, res) => {
   try {
     const { id } = req.params;
-    const { approvalStatus } = req.body;
+    const { approvalStatus, rejectionReason } = req.body;
 
-    const auditorId =
-      req.user?._id ||
-      req.user?.employeeId ||
-      req.user?.id;
-
+    const auditorId = getEmployeeId(req);
     const companyId = req.user?.companyId;
 
-    // Only employees can audit. Super Admin is not allowed.
-    if (req.user?.role !== "employee" || !companyId) {
+    if (!isEmployee(req) || !companyId) {
       return res.status(403).json({
         success: false,
         message:
@@ -616,7 +1253,7 @@ export const auditTimesheet = async (req, res) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!isValidObjectId(id)) {
       return res.status(400).json({
         success: false,
         message: "Invalid timesheet ID.",
@@ -630,20 +1267,28 @@ export const auditTimesheet = async (req, res) => {
       });
     }
 
-    if (
-      !auditorId ||
-      !mongoose.Types.ObjectId.isValid(auditorId)
-    ) {
+    if (!isValidObjectId(auditorId)) {
       return res.status(401).json({
         success: false,
         message: "Auditor authentication details are missing.",
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(companyId)) {
+    if (!isValidObjectId(companyId)) {
       return res.status(400).json({
         success: false,
         message: "Invalid company ID.",
+      });
+    }
+
+    if (
+      approvalStatus === "Rejected" &&
+      (typeof rejectionReason !== "string" ||
+        !rejectionReason.trim())
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Rejection reason is required.",
       });
     }
 
@@ -659,7 +1304,15 @@ export const auditTimesheet = async (req, res) => {
       });
     }
 
+    if (timesheet.approvalStatus !== "Pending") {
+      return res.status(403).json({
+        success: false,
+        message: "Only pending timesheets can be audited.",
+      });
+    }
+
     if (
+      timesheet.taskStatus !== "Completed" ||
       !timesheet.startTime ||
       !timesheet.endTime ||
       timesheet.totalCompletionTime == null ||
@@ -668,11 +1321,10 @@ export const auditTimesheet = async (req, res) => {
       return res.status(400).json({
         success: false,
         message:
-          "Timesheet cannot be audited until start time, end time, and total completion time are recorded.",
+          "Timesheet cannot be audited until the task is completed.",
       });
     }
 
-    // Employee status enum uses lowercase "active".
     const auditor = await Employee.findOne({
       _id: auditorId,
       companyId,
@@ -747,6 +1399,16 @@ export const auditTimesheet = async (req, res) => {
     timesheet.approvalStatus = approvalStatus;
     timesheet.auditedBy = auditor._id;
 
+    if (approvalStatus === "Rejected") {
+      timesheet.rejectionReason = rejectionReason.trim();
+      timesheet.rejectedBy = auditor._id;
+      timesheet.rejectedAt = new Date();
+    } else {
+      timesheet.rejectionReason = "";
+      timesheet.rejectedBy = null;
+      timesheet.rejectedAt = null;
+    }
+
     await timesheet.save();
 
     return res.status(200).json({
@@ -767,32 +1429,21 @@ export const auditTimesheet = async (req, res) => {
 
 // =====================================================
 // DAILY EFFICIENCY GRAPH — EMPLOYEE-WISE AVERAGE
+// Rejected timesheets are excluded.
 // =====================================================
+
 export const getDailyEfficiencyGraph = async (req, res) => {
   try {
-    const isSuperAdmin =
-      req.user?.role === "superadmin" ||
-      req.user?.role === "Super Admin";
-
-    const isEmployee = req.user?.role === "employee";
-
-    if (!isSuperAdmin && !isEmployee) {
+    if (!isSuperAdmin(req) && !isEmployee(req)) {
       return res.status(403).json({
         success: false,
         message: "You are not authorized to view the efficiency graph.",
       });
     }
 
-    // Super Admin: companyId from URL params
-    // Employee: companyId from authenticated user
-    const companyId = isSuperAdmin
-      ? req.params.companyId
-      : req.user?.companyId;
+    const companyId = getCompanyId(req);
 
-    if (
-      !companyId ||
-      !mongoose.Types.ObjectId.isValid(companyId)
-    ) {
+    if (!isValidObjectId(companyId)) {
       return res.status(400).json({
         success: false,
         message: "A valid company ID is required.",
@@ -830,23 +1481,21 @@ export const getDailyEfficiencyGraph = async (req, res) => {
       });
     }
 
-const start = new Date(`${startDate}T00:00:00.000Z`);
-const end = new Date(`${endDate}T00:00:00.000Z`);
+    const start = new Date(`${startDate}T00:00:00.000Z`);
+    const end = new Date(`${endDate}T00:00:00.000Z`);
 
-if (start > end) {
-  return res.status(400).json({
-    success: false,
-    message: "endDate must be on or after startDate.",
-  });
-}
+    if (start > end) {
+      return res.status(400).json({
+        success: false,
+        message: "endDate must be on or after startDate.",
+      });
+    }
 
-// End date-এর পরের দিনের রাত ১২টা
-const endExclusive = new Date(end);
-endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+    const endExclusive = new Date(end);
+    endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
 
     const companyObjectId = new mongoose.Types.ObjectId(companyId);
 
-    // Fetch every employee belonging to this company.
     const employees = await Employee.find({
       companyId: companyObjectId,
     })
@@ -854,30 +1503,31 @@ endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
       .sort({ name: 1 })
       .lean();
 
-    // Fetch daily efficiency for the selected date range.
     const dailyData = await Timesheet.aggregate([
       {
-$match: {
-  companyId: companyObjectId,
+        $match: {
+          companyId: companyObjectId,
 
-  approvalStatus: {
-    $ne: "Rejected",
-  },
+          approvalStatus: {
+            $ne: "Rejected",
+          },
 
-  startTime: {
-    $gte: start,
-    $lt: endExclusive,
-  },
+          taskStatus: "Completed",
 
-  efficiency: {
-    $ne: null,
-    $gte: 0,
-  },
+          startTime: {
+            $gte: start,
+            $lt: endExclusive,
+          },
 
-  employeeId: {
-    $in: employees.map((employee) => employee._id),
-  },
-},
+          efficiency: {
+            $ne: null,
+            $gte: 0,
+          },
+
+          employeeId: {
+            $in: employees.map((employee) => employee._id),
+          },
+        },
       },
       {
         $group: {
@@ -891,9 +1541,11 @@ $match: {
               },
             },
           },
+
           averageEfficiency: {
             $avg: "$efficiency",
           },
+
           totalTimesheets: {
             $sum: 1,
           },
@@ -904,9 +1556,11 @@ $match: {
           _id: 0,
           employeeId: "$_id.employeeId",
           date: "$_id.date",
+
           averageEfficiency: {
             $round: ["$averageEfficiency", 2],
           },
+
           totalTimesheets: 1,
         },
       },
@@ -918,15 +1572,15 @@ $match: {
     ]);
 
     // Generate every date in the selected range.
-const dates = [];
+    const dates = [];
 
-for (
-  let current = new Date(start);
-  current < endExclusive;
-  current.setUTCDate(current.getUTCDate() + 1)
-) {
-  dates.push(current.toISOString().slice(0, 10));
-}
+    for (
+      let current = new Date(start);
+      current < endExclusive;
+      current.setUTCDate(current.getUTCDate() + 1)
+    ) {
+      dates.push(current.toISOString().slice(0, 10));
+    }
 
     // Index daily values by employeeId + date.
     const efficiencyMap = new Map();
@@ -943,6 +1597,7 @@ for (
       employeeId: employee._id,
       employeeName: employee.name,
       empId: employee.empId,
+
       dailyEfficiency: dates.map((date) => {
         const item = efficiencyMap.get(
           `${employee._id.toString()}_${date}`
@@ -971,6 +1626,332 @@ for (
     return res.status(500).json({
       success: false,
       message: "Failed to fetch daily efficiency graph.",
+      error: error.message,
+    });
+  }
+};
+// =====================================================
+// GET MY TIMESHEETS — LOGGED-IN EMPLOYEE ONLY
+// =====================================================
+
+export const getMyTimesheets = async (req, res) => {
+  try {
+    if (!isEmployee(req)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only employees can access their own timesheets.",
+      });
+    }
+
+    const employeeId = getEmployeeId(req);
+    const companyId = req.user?.companyId;
+
+    if (
+      !isValidObjectId(employeeId) ||
+      !isValidObjectId(companyId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid employee or company ID.",
+      });
+    }
+
+    const dateResult = getTimesheetDateFilter(req.query);
+
+    if (dateResult.error) {
+      return res.status(400).json({
+        success: false,
+        message: dateResult.error,
+      });
+    }
+
+    const matchQuery = {
+      employeeId,
+      companyId,
+    };
+
+    if (dateResult.filter) {
+      matchQuery.date = dateResult.filter;
+    }
+
+    const timesheets = await Timesheet.find(matchQuery)
+      .populate({
+        path: "employeeId",
+        select: "name empId roleId",
+        populate: {
+          path: "roleId",
+          select: "roleName",
+        },
+      })
+      .populate("projectId", "projectName projectCode")
+      .populate("auditedBy", "name empId")
+      .populate("rejectedBy", "name empId")
+      .sort({ date: -1, createdAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      count: timesheets.length,
+      timesheets,
+    });
+  } catch (error) {
+    console.error("Get My Timesheets Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch your timesheets.",
+      error: error.message,
+    });
+  }
+};
+// =====================================================
+// GET COMPANY TIMESHEETS — SUPER ADMIN ONLY
+// Supports day / week / month / custom date range
+// =====================================================
+
+export const getCompanyTimesheets = async (req, res) => {
+  try {
+    if (!isSuperAdmin(req)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only Super Admin can access company timesheets.",
+      });
+    }
+
+    const companyId =
+      req.params.companyId ||
+      req.companyId;
+
+    if (!isValidObjectId(companyId)) {
+      return res.status(400).json({
+        success: false,
+        message: "A valid company ID is required.",
+      });
+    }
+
+    const dateResult = getTimesheetDateFilter(req.query);
+
+    if (dateResult.error) {
+      return res.status(400).json({
+        success: false,
+        message: dateResult.error,
+      });
+    }
+
+    const matchQuery = {
+      companyId,
+    };
+
+    if (dateResult.filter) {
+      matchQuery.date = dateResult.filter;
+    }
+
+    const timesheets = await Timesheet.find(matchQuery)
+      .populate({
+        path: "employeeId",
+        select: "name empId roleId",
+        populate: {
+          path: "roleId",
+          select: "roleName",
+        },
+      })
+      .populate("projectId", "projectName projectCode")
+      .populate("auditedBy", "name empId")
+      .populate("rejectedBy", "name empId")
+      .sort({ date: -1, createdAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      companyId,
+      period: req.query.period || "all",
+      startDate: req.query.startDate || null,
+      endDate: req.query.endDate || null,
+      count: timesheets.length,
+      timesheets,
+    });
+  } catch (error) {
+    console.error("Get Company Timesheets Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch company timesheets.",
+      error: error.message,
+    });
+  }
+};
+// =====================================================
+// GET CHILD & GRANDCHILD TIMESHEETS FOR APPROVAL
+// Only completed + pending timesheets
+// =====================================================
+
+export const getTimesheetsForApproval = async (req, res) => {
+  try {
+    if (!isEmployee(req)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only employees can access approval timesheets.",
+      });
+    }
+
+    const employeeId = getEmployeeId(req);
+    const companyId = req.user?.companyId;
+
+    if (
+      !isValidObjectId(employeeId) ||
+      !isValidObjectId(companyId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid employee or company ID.",
+      });
+    }
+
+    // =========================================
+    // GET LOGGED-IN EMPLOYEE
+    // =========================================
+
+    const employee = await Employee.findOne({
+      _id: employeeId,
+      companyId,
+      status: "active",
+    }).select("_id name empId roleId");
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "Logged-in employee was not found.",
+      });
+    }
+
+    if (!employee.roleId) {
+      return res.status(403).json({
+        success: false,
+        hasApprovalAccess: false,
+        message: "You do not have an assigned role.",
+      });
+    }
+
+    // =========================================
+    // GET DIRECT CHILD ROLES
+    // =========================================
+
+    const childRoles = await Role.find({
+      companyId,
+      parentRoleId: employee.roleId,
+    })
+      .select("_id roleName parentRoleId")
+      .lean();
+
+    // No child roles means no approval access.
+    if (childRoles.length === 0) {
+      return res.status(200).json({
+        success: true,
+        hasApprovalAccess: false,
+        count: 0,
+        childRoles: [],
+        grandchildRoles: [],
+        timesheets: [],
+        message: "You do not have any child roles to approve.",
+      });
+    }
+
+    const childRoleIds = childRoles.map((role) => role._id);
+
+    // =========================================
+    // GET GRANDCHILD ROLES
+    // =========================================
+
+    const grandchildRoles = await Role.find({
+      companyId,
+      parentRoleId: {
+        $in: childRoleIds,
+      },
+    })
+      .select("_id roleName parentRoleId")
+      .lean();
+
+    const grandchildRoleIds = grandchildRoles.map(
+      (role) => role._id
+    );
+
+    // =========================================
+    // COMBINE CHILD + GRANDCHILD ROLE IDS
+    // =========================================
+
+    const allowedRoleIds = [
+      ...childRoleIds,
+      ...grandchildRoleIds,
+    ];
+
+    // =========================================
+    // GET EMPLOYEES UNDER THESE ROLES
+    // =========================================
+
+    const subordinateEmployees = await Employee.find({
+      companyId,
+      roleId: {
+        $in: allowedRoleIds,
+      },
+      status: "active",
+    })
+      .select("_id name empId roleId")
+      .lean();
+
+    const subordinateEmployeeIds = subordinateEmployees.map(
+      (item) => item._id
+    );
+
+    if (subordinateEmployeeIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        hasApprovalAccess: true,
+        count: 0,
+        childRoles,
+        grandchildRoles,
+        timesheets: [],
+        message: "No employees found under your child roles.",
+      });
+    }
+
+    // =========================================
+    // GET PENDING + COMPLETED TIMESHEETS
+    // =========================================
+
+    const timesheets = await Timesheet.find({
+      companyId,
+      employeeId: {
+        $in: subordinateEmployeeIds,
+      },
+      taskStatus: "Completed",
+      approvalStatus: "Pending",
+    })
+      .populate({
+        path: "employeeId",
+        select: "name empId roleId",
+        populate: {
+          path: "roleId",
+          select: "roleName parentRoleId",
+        },
+      })
+      .populate("projectId", "projectName projectCode")
+      .sort({ date: -1, createdAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      hasApprovalAccess: true,
+      count: timesheets.length,
+      childRoles,
+      grandchildRoles,
+      timesheets,
+    });
+  } catch (error) {
+    console.error("Get Approval Timesheets Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch approval timesheets.",
       error: error.message,
     });
   }

@@ -1,30 +1,113 @@
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   FilePlus2,
   Send,
   X,
-  CheckCircle2,
-  AlertCircle,
   RefreshCw,
   Clock,
   Wallet,
+  Plus,
+  Minus,
 } from "lucide-react";
 
 import api from "../../api/axios";
+import { toast } from "react-toastify";
+const LEAVE_TYPES = [
+  {
+    leaveType: "Casual Leave",
+    field: "casualLeave",
+    shortName: "CL",
+  },
+  {
+    leaveType: "Sick Leave",
+    field: "sickLeave",
+    shortName: "SL",
+  },
+  {
+    leaveType: "Paid Leave",
+    field: "paidLeave",
+    shortName: "PL",
+  },
+  {
+    leaveType: "Unpaid Leave",
+    field: null,
+    shortName: "UL",
+  },
+];
 
-const initialForm = {
-  leaveCategory: "Paid Leave",
-  leaveType: "Casual Leave",
-  startDate: "",
-  endDate: "",
-  totalDays: "",
-  reason: "",
+const initialAllocations = {
+  "Casual Leave": "",
+  "Sick Leave": "",
+  "Paid Leave": "",
+  "Unpaid Leave": "",
 };
 
+const getToday = () => {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const parseLocalDate = (dateString) => {
+  if (!dateString) return null;
+
+  const [year, month, day] = dateString.split("-").map(Number);
+
+  return new Date(Date.UTC(year, month - 1, day));
+};
+
+const formatDateInput = (date) => {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
+const getDateRange = (startDate, endDate) => {
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
+
+  if (!start || !end || start > end) return [];
+
+  const dates = [];
+
+  for (
+    let time = start.getTime();
+    time <= end.getTime();
+    time += 86400000
+  ) {
+    dates.push(formatDateInput(new Date(time)));
+  }
+
+  return dates;
+};
+
+const formatDate = (date) =>
+  date
+    ? new Date(`${date}T00:00:00`).toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+    : "—";
+
 const ApplyLeave = () => {
-  const [form, setForm] = useState(initialForm);
+  const today = getToday();
+
+  const [form, setForm] = useState({
+    startDate: "",
+    endDate: "",
+    halfDayDate: "",
+    reason: "",
+  });
+
+  const [allocations, setAllocations] = useState(initialAllocations);
+
   const [balance, setBalance] = useState({
     casualLeave: 0,
     sickLeave: 0,
@@ -34,11 +117,9 @@ const ApplyLeave = () => {
 
   const [loadingBalance, setLoadingBalance] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
 
   // =====================================================
-  // GET EMPLOYEE LEAVE BALANCE
+  // FETCH LEAVE BALANCE
   // =====================================================
 
   const fetchLeaveBalance = async () => {
@@ -49,15 +130,18 @@ const ApplyLeave = () => {
 
       if (response.data.success) {
         setBalance({
-          casualLeave: response.data.balance?.casualLeave ?? 0,
-          sickLeave: response.data.balance?.sickLeave ?? 0,
-          paidLeave: response.data.balance?.paidLeave ?? 0,
-          extraLeaveTaken: response.data.balance?.extraLeaveTaken ?? 0,
+          casualLeave: Number(response.data.balance?.casualLeave ?? 0),
+          sickLeave: Number(response.data.balance?.sickLeave ?? 0),
+          paidLeave: Number(response.data.balance?.paidLeave ?? 0),
+          extraLeaveTaken: Number(
+            response.data.balance?.extraLeaveTaken ?? 0
+          ),
         });
       }
     } catch (error) {
       console.error("Fetch Leave Balance Error:", error);
-      setErrorMessage(
+
+      toast.error(
         error.response?.data?.message || "Unable to load leave balance."
       );
     } finally {
@@ -70,78 +154,167 @@ const ApplyLeave = () => {
   }, []);
 
   // =====================================================
-  // BALANCE CARDS
+  // LEAVE BREAKDOWN
   // =====================================================
 
-  const leaveBalances = [
-    {
-      title: "Sick Leave",
-      shortName: "SL",
-      value: balance.sickLeave,
-      description: "Available sick leave",
-      color: "bg-rose-50",
-      textColor: "text-rose-600",
-      borderColor: "border-rose-100",
-    },
-    {
-      title: "Casual Leave",
-      shortName: "CL",
-      value: balance.casualLeave,
-      description: "Available casual leave",
-      color: "bg-blue-50",
-      textColor: "text-blue-600",
-      borderColor: "border-blue-100",
-    },
-    {
-      title: "Paid Leave",
-      shortName: "PL",
-      value: balance.paidLeave,
-      description: "Available paid leave",
-      color: "bg-emerald-50",
-      textColor: "text-emerald-600",
-      borderColor: "border-emerald-100",
-    },
-  ];
+  const leaveBreakdown = useMemo(() => {
+    return LEAVE_TYPES
+      .map((item) => ({
+        leaveType: item.leaveType,
+        days: Number(allocations[item.leaveType]) || 0,
+      }))
+      .filter((item) => item.days > 0);
+  }, [allocations]);
+
+  const totalDays = useMemo(
+    () =>
+      leaveBreakdown.reduce((sum, item) => sum + item.days, 0),
+    [leaveBreakdown]
+  );
+
+  const hasFractionalDays = !Number.isInteger(totalDays);
+  const expectedCalendarDays = Math.ceil(totalDays);
 
   // =====================================================
-  // SELECTED LEAVE BALANCE
+  // DATE RANGE
   // =====================================================
 
-  const getSelectedBalance = () => {
-    const balanceMap = {
-      "Casual Leave": balance.casualLeave,
-      "Sick Leave": balance.sickLeave,
-      "Paid Leave": balance.paidLeave,
-    };
+  const dateRange = useMemo(
+    () => getDateRange(form.startDate, form.endDate),
+    [form.startDate, form.endDate]
+  );
 
-    return balanceMap[form.leaveType] ?? 0;
+  const isDateRangeValid =
+    dateRange.length > 0 &&
+    dateRange.length === expectedCalendarDays;
+
+  // =====================================================
+  // DAILY BREAKDOWN
+  // =====================================================
+
+  const dailyBreakdown = useMemo(() => {
+    if (!isDateRangeValid) return [];
+
+    return dateRange.map((date) => {
+      const isHalfDay = hasFractionalDays && date === form.halfDayDate;
+
+      return {
+        date,
+        dayType: isHalfDay ? "Half Day" : "Full Day",
+        days: isHalfDay ? 0.5 : 1,
+      };
+    });
+  }, [
+    dateRange,
+    isDateRangeValid,
+    hasFractionalDays,
+    form.halfDayDate,
+  ]);
+
+  // =====================================================
+  // PAID LEAVE BALANCE VALIDATION
+  // =====================================================
+
+  const insufficientBalances = useMemo(() => {
+    return leaveBreakdown.filter((item) => {
+      if (item.leaveType === "Unpaid Leave") return false;
+
+      const config = LEAVE_TYPES.find(
+        (type) => type.leaveType === item.leaveType
+      );
+
+      return item.days > Number(balance[config.field] || 0);
+    });
+  }, [leaveBreakdown, balance]);
+
+  const hasInsufficientBalance = insufficientBalances.length > 0;
+
+  // =====================================================
+  // DERIVE CATEGORY
+  // =====================================================
+
+  const hasPaidLeave = leaveBreakdown.some(
+    (item) => item.leaveType !== "Unpaid Leave"
+  );
+
+  const hasUnpaidLeave = leaveBreakdown.some(
+    (item) => item.leaveType === "Unpaid Leave"
+  );
+
+  const leaveCategory =
+    hasPaidLeave && hasUnpaidLeave
+      ? "Mixed Leave"
+      : hasUnpaidLeave
+        ? "Unpaid Leave"
+        : "Paid Leave";
+
+  // =====================================================
+  // HANDLE FORM CHANGE
+  // =====================================================
+
+  const handleFormChange = (e) => {
+    const { name, value } = e.target;
+
+    setForm((prev) => {
+      const updated = {
+        ...prev,
+        [name]: value,
+      };
+
+      if (name === "startDate") {
+        if (updated.endDate && updated.endDate < value) {
+          updated.endDate = "";
+        }
+
+        updated.halfDayDate = "";
+      }
+
+      if (name === "endDate" || name === "startDate") {
+        updated.halfDayDate = "";
+      }
+
+      return updated;
+    });
+
+    toast.success("");
+    toast.error("");
   };
 
-  const selectedBalance = getSelectedBalance();
-  const requestedDays = Number(form.totalDays);
-
-  const isUnpaid = form.leaveCategory === "Unpaid Leave";
-
-  const exceedsBalance =
-    !isUnpaid &&
-    form.totalDays !== "" &&
-    Number.isFinite(requestedDays) &&
-    requestedDays > selectedBalance;
-
   // =====================================================
-  // HANDLE INPUT CHANGE
+  // HANDLE LEAVE ALLOCATION
   // =====================================================
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
+  const handleAllocationChange = (leaveType, value) => {
+    if (value !== "" && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+      return;
+    }
+
+    if (value !== "" && Number(value) > 365) return;
+
+    setAllocations((prev) => ({
+      ...prev,
+      [leaveType]: value,
+    }));
 
     setForm((prev) => ({
       ...prev,
-      [name]: value,
+      halfDayDate: "",
     }));
 
-    setSuccessMessage("");
-    setErrorMessage("");
+    toast.success("");
+    toast.error("");
+  };
+
+  const clearAllocation = (leaveType) => {
+    setAllocations((prev) => ({
+      ...prev,
+      [leaveType]: "",
+    }));
+
+    setForm((prev) => ({
+      ...prev,
+      halfDayDate: "",
+    }));
   };
 
   // =====================================================
@@ -149,9 +322,16 @@ const ApplyLeave = () => {
   // =====================================================
 
   const handleReset = () => {
-    setForm(initialForm);
-    setSuccessMessage("");
-    setErrorMessage("");
+    setForm({
+      startDate: "",
+      endDate: "",
+      halfDayDate: "",
+      reason: "",
+    });
+
+    setAllocations(initialAllocations);
+    toast.success("");
+    toast.error("");
   };
 
   // =====================================================
@@ -161,42 +341,92 @@ const ApplyLeave = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    setSuccessMessage("");
-    setErrorMessage("");
+    toast.success("");
+    toast.error("");
+
+    if (!leaveBreakdown.length) {
+      toast.error("Please allocate days to at least one leave type.");
+      return;
+    }
 
     if (!form.startDate || !form.endDate) {
-      setErrorMessage("Please select both start date and end date.");
+      toast.error("Please select both start date and end date.");
+      return;
+    }
+
+    if (form.startDate < today || form.endDate < today) {
+      toast.error("Past dates are not allowed for leave application.");
       return;
     }
 
     if (form.startDate > form.endDate) {
-      setErrorMessage("End date cannot be before start date.");
+      toast.error("End date cannot be before start date.");
       return;
     }
 
-    const days = Number(form.totalDays);
+    if (
+      !Number.isFinite(totalDays) ||
+      totalDays < 0.5 ||
+      Math.abs(totalDays * 2 - Math.round(totalDays * 2)) > 0.000001
+    ) {
+      toast.error("Leave allocation must be in multiples of 0.5 days.");
+      return;
+    }
+
+    if (!isDateRangeValid) {
+      toast.error(
+        `For ${totalDays} leave days, you must select exactly ${expectedCalendarDays} calendar date(s).`
+      );
+      return;
+    }
+
+    if (hasFractionalDays && !form.halfDayDate) {
+      toast.error("Please select which date will be a Half Day.");
+      return;
+    }
 
     if (
-      !Number.isFinite(days) ||
-      days <= 0 ||
-      !Number.isInteger(days * 2)
+      hasFractionalDays &&
+      !dateRange.includes(form.halfDayDate)
     ) {
-      setErrorMessage(
-        "Leave duration must be greater than 0 and in multiples of 0.5 days."
-      );
+      toast.error("The selected Half Day must be within the leave date range.");
+      return;
+    }
+
+    if (!hasFractionalDays && form.halfDayDate) {
+      toast.error("Half Day is not required for a whole-day leave request.");
       return;
     }
 
     if (!form.reason.trim()) {
-      setErrorMessage("Leave reason is required.");
+      toast.error("Leave reason is required.");
       return;
     }
 
-    // Frontend balance validation for Paid Leave
-    if (!isUnpaid && days > selectedBalance) {
-      setErrorMessage(
-        `Insufficient ${form.leaveType} balance. Available balance: ${selectedBalance} days.`
-      );
+    if (hasInsufficientBalance) {
+      const message = insufficientBalances
+        .map((item) => {
+          const config = LEAVE_TYPES.find(
+            (type) => type.leaveType === item.leaveType
+          );
+
+          return `${item.leaveType}: requested ${item.days}, available ${
+            balance[config.field]
+          }`;
+        })
+        .join("; ");
+
+      toast.error(`Insufficient leave balance. ${message}`);
+      return;
+    }
+
+    const dailyTotal = dailyBreakdown.reduce(
+      (sum, item) => sum + item.days,
+      0
+    );
+
+    if (Math.abs(dailyTotal - totalDays) > 0.000001) {
+      toast.error("Daily breakdown does not match total leave days.");
       return;
     }
 
@@ -204,41 +434,67 @@ const ApplyLeave = () => {
       setSubmitting(true);
 
       const payload = {
-        leaveCategory: form.leaveCategory,
-        leaveType: form.leaveType,
         startDate: form.startDate,
         endDate: form.endDate,
-        totalDays: days,
+        totalDays,
+        leaveBreakdown,
+        dailyBreakdown,
         reason: form.reason.trim(),
       };
 
       const response = await api.post("/leaves", payload);
 
       if (response.data.success) {
-        setSuccessMessage(
+        toast.success(
           response.data.message || "Leave request submitted successfully."
         );
 
-        setForm(initialForm);
-
-        // Refresh balance after successful application
+        handleReset();
         await fetchLeaveBalance();
       }
     } catch (error) {
       console.error("Apply Leave Error:", error);
 
-      setErrorMessage(
+      toast.error(
         error.response?.data?.message || "Failed to submit leave request."
       );
 
-      // Refresh balance in case backend rejected due to a changed balance
-      if (error.response?.data?.message === "Insufficient leave balance.") {
-        await fetchLeaveBalance();
-      }
+      await fetchLeaveBalance();
     } finally {
       setSubmitting(false);
     }
   };
+
+  // =====================================================
+  // BALANCE CARDS
+  // =====================================================
+
+  const balanceCards = [
+    {
+      title: "Sick Leave",
+      shortName: "SL",
+      value: balance.sickLeave,
+      color: "bg-rose-50",
+      textColor: "text-rose-600",
+      borderColor: "border-rose-100",
+    },
+    {
+      title: "Casual Leave",
+      shortName: "CL",
+      value: balance.casualLeave,
+      color: "bg-blue-50",
+      textColor: "text-blue-600",
+      borderColor: "border-blue-100",
+    },
+    {
+      title: "Paid Leave",
+      shortName: "PL",
+      value: balance.paidLeave,
+      color: "bg-emerald-50",
+      textColor: "text-emerald-600",
+      borderColor: "border-emerald-100",
+    },
+  ];
 
   // =====================================================
   // UI
@@ -248,7 +504,7 @@ const ApplyLeave = () => {
     <div className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
 
-        {/* PAGE HEADER */}
+        {/* HEADER */}
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -263,7 +519,7 @@ const ApplyLeave = () => {
             </div>
 
             <p className="mt-2 text-sm text-slate-500">
-              Submit your leave application and check your available leave balance.
+              Select multiple leave types and choose your Half Day date if required.
             </p>
           </div>
 
@@ -281,19 +537,18 @@ const ApplyLeave = () => {
           </button>
         </div>
 
-        {/* LEAVE BALANCE */}
+        {/* BALANCE CARDS */}
 
-        <div>
+        <section>
           <div className="mb-3 flex items-center gap-2">
             <Wallet size={19} className="text-indigo-600" />
-
             <h2 className="text-lg font-semibold text-slate-800">
               My Leave Balance
             </h2>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {leaveBalances.map((item) => (
+            {balanceCards.map((item) => (
               <div
                 key={item.shortName}
                 className={`rounded-xl border ${item.borderColor} bg-white p-5 shadow-sm`}
@@ -314,10 +569,6 @@ const ApplyLeave = () => {
                         Days
                       </span>
                     </p>
-
-                    <p className="mt-1 text-xs text-slate-400">
-                      {item.description}
-                    </p>
                   </div>
 
                   <div
@@ -329,51 +580,9 @@ const ApplyLeave = () => {
               </div>
             ))}
           </div>
-        </div>
+        </section>
 
-        {/* SUCCESS MESSAGE */}
-
-        {successMessage && (
-          <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700">
-            <CheckCircle2 size={20} className="mt-0.5 shrink-0" />
-
-            <div>
-              <p className="font-semibold">Success</p>
-              <p className="mt-1 text-sm">{successMessage}</p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setSuccessMessage("")}
-              className="ml-auto"
-            >
-              <X size={18} />
-            </button>
-          </div>
-        )}
-
-        {/* ERROR MESSAGE */}
-
-        {errorMessage && (
-          <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-700">
-            <AlertCircle size={20} className="mt-0.5 shrink-0" />
-
-            <div>
-              <p className="font-semibold">Unable to Apply Leave</p>
-              <p className="mt-1 text-sm">{errorMessage}</p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setErrorMessage("")}
-              className="ml-auto"
-            >
-              <X size={18} />
-            </button>
-          </div>
-        )}
-
-        {/* APPLICATION FORM */}
+        {/* FORM */}
 
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
@@ -382,193 +591,366 @@ const ApplyLeave = () => {
             </h2>
 
             <p className="mt-1 text-sm text-slate-500">
-              Fill in the details below to submit your leave request.
+              Allocate your leave days across one or more leave types.
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6 p-5 sm:p-6">
 
-            {/* LEAVE CATEGORY */}
+            {/* LEAVE ALLOCATION */}
 
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
-                Leave Category <span className="text-rose-500">*</span>
-              </label>
+            <section>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-800">
+                    Leave Type Allocation
+                    <span className="ml-1 text-rose-500">*</span>
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Enter the number of days for each leave type. Use 0.5 increments.
+                  </p>
+                </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {["Paid Leave", "Unpaid Leave"].map((category) => (
+                <span className="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">
+                  Multiple Types
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {LEAVE_TYPES.map((item) => {
+                  const value = allocations[item.leaveType];
+                  const requested = Number(value) || 0;
+                  const available = item.field
+                    ? Number(balance[item.field] || 0)
+                    : null;
+
+                  const insufficient =
+                    item.field && requested > available;
+
+                  return (
+                    <div
+                      key={item.leaveType}
+                      className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-[1fr_160px_auto] sm:items-center"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">
+                            {item.shortName}
+                          </span>
+
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">
+                              {item.leaveType}
+                            </p>
+
+                            {item.field ? (
+                              <p className="mt-0.5 text-xs text-slate-500">
+                                Available:{" "}
+                                {loadingBalance
+                                  ? "Loading..."
+                                  : `${available.toFixed(1)} days`}
+                              </p>
+                            ) : (
+                              <p className="mt-0.5 text-xs text-amber-600">
+                                No balance deduction
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-500">
+                          Requested Days
+                        </label>
+
+                        <input
+                          type="number"
+                          min="0"
+                          max="365"
+                          step="0.5"
+                          value={value}
+                          onChange={(e) =>
+                            handleAllocationChange(
+                              item.leaveType,
+                              e.target.value
+                            )
+                          }
+                          placeholder="0.0"
+                          className={`w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2 ${
+                            insufficient
+                              ? "border-rose-300 focus:border-rose-500 focus:ring-rose-100"
+                              : "border-slate-200 focus:border-indigo-500 focus:ring-indigo-100"
+                          }`}
+                        />
+
+                        {insufficient && (
+                          <p className="mt-1 text-xs text-rose-600">
+                            Insufficient balance
+                          </p>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => clearAllocation(item.leaveType)}
+                        disabled={!value}
+                        className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-medium text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Minus size={14} />
+                        Clear
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            {/* TOTAL SUMMARY */}
+
+            <section className="grid grid-cols-1 gap-3 rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 sm:grid-cols-3">
+              <div>
+                <p className="text-xs font-medium text-slate-500">
+                  Total Leave Days
+                </p>
+                <p className="mt-1 text-2xl font-bold text-indigo-700">
+                  {totalDays.toFixed(1)}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-slate-500">
+                  Calendar Days Required
+                </p>
+                <p className="mt-1 text-2xl font-bold text-slate-800">
+                  {expectedCalendarDays}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-slate-500">
+                  Leave Category
+                </p>
+                <p className="mt-1 text-lg font-bold text-slate-800">
+                  {leaveBreakdown.length ? leaveCategory : "Not Selected"}
+                </p>
+              </div>
+            </section>
+
+            {/* ALLOCATION SUMMARY */}
+
+            {leaveBreakdown.length > 0 && (
+              <section className="rounded-xl border border-slate-200 p-4">
+                <h3 className="mb-3 text-sm font-semibold text-slate-800">
+                  Allocation Summary
+                </h3>
+
+                <div className="flex flex-wrap gap-2">
+                  {leaveBreakdown.map((item) => (
+                    <span
+                      key={item.leaveType}
+                      className={`rounded-lg px-3 py-2 text-xs font-semibold ${
+                        item.leaveType === "Unpaid Leave"
+                          ? "bg-amber-50 text-amber-700"
+                          : "bg-emerald-50 text-emerald-700"
+                      }`}
+                    >
+                      {item.leaveType}: {item.days.toFixed(1)} day(s)
+                    </span>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* DATE RANGE */}
+
+            <section>
+              <h3 className="mb-3 text-sm font-semibold text-slate-800">
+                Leave Date Range
+              </h3>
+
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <div>
                   <label
-                    key={category}
-                    className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition ${
-                      form.leaveCategory === category
-                        ? "border-indigo-500 bg-indigo-50"
-                        : "border-slate-200 hover:border-slate-300"
-                    }`}
+                    htmlFor="startDate"
+                    className="mb-2 block text-sm font-semibold text-slate-700"
                   >
-                    <input
-                      type="radio"
-                      name="leaveCategory"
-                      value={category}
-                      checked={form.leaveCategory === category}
-                      onChange={handleChange}
-                      className="h-4 w-4 accent-indigo-600"
+                    Start Date <span className="text-rose-500">*</span>
+                  </label>
+
+                  <div className="relative">
+                    <CalendarDays
+                      size={18}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                     />
 
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">
-                        {category}
-                      </p>
+                    <input
+                      type="date"
+                      id="startDate"
+                      name="startDate"
+                      value={form.startDate}
+                      min={today}
+                      onChange={handleFormChange}
+                      className="w-full rounded-lg border border-slate-200 bg-white py-3 pl-10 pr-3 text-sm text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                      required
+                    />
+                  </div>
+                </div>
 
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        {category === "Paid Leave"
-                          ? "Leave will be deducted from your balance."
-                          : "Leave will not be deducted from your leave balance."}
-                      </p>
-                    </div>
+                <div>
+                  <label
+                    htmlFor="endDate"
+                    className="mb-2 block text-sm font-semibold text-slate-700"
+                  >
+                    End Date <span className="text-rose-500">*</span>
                   </label>
-                ))}
+
+                  <div className="relative">
+                    <CalendarDays
+                      size={18}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
+
+                    <input
+                      type="date"
+                      id="endDate"
+                      name="endDate"
+                      value={form.endDate}
+                      min={form.startDate || today}
+                      onChange={handleFormChange}
+                      className="w-full rounded-lg border border-slate-200 bg-white py-3 pl-10 pr-3 text-sm text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                      required
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
 
-            {/* LEAVE TYPE */}
+              {form.startDate && form.endDate && (
+                <div
+                  className={`mt-3 rounded-lg p-3 text-sm ${
+                    isDateRangeValid
+                      ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border border-amber-200 bg-amber-50 text-amber-700"
+                  }`}
+                >
+                  {isDateRangeValid
+                    ? `Date range valid: ${dateRange.length} calendar day(s).`
+                    : `You selected ${dateRange.length} calendar day(s), but ${expectedCalendarDays} required for ${totalDays} leave day(s).`}
+                </div>
+              )}
+            </section>
 
-            <div>
-              <label
-                htmlFor="leaveType"
-                className="mb-2 block text-sm font-semibold text-slate-700"
-              >
-                Leave Type <span className="text-rose-500">*</span>
-              </label>
+            {/* HALF DAY DATE */}
 
-              <select
-                id="leaveType"
-                name="leaveType"
-                value={form.leaveType}
-                onChange={handleChange}
-                className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                required
-              >
-                <option value="Casual Leave">Casual Leave (CL)</option>
-                <option value="Sick Leave">Sick Leave (SL)</option>
-                <option value="Paid Leave">Paid Leave (PL)</option>
-              </select>
+            {hasFractionalDays && (
+              <section className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                <h3 className="text-sm font-semibold text-slate-800">
+                  Select Half Day Date
+                  <span className="ml-1 text-rose-500">*</span>
+                </h3>
 
-              {isUnpaid ? (
-                <p className="mt-2 text-xs text-amber-600">
-                  Unpaid Leave selected. Your {form.leaveType} balance will not be deducted.
+                <p className="mt-1 text-xs text-slate-600">
+                  Your request contains a half day. Select which date will be Half Day. All other dates will be Full Day.
                 </p>
-              ) : (
-                <p className="mt-2 text-xs text-slate-500">
-                  Available {form.leaveType} balance:{" "}
-                  <span className="font-semibold text-indigo-600">
-                    {loadingBalance ? "Loading..." : `${selectedBalance} days`}
+
+                <div className="mt-3">
+                  <label
+                    htmlFor="halfDayDate"
+                    className="mb-2 block text-sm font-medium text-slate-700"
+                  >
+                    Half Day Date
+                  </label>
+
+                  <select
+                    id="halfDayDate"
+                    value={form.halfDayDate}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        halfDayDate: e.target.value,
+                      }))
+                    }
+                    disabled={!isDateRangeValid}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:opacity-50"
+                    required
+                  >
+                    <option value="">Select Half Day Date</option>
+
+                    {dateRange.map((date) => (
+                      <option key={date} value={date}>
+                        {formatDate(date)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </section>
+            )}
+
+            {/* DAILY BREAKDOWN PREVIEW */}
+
+            {isDateRangeValid && (
+              <section className="overflow-hidden rounded-xl border border-slate-200">
+                <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+                  <h3 className="text-sm font-semibold text-slate-800">
+                    Daily Leave Breakdown
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Review the dates and day types before submitting.
+                  </p>
+                </div>
+
+                <div className="divide-y divide-slate-100">
+                  {dailyBreakdown.map((item) => (
+                    <div
+                      key={item.date}
+                      className="flex items-center justify-between gap-3 px-4 py-3"
+                    >
+                      <div className="flex items-center gap-2">
+                        <CalendarDays
+                          size={16}
+                          className="text-slate-400"
+                        />
+                        <span className="text-sm font-medium text-slate-700">
+                          {formatDate(item.date)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            item.dayType === "Half Day"
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-emerald-100 text-emerald-700"
+                          }`}
+                        >
+                          {item.dayType}
+                        </span>
+
+                        <span className="w-12 text-right text-sm font-semibold text-slate-700">
+                          {item.days.toFixed(1)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-4 py-3">
+                  <span className="text-sm font-semibold text-slate-700">
+                    Total
                   </span>
-                </p>
-              )}
-            </div>
-
-            {/* DATE FIELDS */}
-
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-              <div>
-                <label
-                  htmlFor="startDate"
-                  className="mb-2 block text-sm font-semibold text-slate-700"
-                >
-                  Start Date <span className="text-rose-500">*</span>
-                </label>
-
-                <div className="relative">
-                  <CalendarDays
-                    size={18}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                  />
-
-                  <input
-                    type="date"
-                    id="startDate"
-                    name="startDate"
-                    value={form.startDate}
-                    onChange={handleChange}
-                    className="w-full rounded-lg border border-slate-200 bg-white py-3 pl-10 pr-3 text-sm text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                    required
-                  />
+                  <span className="text-sm font-bold text-indigo-700">
+                    {dailyBreakdown
+                      .reduce((sum, item) => sum + item.days, 0)
+                      .toFixed(1)}{" "}
+                    Days
+                  </span>
                 </div>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="endDate"
-                  className="mb-2 block text-sm font-semibold text-slate-700"
-                >
-                  End Date <span className="text-rose-500">*</span>
-                </label>
-
-                <div className="relative">
-                  <CalendarDays
-                    size={18}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                  />
-
-                  <input
-                    type="date"
-                    id="endDate"
-                    name="endDate"
-                    value={form.endDate}
-                    min={form.startDate || undefined}
-                    onChange={handleChange}
-                    className="w-full rounded-lg border border-slate-200 bg-white py-3 pl-10 pr-3 text-sm text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                    required
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* TOTAL DAYS */}
-
-            <div>
-              <label
-                htmlFor="totalDays"
-                className="mb-2 block text-sm font-semibold text-slate-700"
-              >
-                Total Leave Days <span className="text-rose-500">*</span>
-              </label>
-
-              <div className="relative">
-                <Clock
-                  size={18}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-
-                <input
-                  type="number"
-                  id="totalDays"
-                  name="totalDays"
-                  min="0.5"
-                  step="0.5"
-                  value={form.totalDays}
-                  onChange={handleChange}
-                  placeholder="Enter total days (e.g. 1, 1.5, 2)"
-                  className="w-full rounded-lg border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                  required
-                />
-              </div>
-
-              <p className="mt-2 text-xs text-slate-400">
-                Leave duration must be in multiples of 0.5 days.
-              </p>
-
-              {exceedsBalance && (
-                <p className="mt-2 flex items-center gap-1.5 text-sm text-rose-600">
-                  <AlertCircle size={15} />
-                  Requested days exceed your available {form.leaveType} balance.
-                </p>
-              )}
-            </div>
+              </section>
+            )}
 
             {/* REASON */}
 
-            <div>
+            <section>
               <label
                 htmlFor="reason"
                 className="mb-2 block text-sm font-semibold text-slate-700"
@@ -580,7 +962,7 @@ const ApplyLeave = () => {
                 id="reason"
                 name="reason"
                 value={form.reason}
-                onChange={handleChange}
+                onChange={handleFormChange}
                 rows={4}
                 maxLength={1000}
                 placeholder="Please explain the reason for your leave..."
@@ -591,18 +973,32 @@ const ApplyLeave = () => {
               <p className="mt-1 text-right text-xs text-slate-400">
                 {form.reason.length}/1000
               </p>
-            </div>
+            </section>
 
             {/* BALANCE WARNING */}
 
-            {!isUnpaid && exceedsBalance && (
+            {hasInsufficientBalance && (
               <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-                You cannot submit this application because your requested leave
-                exceeds your available balance.
+                <p className="font-semibold">
+                  Insufficient Leave Balance
+                </p>
+
+                {insufficientBalances.map((item) => {
+                  const config = LEAVE_TYPES.find(
+                    (type) => type.leaveType === item.leaveType
+                  );
+
+                  return (
+                    <p key={item.leaveType} className="mt-1">
+                      {item.leaveType}: Requested {item.days.toFixed(1)}, Available{" "}
+                      {Number(balance[config.field]).toFixed(1)} days.
+                    </p>
+                  );
+                })}
               </div>
             )}
 
-            {/* FORM ACTIONS */}
+            {/* ACTIONS */}
 
             <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
               <button
@@ -620,7 +1016,10 @@ const ApplyLeave = () => {
                 disabled={
                   submitting ||
                   loadingBalance ||
-                  (!isUnpaid && exceedsBalance)
+                  hasInsufficientBalance ||
+                  !leaveBreakdown.length ||
+                  !isDateRangeValid ||
+                  (hasFractionalDays && !form.halfDayDate)
                 }
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
               >

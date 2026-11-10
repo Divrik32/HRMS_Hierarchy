@@ -1,47 +1,139 @@
-
 import express from "express";
+
 import {
   createTimesheet,
   updateTimesheet,
   auditTimesheet,
   getDailyEfficiencyGraph,
-  getTimesheetsByCompany,
+  getMyTimesheets,
+  getCompanyTimesheets,
+  getTimesheetsForApproval,
   getCompanyEmployeesForTimesheet,
+  getProjectsForTimesheet,
+  startTask,
+  endTask,
+  startBreak,
+  resumeTask,
 } from "../controllers/timesheetController.js";
 
-import superAdminAuth from "../middleware/superAdminAuth.js";
 import employeeOrSuperAdminAuth from "../middleware/employeeOrSuperAdminAuth.js";
-import { companyAuth } from "../middleware/companyAuth.js";
 import employeeAuth from "../middleware/employeeAuth.js";
+import superAdminCompanyAuth from "../middleware/superAdminCompanyAuth.js";
 
 const router = express.Router();
 
+// =========================================
+// EMPLOYEE DROPDOWN DATA
+// =========================================
+
+// Get company employees
 router.get(
   "/company-employees",
   employeeAuth,
   getCompanyEmployeesForTimesheet
 );
 
-// Employee: create a timesheet
-router.post("/", employeeAuth, createTimesheet);
+// Get all company projects and their modules
+router.get(
+  "/projects",
+  employeeAuth,
+  getProjectsForTimesheet
+);
 
-// Get all timesheets
-router.get("/", employeeOrSuperAdminAuth, getTimesheetsByCompany);
+// =========================================
+// TIMESHEET CRUD
+// =========================================
 
-// Update a single editable timesheet field
-router.patch("/:id", employeeAuth, updateTimesheet);
+// Employee: Get only own timesheets
+router.get(
+  "/",
+  employeeAuth,
+  getMyTimesheets
+);
 
-// Audit timesheet — approve or reject
-router.patch("/:id/audit", employeeAuth, auditTimesheet);
+// Super Admin: Get all timesheets of a specific company
+router.get(
+  "/company/:companyId",
+  superAdminCompanyAuth,
+  getCompanyTimesheets
+);
 
-// Super Admin: daily efficiency graph for a specific company
+// Employee: Create timesheet
+router.post(
+  "/",
+  employeeAuth,
+  createTimesheet
+);
+
+// Update editable timesheet fields
+router.patch(
+  "/:id",
+  employeeOrSuperAdminAuth,
+  updateTimesheet
+);
+
+// =========================================
+// TIMESHEET APPROVAL
+// =========================================
+
+// Employee: Get timesheets submitted by child and grandchild role employees
+router.get(
+  "/approval",
+  employeeAuth,
+  getTimesheetsForApproval
+);
+
+// Employee: Approve or reject timesheet
+router.patch(
+  "/:id/audit",
+  employeeAuth,
+  auditTimesheet
+);
+
+// =========================================
+// TASK TIME TRACKING
+// =========================================
+
+// Start task
+router.patch(
+  "/:id/start",
+  employeeAuth,
+  startTask
+);
+
+// End task
+router.patch(
+  "/:id/end",
+  employeeAuth,
+  endTask
+);
+
+// Start break
+router.patch(
+  "/:id/break/start",
+  employeeAuth,
+  startBreak
+);
+
+// Resume task after break
+router.patch(
+  "/:id/break/resume",
+  employeeAuth,
+  resumeTask
+);
+
+// =========================================
+// DAILY EFFICIENCY GRAPH
+// =========================================
+
+// Super Admin: Specific company
 router.get(
   "/company/:companyId/daily-efficiency",
-  superAdminAuth,
+  superAdminCompanyAuth,
   getDailyEfficiencyGraph
 );
 
-// Employee: daily efficiency graph for their own company
+// Employee: Own company
 router.get(
   "/my-company/daily-efficiency",
   employeeAuth,

@@ -24,36 +24,80 @@ const EmployeeSidebar = ({ open, employee }) => {
   const { employeeId: routeEmployeeId } = useParams();
 
   const [hasChildRoles, setHasChildRoles] = useState(null);
+  const [hasTimesheetApprovalAccess, setHasTimesheetApprovalAccess] =
+    useState(false);
 
   const employeeId = employee?._id || routeEmployeeId;
   const basePath = `/employee/${employeeId}`;
 
   // Employee role
   const roleName = employee?.roleId?.roleName?.trim() || "";
-  const isHR = ["hr", "head recruiter"].includes(
-    roleName.toLowerCase()
+  const isHR = ["hr", "head recruiter"].includes(roleName.toLowerCase());
+
+  const normalizedDepartmentName = (
+    employee?.departmentId?.departmentName || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const normalizedRoleName = roleName.toLowerCase();
+
+  const itDepartments = [
+    "it",
+    "information technology",
+    "accessibility",
+    "functional testing",
+  ];
+
+  const isITDepartment = itDepartments.includes(
+    normalizedDepartmentName
   );
-const normalizedDepartmentName =
-  (employee?.departmentId?.departmentName || "").trim().toLowerCase();
 
-const normalizedRoleName = roleName.toLowerCase();
+  const isITVicePresident =
+    isITDepartment &&
+    normalizedRoleName.includes("vice president");
 
-const itDepartments = [
-  "it",
-  "information technology",
-  "accessibility",
-  "functional testing",
-];
+  // =========================================
+  // CHECK TIMESHEET APPROVAL ACCESS
+  // =========================================
 
-const isITDepartment = itDepartments.includes(
-  normalizedDepartmentName
-);
+  useEffect(() => {
+    let isMounted = true;
 
-const isITVicePresident =
-  isITDepartment &&
-  normalizedRoleName.includes("vice president");
+    const checkTimesheetApprovalAccess = async () => {
+      if (!employeeId || !open) return;
 
-  // Check whether employee's role has child roles
+      try {
+        const { data } = await api.get("/timesheets/approval");
+
+        if (isMounted) {
+          setHasTimesheetApprovalAccess(
+            Boolean(data?.hasApprovalAccess)
+          );
+        }
+      } catch (error) {
+        console.error(
+          "Failed to check timesheet approval access:",
+          error
+        );
+
+        if (isMounted) {
+          setHasTimesheetApprovalAccess(false);
+        }
+      }
+    };
+
+    checkTimesheetApprovalAccess();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [employeeId, open]);
+
+  // =========================================
+  // CHECK LEAVE APPROVAL ACCESS
+  // =========================================
+
   useEffect(() => {
     let isMounted = true;
 
@@ -99,7 +143,10 @@ const isITVicePresident =
       ? "Company data unavailable"
       : "Not assigned");
 
-  // Common pages: accessible to every employee
+  // =========================================
+  // NAVIGATION ITEMS
+  // =========================================
+
   const navigationItems = [
     {
       label: "Dashboard",
@@ -117,15 +164,17 @@ const isITVicePresident =
       path: `${basePath}/projects`,
       icon: FolderKanban,
     },
+
     ...(isITVicePresident
-  ? [
-      {
-        label: "Project Management",
-        path: `${basePath}/project-management`,
-        icon: FolderKanban,
-      },
-    ]
-  : []),
+      ? [
+          {
+            label: "Project Management",
+            path: `${basePath}/project-management`,
+            icon: FolderKanban,
+          },
+        ]
+      : []),
+
     {
       label: "Role & Project Access",
       path: `${basePath}/access`,
@@ -141,6 +190,18 @@ const isITVicePresident =
       path: `${basePath}/timesheet`,
       icon: ClipboardList,
     },
+
+    // Show only when employee has child/grandchild roles
+    ...(hasTimesheetApprovalAccess
+      ? [
+          {
+            label: "Timesheet to Approve",
+            path: `${basePath}/timesheet-approvals`,
+            icon: CheckCircle2,
+          },
+        ]
+      : []),
+
     {
       label: "My Attendance",
       path: `${basePath}/attendance`,
@@ -153,18 +214,20 @@ const isITVicePresident =
     },
 
     // Leave Management
-    {
-      label: "My Leave",
-      path: `${basePath}/leaves`,
-      icon: CalendarDays,
-    },
-    {
-      label: "Apply Leave",
-      path: `${basePath}/leaves/apply`,
-      icon: FilePlus2,
-    },
+{
+  label: "My Leave",
+  path: `${basePath}/leaves`,
+  icon: CalendarDays,
+  end: true,
+},
+{
+  label: "Apply Leave",
+  path: `${basePath}/leaves/apply`,
+  icon: FilePlus2,
+  end: true,
+},
 
-    // Show Leave Approvals when role has child roles OR employee is HR
+    // Leave Approvals
     ...(hasChildRoles === true || isHR
       ? [
           {
@@ -175,25 +238,27 @@ const isITVicePresident =
         ]
       : []),
 
-...(isHR
-  ? [
-      {
-        label: "Absent Management",
-        path: `${basePath}/absent`,
-        icon: UserX,
-      },
-    ]
-  : []),
-...(isHR
-  ? [
-      {
-        label: "Attendance Management",
-        path: `${basePath}/attendance-management`,
-        icon: Clock,
-      },
-    ]
-  : []),
-    // Comp-Off: accessible to every employee
+    ...(isHR
+      ? [
+          {
+            label: "Absent Management",
+            path: `${basePath}/absent`,
+            icon: UserX,
+          },
+        ]
+      : []),
+
+    ...(isHR
+      ? [
+          {
+            label: "Attendance Management",
+            path: `${basePath}/attendance-management`,
+            icon: Clock,
+          },
+        ]
+      : []),
+
+    // Comp-Off
     {
       label: "My Comp-Off",
       path: `${basePath}/comp-off`,

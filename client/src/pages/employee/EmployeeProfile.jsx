@@ -5,6 +5,8 @@ import {
   UserRound,
   Camera,
   LockKeyhole,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { toast } from "react-toastify";
 import api from "../../api/axios";
@@ -33,6 +35,10 @@ const [form, setForm] = useState({
     currentPassword: "",
     newPassword: "",
   });
+  const [showNewPassword, setShowNewPassword] = useState(false);
+const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+const [confirmPassword, setConfirmPassword] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -256,7 +262,6 @@ setForm({
     setSaving(false);
   }
 };
-
 const handlePasswordChange = async (event) => {
   event.preventDefault();
 
@@ -264,6 +269,11 @@ const handlePasswordChange = async (event) => {
 
   if (passwordForm.newPassword.length < 6) {
     toast.error("New password must be at least 6 characters.");
+    return;
+  }
+
+  if (passwordForm.newPassword !== confirmPassword) {
+    toast.error("New password and confirm password do not match.");
     return;
   }
 
@@ -282,6 +292,10 @@ const handlePasswordChange = async (event) => {
       currentPassword: "",
       newPassword: "",
     });
+
+    setConfirmPassword("");
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
 
     toast.update(toastId, {
       render: response.data.message || "Password updated successfully.",
@@ -519,62 +533,112 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
             </p>
           </div>
         </div>
+<form
+  onSubmit={handlePasswordChange}
+  className="space-y-4"
+>
+  <div>
+    <label className="text-sm font-medium text-black-700">
+      Current password
+    </label>
 
-        <form
-          onSubmit={handlePasswordChange}
-          className="space-y-4"
-        >
-          <div>
-            <label className="text-sm font-medium text-black-700">
-              Current password
-            </label>
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={passwordForm.currentPassword}
-              onChange={(event) =>
-                setPasswordForm((previous) => ({
-                  ...previous,
-                  currentPassword: event.target.value,
-                }))
-              }
-              required
-              className={fieldClass}
-            />
-          </div>
+    <input
+      type="password"
+      autoComplete="current-password"
+      value={passwordForm.currentPassword}
+      onChange={(event) =>
+        setPasswordForm((previous) => ({
+          ...previous,
+          currentPassword: event.target.value,
+        }))
+      }
+      required
+      className={fieldClass}
+    />
+  </div>
 
-          <div>
-            <label className="text-sm font-medium text-black-700">
-              New password
-            </label>
-            <input
-              type="password"
-              autoComplete="new-password"
-              minLength={6}
-              value={passwordForm.newPassword}
-              onChange={(event) =>
-                setPasswordForm((previous) => ({
-                  ...previous,
-                  newPassword: event.target.value,
-                }))
-              }
-              required
-              className={fieldClass}
-            />
-          </div>
+  {/* New Password */}
+  <div>
+    <label className="text-sm font-medium text-black-700">
+      New password
+    </label>
 
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={changingPassword}
-              className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
-            >
-              {changingPassword
-                ? "Updating..."
-                : "Update Password"}
-            </button>
-          </div>
-        </form>
+    <div className="relative">
+      <input
+        type={showNewPassword ? "text" : "password"}
+        autoComplete="new-password"
+        minLength={6}
+        value={passwordForm.newPassword}
+        onChange={(event) =>
+          setPasswordForm((previous) => ({
+            ...previous,
+            newPassword: event.target.value,
+          }))
+        }
+        required
+        className={`${fieldClass} pr-11`}
+      />
+
+      <button
+        type="button"
+        onClick={() => setShowNewPassword((previous) => !previous)}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-indigo-600"
+        aria-label={showNewPassword ? "Hide new password" : "Show new password"}
+      >
+        {showNewPassword ? <EyeOff size={19} /> : <Eye size={19} />}
+      </button>
+    </div>
+  </div>
+
+  {/* Confirm Password */}
+  <div>
+    <label className="text-sm font-medium text-black-700">
+      Confirm password
+    </label>
+
+    <div className="relative">
+      <input
+        type={showConfirmPassword ? "text" : "password"}
+        autoComplete="new-password"
+        value={confirmPassword}
+        onChange={(event) => setConfirmPassword(event.target.value)}
+        required
+        className={`${fieldClass} pr-11`}
+      />
+
+      <button
+        type="button"
+        onClick={() =>
+          setShowConfirmPassword((previous) => !previous)
+        }
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-indigo-600"
+        aria-label={
+          showConfirmPassword
+            ? "Hide confirm password"
+            : "Show confirm password"
+        }
+      >
+        {showConfirmPassword ? (
+          <EyeOff size={19} />
+        ) : (
+          <Eye size={19} />
+        )}
+      </button>
+    </div>
+  </div>
+
+  <div className="flex justify-end">
+    <button
+      type="submit"
+      disabled={changingPassword}
+      className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+    >
+      {changingPassword
+        ? "Updating..."
+        : "Update Password"}
+    </button>
+  </div>
+</form>
       </section>
       <ImageCropper
         file={cropFile}

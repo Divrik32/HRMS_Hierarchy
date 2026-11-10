@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "react-toastify";
 import api from "../../api/axios";
+import { useParams } from "react-router-dom";
 
 // =========================================
 // DATE & TIME HELPERS
@@ -258,6 +259,7 @@ const DualScrollTable = ({ children, maxHeight = "68vh" }) => {
   const mainRef = useRef(null);
   const contentRef = useRef(null);
 
+  const today = getTodayDate();
   const [contentWidth, setContentWidth] = useState(0);
   const [scrollbarWidth, setScrollbarWidth] = useState(0);
   const [scrollbarHeight, setScrollbarHeight] = useState(0);
@@ -394,6 +396,7 @@ const StatusBadge = ({ status }) => {
 // =========================================
 
 const EmployeeAttendance = () => {
+  const { companyId } = useParams();
   const today = getTodayDate();
   const currentMonth = getCurrentMonth();
 
@@ -533,31 +536,115 @@ const EmployeeAttendance = () => {
 
     setCompanyAttendance(normalizedRecords);
 
-    const totalEmployees =
-      response.data?.totalEmployees || records.length;
+ 
+// =========================================
+// SUMMARY CALCULATION
+// EXCLUDE SUNDAYS AND COMPANY HOLIDAYS
+// =========================================
 
-    const checkedIn = normalizedRecords.filter((item) =>
-      Boolean(item.checkIn)
-    ).length;
+const totalEmployees =
+  response.data?.totalEmployees ?? records.length;
 
-    const checkedOut = normalizedRecords.filter((item) =>
-      Boolean(item.checkOut)
-    ).length;
+// Selected date / range / month-এর date keys
+let dateKeys = [];
 
-    setSummary({
-      totalEmployees,
-      checkedIn,
-      checkedOut,
-      notCheckedIn: Math.max(0, totalEmployees - checkedIn),
-    });
-  }, [
-    attendanceView,
-    selectedDate,
-    startDate,
-    endDate,
+if (attendanceView === "single") {
+  dateKeys = [selectedDate];
+} else if (attendanceView === "range") {
+  dateKeys = getDateKeysBetween(startDate, endDate);
+} else if (attendanceView === "monthly") {
+  dateKeys = getMonthDateKeys(
     selectedMonth,
-    selectedYear,
-  ]);
+    selectedYear
+  ).filter((dateKey) => dateKey <= getTodayDate());
+}
+
+// যে বছরগুলোর holiday প্রয়োজন, সেগুলো বের করো
+const years = [
+  ...new Set(dateKeys.map((dateKey) => dateKey.slice(0, 4))),
+];
+
+// Company holidays fetch করো
+const holidayResponses = await Promise.all(
+  years.map((year) =>
+    api.get(`/holidays/${companyId}`, {
+      params: {
+        year: Number(year),
+      },
+    })
+  )
+);
+
+// Holiday date Set তৈরি করো
+const holidayDates = new Set(
+  holidayResponses.flatMap((holidayResponse) =>
+    (holidayResponse.data?.holidays || []).map((holiday) =>
+      getAttendanceDateKey(holiday.date)
+    )
+  )
+);
+
+// Sunday এবং Holiday বাদ দিয়ে eligible working dates
+const eligibleDateKeys = dateKeys.filter((dateKey) => {
+  return (
+    !isSunday(dateKey) &&
+    !holidayDates.has(dateKey)
+  );
+});
+
+const eligibleDateSet = new Set(eligibleDateKeys);
+
+// শুধু eligible working dates-এর attendance count
+const checkedIn = normalizedRecords.filter((item) => {
+  const attendanceDate =
+    attendanceView === "single"
+      ? selectedDate
+      : getAttendanceDateKey(item.attendanceDate);
+
+  return (
+    eligibleDateSet.has(attendanceDate) &&
+    Boolean(item.checkIn)
+  );
+}).length;
+
+const checkedOut = normalizedRecords.filter((item) => {
+  const attendanceDate =
+    attendanceView === "single"
+      ? selectedDate
+      : getAttendanceDateKey(item.attendanceDate);
+
+  return (
+    eligibleDateSet.has(attendanceDate) &&
+    Boolean(item.checkOut)
+  );
+}).length;
+
+// Eligible employee-days
+const totalEmployeeDays =
+  totalEmployees * eligibleDateKeys.length;
+
+// Final Not Checked In
+const notCheckedIn = Math.max(
+  0,
+  totalEmployeeDays - checkedIn
+);
+
+setSummary({
+  totalEmployees,
+  checkedIn,
+  checkedOut,
+  notCheckedIn,
+});
+
+  }, [
+  companyId,
+  attendanceView,
+  selectedDate,
+  startDate,
+  endDate,
+  selectedMonth,
+  selectedYear,
+]);
 
   // =========================================
   // LOAD ALL ATTENDANCE DATA

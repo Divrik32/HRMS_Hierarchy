@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
@@ -11,10 +12,16 @@ import {
   RotateCcw,
   FileText,
   Wallet,
+  Sun,
+  Moon,
 } from "lucide-react";
 
 import api from "../../api/axios";
 import { toast } from "react-toastify";
+
+// =====================================================
+// STATUS CONFIG
+// =====================================================
 
 const statusConfig = {
   Pending: {
@@ -34,6 +41,10 @@ const statusConfig = {
     icon: AlertCircle,
   },
 };
+
+// =====================================================
+// DATE HELPERS
+// =====================================================
 
 const formatDate = (date) => {
   if (!date) return "N/A";
@@ -57,14 +68,170 @@ const formatDateTime = (date) => {
   });
 };
 
+const formatDays = (days) => {
+  const value = Number(days || 0);
+  return Number.isInteger(value) ? value : value.toFixed(1);
+};
+
+// =====================================================
+// LEAVE BREAKDOWN HELPER
+// =====================================================
+
+const getLeaveBreakdown = (leave) => {
+  if (
+    Array.isArray(leave?.leaveBreakdown) &&
+    leave.leaveBreakdown.length > 0
+  ) {
+    return leave.leaveBreakdown;
+  }
+
+  // Legacy record compatibility
+  if (leave?.leaveType && Number(leave?.totalDays) > 0) {
+    return [
+      {
+        leaveType: leave.leaveType,
+        days: Number(leave.totalDays),
+      },
+    ];
+  }
+
+  return [];
+};
+
+// =====================================================
+// DAILY BREAKDOWN HELPER
+// =====================================================
+
+const getDailyBreakdown = (leave) => {
+  return Array.isArray(leave?.dailyBreakdown)
+    ? leave.dailyBreakdown
+    : [];
+};
+
+// =====================================================
+// CATEGORY HELPER
+// =====================================================
+
+const getLeaveCategory = (leave) => {
+  if (leave?.leaveCategory) {
+    return leave.leaveCategory;
+  }
+
+  return leave?.isUnpaid ? "Unpaid Leave" : "Paid Leave";
+};
+
+// =====================================================
+// REUSABLE BREAKDOWN COMPONENT
+// =====================================================
+
+const LeaveTypeBreakdown = ({ leave }) => {
+  const breakdown = getLeaveBreakdown(leave);
+
+  if (!breakdown.length) {
+    return (
+      <p className="text-sm text-slate-500">
+        No leave type breakdown available.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {breakdown.map((item, index) => (
+        <div
+          key={`${item.leaveType}-${index}`}
+          className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5"
+        >
+          <span className="text-sm font-medium text-slate-700">
+            {item.leaveType}
+          </span>
+
+          <span className="shrink-0 rounded-lg bg-blue-50 px-3 py-1 text-sm font-bold text-blue-700">
+            {formatDays(item.days)} {Number(item.days) === 1 ? "Day" : "Days"}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// =====================================================
+// REUSABLE DAILY BREAKDOWN COMPONENT
+// =====================================================
+
+const DailyLeaveBreakdown = ({ leave }) => {
+  const dailyBreakdown = getDailyBreakdown(leave);
+
+  if (!dailyBreakdown.length) {
+    return (
+      <p className="text-sm text-slate-500">
+        Daily breakdown is not available for this request.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {dailyBreakdown.map((item, index) => {
+        const isHalfDay = item.dayType === "Half Day";
+
+        return (
+          <div
+            key={`${item.date}-${index}`}
+            className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5"
+          >
+            <div className="flex items-center gap-2">
+              {isHalfDay ? (
+                <Moon size={16} className="text-amber-600" />
+              ) : (
+                <Sun size={16} className="text-blue-600" />
+              )}
+
+              <span className="text-sm font-medium text-slate-700">
+                {formatDate(item.date)}
+              </span>
+            </div>
+
+            <div className="text-right">
+              <span
+                className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${
+                  isHalfDay
+                    ? "bg-amber-50 text-amber-700"
+                    : "bg-blue-50 text-blue-700"
+                }`}
+              >
+                {item.dayType || "Full Day"}
+              </span>
+
+              <p className="mt-1 text-xs text-slate-500">
+                {formatDays(item.days)} {Number(item.days) === 1 ? "Day" : "Days"}
+              </p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// =====================================================
+// MAIN COMPONENT
+// =====================================================
+
 const MyLeave = () => {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
   const [activeFilter, setActiveFilter] = useState("All");
   const [selectedLeave, setSelectedLeave] = useState(null);
+
   const [withdrawingId, setWithdrawingId] = useState(null);
   const [confirmLeave, setConfirmLeave] = useState(null);
+
+  // =====================================================
+  // FETCH MY LEAVES
+  // =====================================================
 
   const fetchMyLeaves = useCallback(async (showLoader = true) => {
     try {
@@ -83,8 +250,10 @@ const MyLeave = () => {
       }
     } catch (error) {
       console.error("Fetch My Leaves Error:", error);
+
       toast.error(
-        error.response?.data?.message || "Unable to load your leave requests."
+        error.response?.data?.message ||
+          "Unable to load your leave requests."
       );
     } finally {
       setLoading(false);
@@ -96,6 +265,10 @@ const MyLeave = () => {
     fetchMyLeaves();
   }, [fetchMyLeaves]);
 
+  // =====================================================
+  // COUNTS
+  // =====================================================
+
   const counts = useMemo(() => {
     return {
       All: requests.length,
@@ -106,11 +279,19 @@ const MyLeave = () => {
     };
   }, [requests]);
 
+  // =====================================================
+  // FILTERED REQUESTS
+  // =====================================================
+
   const filteredRequests = useMemo(() => {
     if (activeFilter === "All") return requests;
 
     return requests.filter((item) => item.status === activeFilter);
   }, [requests, activeFilter]);
+
+  // =====================================================
+  // WITHDRAW LEAVE
+  // =====================================================
 
   const handleWithdraw = async (leave) => {
     try {
@@ -121,14 +302,8 @@ const MyLeave = () => {
       );
 
       if (data.success) {
-        toast.success(data.message || "Leave request withdrawn successfully.");
-
-        setRequests((previous) =>
-          previous.map((item) =>
-            item._id === leave._id
-              ? { ...item, ...data.request, status: "Withdrawn" }
-              : item
-          )
+        toast.success(
+          data.message || "Leave request withdrawn successfully."
         );
 
         setConfirmLeave(null);
@@ -141,20 +316,25 @@ const MyLeave = () => {
           }));
         }
 
-        fetchMyLeaves(false);
+        await fetchMyLeaves(false);
       }
     } catch (error) {
       console.error("Withdraw Leave Error:", error);
 
       toast.error(
-        error.response?.data?.message || "Failed to withdraw leave request."
+        error.response?.data?.message ||
+          "Failed to withdraw leave request."
       );
 
-      fetchMyLeaves(false);
+      await fetchMyLeaves(false);
     } finally {
       setWithdrawingId(null);
     }
   };
+
+  // =====================================================
+  // FILTER OPTIONS
+  // =====================================================
 
   const filters = [
     "All",
@@ -164,26 +344,48 @@ const MyLeave = () => {
     "Withdrawn",
   ];
 
+  // =====================================================
+  // REQUEST CARD DETAILS
+  // =====================================================
+
+  const renderLeaveTitle = (leave) => {
+    const breakdown = getLeaveBreakdown(leave);
+
+    if (!breakdown.length) {
+      return leave.leaveType || "Leave Request";
+    }
+
+    if (breakdown.length === 1) {
+      return breakdown[0].leaveType;
+    }
+
+    return `${breakdown.length} Leave Types`;
+  };
+
+  // =====================================================
+  // UI
+  // =====================================================
+
   return (
     <div className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
 
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
-                <CalendarDays size={25} />
-              </div>
+        {/* HEADER */}
 
-              <div>
-                <h1 className="text-2xl font-bold text-slate-800">
-                  My Leaves
-                </h1>
-                <p className="mt-1 text-sm text-slate-500">
-                  View and manage your leave applications
-                </p>
-              </div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+              <CalendarDays size={25} />
+            </div>
+
+            <div>
+              <h1 className="text-2xl font-bold text-slate-800">
+                My Leaves
+              </h1>
+
+              <p className="mt-1 text-sm text-slate-500">
+                View and manage your leave applications.
+              </p>
             </div>
           </div>
 
@@ -201,7 +403,8 @@ const MyLeave = () => {
           </button>
         </div>
 
-        {/* Summary Cards */}
+        {/* SUMMARY CARDS */}
+
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
           {[
             {
@@ -267,7 +470,8 @@ const MyLeave = () => {
           })}
         </div>
 
-        {/* Filters */}
+        {/* FILTERS */}
+
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center gap-2">
             {filters.map((filter) => (
@@ -282,6 +486,7 @@ const MyLeave = () => {
                 }`}
               >
                 {filter}
+
                 <span className="ml-2 opacity-75">
                   {counts[filter]}
                 </span>
@@ -290,15 +495,17 @@ const MyLeave = () => {
           </div>
         </div>
 
-        {/* Leave Requests */}
+        {/* LEAVE REQUESTS */}
+
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-2 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-bold text-slate-800">
                 Leave Applications
               </h2>
+
               <p className="text-sm text-slate-500">
-                Your submitted leave request history
+                Your submitted leave request history.
               </p>
             </div>
 
@@ -313,6 +520,7 @@ const MyLeave = () => {
                 size={30}
                 className="animate-spin text-blue-600"
               />
+
               <p className="mt-3 text-sm text-slate-500">
                 Loading your leave requests...
               </p>
@@ -335,14 +543,15 @@ const MyLeave = () => {
             </div>
           ) : (
             <>
-              {/* Desktop Table */}
+              {/* DESKTOP TABLE */}
+
               <div className="hidden overflow-x-auto md:block">
-                <table className="w-full min-w-[850px] text-left">
+                <table className="w-full min-w-[950px] text-left">
                   <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                     <tr>
                       <th className="px-5 py-4">Leave Details</th>
                       <th className="px-5 py-4">Duration</th>
-                      <th className="px-5 py-4">Days</th>
+                      <th className="px-5 py-4">Total Days</th>
                       <th className="px-5 py-4">Applied On</th>
                       <th className="px-5 py-4">Status</th>
                       <th className="px-5 py-4 text-right">Actions</th>
@@ -355,25 +564,34 @@ const MyLeave = () => {
                         statusConfig[leave.status] || statusConfig.Pending;
 
                       const StatusIcon = config.icon;
+                      const breakdown = getLeaveBreakdown(leave);
 
                       return (
                         <tr
                           key={leave._id}
-                          className="transition hover:bg-slate-50"
+                          className="align-top transition hover:bg-slate-50"
                         >
                           <td className="px-5 py-4">
                             <p className="font-semibold text-slate-800">
-                              {leave.leaveType}
+                              {renderLeaveTitle(leave)}
                             </p>
+
                             <p className="mt-1 text-xs text-slate-500">
-                              {leave.leaveCategory}
+                              {getLeaveCategory(leave)}
                             </p>
+
+                            {breakdown.length > 1 && (
+                              <p className="mt-1 text-xs text-blue-600">
+                                {breakdown.length} types allocated
+                              </p>
+                            )}
                           </td>
 
                           <td className="px-5 py-4">
                             <p className="text-sm font-medium text-slate-700">
                               {formatDate(leave.startDate)}
                             </p>
+
                             <p className="mt-1 text-xs text-slate-400">
                               to {formatDate(leave.endDate)}
                             </p>
@@ -381,8 +599,16 @@ const MyLeave = () => {
 
                           <td className="px-5 py-4">
                             <span className="font-semibold text-slate-700">
-                              {leave.totalDays} days
+                              {formatDays(leave.totalDays)} days
                             </span>
+
+                            {getDailyBreakdown(leave).some(
+                              (item) => item.dayType === "Half Day"
+                            ) && (
+                              <p className="mt-1 text-xs font-medium text-amber-600">
+                                Includes Half Day
+                              </p>
+                            )}
                           </td>
 
                           <td className="px-5 py-4 text-sm text-slate-600">
@@ -429,7 +655,8 @@ const MyLeave = () => {
                 </table>
               </div>
 
-              {/* Mobile Cards */}
+              {/* MOBILE CARDS */}
+
               <div className="space-y-3 p-4 md:hidden">
                 {filteredRequests.map((leave) => {
                   const config =
@@ -445,10 +672,11 @@ const MyLeave = () => {
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <h3 className="font-bold text-slate-800">
-                            {leave.leaveType}
+                            {renderLeaveTitle(leave)}
                           </h3>
+
                           <p className="mt-1 text-xs text-slate-500">
-                            {leave.leaveCategory}
+                            {getLeaveCategory(leave)}
                           </p>
                         </div>
 
@@ -465,6 +693,7 @@ const MyLeave = () => {
                           <p className="text-xs text-slate-400">
                             Start Date
                           </p>
+
                           <p className="mt-1 text-sm font-medium text-slate-700">
                             {formatDate(leave.startDate)}
                           </p>
@@ -474,6 +703,7 @@ const MyLeave = () => {
                           <p className="text-xs text-slate-400">
                             End Date
                           </p>
+
                           <p className="mt-1 text-sm font-medium text-slate-700">
                             {formatDate(leave.endDate)}
                           </p>
@@ -483,8 +713,9 @@ const MyLeave = () => {
                           <p className="text-xs text-slate-400">
                             Total Days
                           </p>
+
                           <p className="mt-1 text-sm font-semibold text-slate-700">
-                            {leave.totalDays} days
+                            {formatDays(leave.totalDays)} days
                           </p>
                         </div>
 
@@ -492,9 +723,33 @@ const MyLeave = () => {
                           <p className="text-xs text-slate-400">
                             Applied On
                           </p>
+
                           <p className="mt-1 text-sm font-medium text-slate-700">
                             {formatDate(leave.createdAt)}
                           </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 rounded-lg bg-slate-50 p-3">
+                        <p className="mb-2 text-xs font-semibold text-slate-500">
+                          LEAVE ALLOCATION
+                        </p>
+
+                        <div className="space-y-1.5">
+                          {getLeaveBreakdown(leave).map((item, index) => (
+                            <div
+                              key={`${item.leaveType}-${index}`}
+                              className="flex justify-between gap-2 text-xs"
+                            >
+                              <span className="text-slate-600">
+                                {item.leaveType}
+                              </span>
+
+                              <span className="font-semibold text-slate-800">
+                                {formatDays(item.days)} days
+                              </span>
+                            </div>
+                          ))}
                         </div>
                       </div>
 
@@ -512,7 +767,8 @@ const MyLeave = () => {
                           <button
                             type="button"
                             onClick={() => setConfirmLeave(leave)}
-                            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                            disabled={withdrawingId === leave._id}
+                            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
                           >
                             <RotateCcw size={16} />
                             Withdraw
@@ -528,15 +784,22 @@ const MyLeave = () => {
         </div>
       </div>
 
-      {/* Leave Details Modal */}
+      {/* =================================================
+          LEAVE DETAILS MODAL
+      ================================================= */}
+
       {selectedLeave && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-            <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
+
+            {/* MODAL HEADER */}
+
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
               <div>
                 <h2 className="text-lg font-bold text-slate-800">
                   Leave Details
                 </h2>
+
                 <p className="text-xs text-slate-500">
                   Application information
                 </p>
@@ -552,14 +815,21 @@ const MyLeave = () => {
             </div>
 
             <div className="space-y-5 p-5">
+
+              {/* STATUS & CATEGORY */}
+
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs text-slate-500">Leave Type</p>
+                  <p className="text-xs text-slate-500">
+                    Leave Category
+                  </p>
+
                   <h3 className="mt-1 text-lg font-bold text-slate-800">
-                    {selectedLeave.leaveType}
+                    {getLeaveCategory(selectedLeave)}
                   </h3>
-                  <p className="text-sm text-slate-500">
-                    {selectedLeave.leaveCategory}
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    {renderLeaveTitle(selectedLeave)}
                   </p>
                 </div>
 
@@ -581,89 +851,178 @@ const MyLeave = () => {
                 })()}
               </div>
 
+              {/* DATE & TOTAL SUMMARY */}
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="text-xs text-slate-500">Start Date</p>
+                  <p className="text-xs text-slate-500">
+                    Start Date
+                  </p>
+
                   <p className="mt-1 font-semibold text-slate-800">
                     {formatDate(selectedLeave.startDate)}
                   </p>
                 </div>
 
                 <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="text-xs text-slate-500">End Date</p>
+                  <p className="text-xs text-slate-500">
+                    End Date
+                  </p>
+
                   <p className="mt-1 font-semibold text-slate-800">
                     {formatDate(selectedLeave.endDate)}
                   </p>
                 </div>
 
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="text-xs text-slate-500">Total Duration</p>
-                  <p className="mt-1 font-semibold text-slate-800">
-                    {selectedLeave.totalDays} days
+                <div className="rounded-xl bg-blue-50 p-3">
+                  <p className="text-xs text-blue-600">
+                    Total Leave Days
+                  </p>
+
+                  <p className="mt-1 text-xl font-bold text-blue-800">
+                    {formatDays(selectedLeave.totalDays)}
                   </p>
                 </div>
 
                 <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="text-xs text-slate-500">Applied On</p>
+                  <p className="text-xs text-slate-500">
+                    Applied On
+                  </p>
+
                   <p className="mt-1 font-semibold text-slate-800">
                     {formatDate(selectedLeave.createdAt)}
                   </p>
                 </div>
               </div>
 
+              {/* LEAVE TYPE BREAKDOWN */}
+
+              <div>
+                <div className="mb-3 flex items-center gap-2">
+                  <Wallet size={17} className="text-blue-600" />
+
+                  <h3 className="text-sm font-bold text-slate-800">
+                    Leave Type Allocation
+                  </h3>
+                </div>
+
+                <LeaveTypeBreakdown leave={selectedLeave} />
+
+                <div className="mt-3 flex items-center justify-between rounded-lg bg-blue-50 px-3 py-3">
+                  <span className="text-sm font-semibold text-blue-800">
+                    Total Allocated
+                  </span>
+
+                  <span className="text-sm font-bold text-blue-800">
+                    {formatDays(
+                      getLeaveBreakdown(selectedLeave).reduce(
+                        (sum, item) => sum + Number(item.days || 0),
+                        0
+                      )
+                    )}{" "}
+                    Days
+                  </span>
+                </div>
+              </div>
+
+              {/* DAILY BREAKDOWN */}
+
+              <div>
+                <div className="mb-3 flex items-center gap-2">
+                  <CalendarDays size={17} className="text-indigo-600" />
+
+                  <h3 className="text-sm font-bold text-slate-800">
+                    Daily Breakdown
+                  </h3>
+                </div>
+
+                <DailyLeaveBreakdown leave={selectedLeave} />
+
+                {getDailyBreakdown(selectedLeave).length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-3 text-xs">
+                    <span className="inline-flex items-center gap-1.5 text-blue-700">
+                      <Sun size={14} />
+                      Full Day
+                    </span>
+
+                    <span className="inline-flex items-center gap-1.5 text-amber-700">
+                      <Moon size={14} />
+                      Half Day
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* REASON */}
+
               <div>
                 <p className="mb-2 text-sm font-semibold text-slate-700">
                   Reason
                 </p>
+
                 <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm leading-relaxed text-slate-600">
                   {selectedLeave.reason || "No reason provided."}
                 </div>
               </div>
+
+              {/* REJECTION REASON */}
 
               {selectedLeave.rejectionReason && (
                 <div>
                   <p className="mb-2 text-sm font-semibold text-red-700">
                     Rejection Reason
                   </p>
+
                   <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm leading-relaxed text-red-700">
                     {selectedLeave.rejectionReason}
                   </div>
                 </div>
               )}
 
+              {/* APPROVED INFO */}
+
               {selectedLeave.approvedAt && (
                 <div className="rounded-xl border border-green-200 bg-green-50 p-3">
                   <p className="text-sm font-semibold text-green-800">
                     Approved On
                   </p>
+
                   <p className="mt-1 text-sm text-green-700">
                     {formatDateTime(selectedLeave.approvedAt)}
                   </p>
                 </div>
               )}
 
+              {/* REJECTED INFO */}
+
               {selectedLeave.rejectedAt && (
                 <div className="rounded-xl border border-red-200 bg-red-50 p-3">
                   <p className="text-sm font-semibold text-red-800">
                     Rejected On
                   </p>
+
                   <p className="mt-1 text-sm text-red-700">
                     {formatDateTime(selectedLeave.rejectedAt)}
                   </p>
                 </div>
               )}
 
+              {/* PENDING INFO */}
+
               {selectedLeave.status === "Pending" && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
                   <p className="text-sm font-semibold text-amber-800">
                     Awaiting Approval
                   </p>
+
                   <p className="mt-1 text-xs leading-relaxed text-amber-700">
                     Your leave application is still pending. You can withdraw
                     this request until it is approved or rejected.
                   </p>
                 </div>
               )}
+
+              {/* WITHDRAW BUTTON */}
 
               {selectedLeave.status === "Pending" && (
                 <button
@@ -680,7 +1039,10 @@ const MyLeave = () => {
         </div>
       )}
 
-      {/* Withdraw Confirmation Modal */}
+      {/* =================================================
+          WITHDRAW CONFIRMATION MODAL
+      ================================================= */}
+
       {confirmLeave && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
@@ -694,13 +1056,37 @@ const MyLeave = () => {
 
             <p className="mt-2 text-center text-sm leading-relaxed text-slate-500">
               Are you sure you want to withdraw your{" "}
-              <strong>{confirmLeave.leaveType}</strong> request for{" "}
-              <strong>{confirmLeave.totalDays} day(s)</strong>?
+              <strong>{renderLeaveTitle(confirmLeave)}</strong> request for{" "}
+              <strong>{formatDays(confirmLeave.totalDays)} day(s)</strong>?
             </p>
 
+            <div className="mt-4 rounded-xl bg-slate-50 p-3">
+              <p className="mb-2 text-xs font-semibold text-slate-500">
+                LEAVE ALLOCATION
+              </p>
+
+              <div className="space-y-2">
+                {getLeaveBreakdown(confirmLeave).map((item, index) => (
+                  <div
+                    key={`${item.leaveType}-${index}`}
+                    className="flex justify-between gap-2 text-sm"
+                  >
+                    <span className="text-slate-600">
+                      {item.leaveType}
+                    </span>
+
+                    <span className="font-semibold text-slate-800">
+                      {formatDays(item.days)} days
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs leading-relaxed text-amber-700">
-              This action cannot be undone. If paid leave balance was deducted,
-              it will be refunded automatically.
+              This action cannot be undone. Any paid leave balance deducted
+              for this request will be refunded automatically. Unpaid leave
+              is not refunded as a balance deduction.
             </p>
 
             <div className="mt-6 flex gap-3">

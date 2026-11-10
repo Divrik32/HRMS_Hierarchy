@@ -40,6 +40,7 @@ import EmployeeProjects from "./pages/employee/EmployeeProjects";
 import EmployeeRoleAccess from "./pages/employee/EmployeeRoleAccess";
 import ModulesAssigned from "./pages/employee/ModulesAssigned";
 import Timesheet from "./pages/employee/Timesheet";
+import TimesheetApprovals from "./pages/employee/TimesheetApprovals";
 import EmployeeAttendance from "./pages/employee/EmployeeAttendance";
 import EmployeeHolidays from "./pages/employee/EmployeeHolidays";
 
@@ -213,9 +214,9 @@ const router = createBrowserRouter([
         element: <EmployeeProjects />,
       },
       {
-  path: "project-management",
-  element: <ProjectManagement />,
-},
+        path: "project-management",
+        element: <ProjectManagement />,
+      },
       {
         path: "access",
         element: <EmployeeRoleAccess />,
@@ -227,6 +228,10 @@ const router = createBrowserRouter([
       {
         path: "timesheet",
         element: <Timesheet />,
+      },
+      {
+        path: "timesheet-approvals",
+        element: <TimesheetApprovals />,
       },
       {
         path: "attendance",
