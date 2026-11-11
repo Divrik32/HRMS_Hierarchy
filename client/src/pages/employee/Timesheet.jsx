@@ -1,8 +1,21 @@
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  CalendarDays, Clock3, Plus, RefreshCw, Search, Play, Square,
-  Coffee, CheckCircle2, XCircle, Clock, Pause, RotateCcw,
+  CalendarDays,
+  Clock3,
+  Plus,
+  RefreshCw,
+  Search,
+  Play,
+  Square,
+  Coffee,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Pause,
+  RotateCcw,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 import api from "../../api/axios";
 import { toast } from "react-toastify";
@@ -82,6 +95,9 @@ export default function Timesheet() {
   const [form, setForm] = useState(initialForm);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [editingEstimatedId, setEditingEstimatedId] = useState("");
+  const [editingEstimatedValue, setEditingEstimatedValue] = useState("");
+  const [savingEstimated, setSavingEstimated] = useState(false);
 
   // Live date/time display. Backend will save the actual submit timestamp.
   const [liveTime, setLiveTime] = useState(new Date());
@@ -245,6 +261,57 @@ export default function Timesheet() {
       setActionId("");
     }
   };
+
+  // =========================================
+// OPEN ESTIMATED TIME EDIT
+// =========================================
+
+const handleEditEstimated = (item) => {
+  setEditingEstimatedId(item._id);
+  setEditingEstimatedValue(String(item.estimatedTime ?? ""));
+};
+
+
+// =========================================
+// SAVE ESTIMATED TIME
+// =========================================
+
+const handleSaveEstimated = async (item) => {
+  const minutes = Number(editingEstimatedValue);
+
+  if (
+    !editingEstimatedValue.trim() ||
+    !Number.isInteger(minutes) ||
+    minutes <= 0
+  ) {
+    toast.error("Estimated time must be a positive whole number.");
+    return;
+  }
+
+  setSavingEstimated(true);
+
+  try {
+    await api.patch(`/timesheets/${item._id}/edit`, {
+      field: "estimatedTime",
+      value: minutes,
+    });
+
+    toast.success("Estimated time updated successfully.");
+
+    setEditingEstimatedId("");
+    setEditingEstimatedValue("");
+
+    await loadData();
+
+  } catch (err) {
+    toast.error(
+      err.response?.data?.message ||
+      "Failed to update estimated time."
+    );
+  } finally {
+    setSavingEstimated(false);
+  }
+};
 
   const filteredTimesheets = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -464,9 +531,66 @@ export default function Timesheet() {
                         <td className="max-w-56 whitespace-normal px-4 py-4">
                           {item.description || "—"}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-4">
-                          {formatMinutes(item.estimatedTime)}
-                        </td>
+<td className="whitespace-nowrap px-4 py-4">
+  {editingEstimatedId === item._id ? (
+    <div className="flex items-center gap-2">
+      <input
+        type="number"
+        min="1"
+        step="1"
+        value={editingEstimatedValue}
+        onChange={(event) =>
+          setEditingEstimatedValue(event.target.value)
+        }
+        disabled={savingEstimated}
+        autoFocus
+        className="w-20 rounded-lg border border-blue-300 px-2 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+      />
+
+      <button
+        type="button"
+        onClick={() => handleSaveEstimated(item)}
+        disabled={savingEstimated}
+        title="Save estimated time"
+        className="rounded-lg bg-emerald-50 p-1.5 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
+      >
+        {savingEstimated ? (
+          <RefreshCw size={15} className="animate-spin" />
+        ) : (
+          <Check size={16} />
+        )}
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          setEditingEstimatedId("");
+          setEditingEstimatedValue("");
+        }}
+        disabled={savingEstimated}
+        title="Cancel editing"
+        className="rounded-lg bg-red-50 p-1.5 text-red-600 hover:bg-red-100"
+      >
+        <X size={16} />
+      </button>
+    </div>
+  ) : (
+    <div className="flex items-center gap-2">
+      <span className="font-medium text-slate-700">
+        {formatMinutes(item.estimatedTime)}
+      </span>
+
+      <button
+        type="button"
+        onClick={() => handleEditEstimated(item)}
+        title="Edit estimated time"
+        className="rounded-md p-1.5 text-slate-400 transition hover:bg-blue-50 hover:text-blue-600"
+      >
+        <Pencil size={14} />
+      </button>
+    </div>
+  )}
+</td>
 
                         <td className="whitespace-nowrap px-4 py-4">
                           <div>{formatTime(item.startTime)}</div>

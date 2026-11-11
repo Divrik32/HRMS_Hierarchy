@@ -9,12 +9,17 @@ import {
   deleteMultipleHolidays,
 } from "../controllers/holidayController.js";
 import employeeOrSuperAdminAuth from "../middleware/employeeOrSuperAdminAuth.js";
+import superAdminCompanyAuth from "../middleware/superAdminCompanyAuth.js";
+import employeeAuth from "../middleware/employeeAuth.js";
 
 
 const router = express.Router();
 
-// সব Holiday দেখতে পারবে authenticated Employee এবং Super Admin
-router.get("/:companyId", employeeOrSuperAdminAuth, getHolidays);
+// Employee: employee token দিয়ে নিজের company's holidays
+router.get("/employee", employeeAuth, getHolidays);
+
+// Super Admin: selected company token দিয়ে company's holidays
+router.get("/company/:companyId", superAdminCompanyAuth, getHolidays);
 
 router.get(
   "/:companyId/holiday/:holidayId",

@@ -109,7 +109,7 @@ const MyProfile = () => {
   const [editing, setEditing] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [cropFile, setCropFile] = useState(null);
-  
+  const [removeProfilePic, setRemoveProfilePic] = useState(false);
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -131,6 +131,7 @@ const MyProfile = () => {
       }
 
       setProfile(data);
+      setRemoveProfilePic(false);
       setForm({
         name: data.name || "",
         email: data.email || "",
@@ -195,6 +196,7 @@ const handleProfileImageCrop = (croppedFile) => {
     profilePic: croppedFile,
   }));
 
+  setRemoveProfilePic(false);
   setCropFile(null);
 };
 
@@ -207,6 +209,7 @@ const handleProfileImageCrop = (croppedFile) => {
     });
 
     setPreview(getProfileImageUrl(profile?.profilePic));
+    setRemoveProfilePic(false);
     setEditing(false);
     setShowPassword(false);
   };
@@ -238,9 +241,13 @@ const handleProfileImageCrop = (croppedFile) => {
         formData.append("password", form.password);
       }
 
-      if (form.profilePic) {
-        formData.append("profilePic", form.profilePic);
-      }
+if (form.profilePic) {
+  formData.append("profilePic", form.profilePic);
+}
+
+if (removeProfilePic) {
+  formData.append("removeProfilePic", "true");
+}
 
       const response = await api.put("/super-admin/update", formData);
 
@@ -428,6 +435,25 @@ const handleProfileImageCrop = (croppedFile) => {
                         onChange={handleImageChange}
                       />
                     </label>
+                    {(profile.profilePic || form.profilePic) && (
+  <button
+    type="button"
+    disabled={saving}
+    onClick={() => {
+      setForm((previous) => ({
+        ...previous,
+        profilePic: null,
+      }));
+
+      setPreview("");
+      setRemoveProfilePic(true);
+    }}
+    className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm font-semibold text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    <X size={16} />
+    Remove Photo
+  </button>
+)}
                     <p className="mt-2.5 text-xs leading-5 text-slate-500">
                       Choose an image up to 5 MB. Supported files must
                       be images.

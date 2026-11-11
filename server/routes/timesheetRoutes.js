@@ -14,6 +14,7 @@ import {
   endTask,
   startBreak,
   resumeTask,
+  editTimesheet,
 } from "../controllers/timesheetController.js";
 
 import employeeOrSuperAdminAuth from "../middleware/employeeOrSuperAdminAuth.js";
@@ -138,6 +139,12 @@ router.get(
   "/my-company/daily-efficiency",
   employeeAuth,
   getDailyEfficiencyGraph
+);
+
+router.patch(
+  "/:id/edit",
+  employeeAuth,
+  editTimesheet
 );
 
 export default router;

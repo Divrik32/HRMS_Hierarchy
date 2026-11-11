@@ -1,6 +1,8 @@
+
 import Employee from "../models/Employee.js";
 import Attendance from "../models/Attendance.js";
 import Holiday from "../models/Holiday.js";
+import CompOff from "../models/CompOff.js";
 
 // =====================================================
 // DATE HELPER - ASIA/KOLKATA
@@ -22,12 +24,35 @@ const getIndiaDate = (date) => {
 };
 
 // =====================================================
+// UTC DATE RANGE HELPERS
+// CompOff leaveDate is stored as UTC midnight
+// =====================================================
+
+const getUTCStart = (dateString) => {
+  return new Date(`${dateString}T00:00:00.000Z`);
+};
+
+const getUTCEndExclusive = (dateString) => {
+  const date = getUTCStart(dateString);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date;
+};
+
+// =====================================================
 // GET EMPLOYEE ABSENT DATES
 // =====================================================
 
 export const getAbsentDates = async (req, res) => {
   try {
+    const companyId = req.companyId;
     const { empId } = req.body;
+
+    if (!companyId) {
+      return res.status(401).json({
+        success: false,
+        message: "Company authentication information missing.",
+      });
+    }
 
     if (!empId || !empId.trim()) {
       return res.status(400).json({
@@ -36,9 +61,10 @@ export const getAbsentDates = async (req, res) => {
       });
     }
 
-    // Find employee
+    // Find employee inside authenticated company
     const employee = await Employee.findOne({
       empId: empId.trim().toUpperCase(),
+      companyId,
     }).select("_id empId companyId createdAt");
 
     if (!employee) {
@@ -48,62 +74,92 @@ export const getAbsentDates = async (req, res) => {
       });
     }
 
-    // Employee joining/creation date to today's date
     const startDate = getIndiaDate(employee.createdAt);
     const today = getIndiaDate(new Date());
 
-    // Fetch attendance records
+    const startUTC = getUTCStart(startDate);
+    const endUTC = getUTCEndExclusive(today);
+
+    // -------------------------------------------------
+    // FETCH ATTENDANCE
+    // -------------------------------------------------
+
     const attendanceRecords = await Attendance.find({
       employeeId: employee._id,
+      companyId,
       attendanceDate: {
         $gte: startDate,
         $lte: today,
       },
     }).select("attendanceDate");
 
-    // Store attendance dates in Set
     const attendanceDates = new Set(
       attendanceRecords.map((record) => record.attendanceDate)
     );
 
-    // Fetch company holidays within the date range
+    // -------------------------------------------------
+    // FETCH COMPANY HOLIDAYS
+    // -------------------------------------------------
+
     const holidays = await Holiday.find({
-      companyId: employee.companyId,
+      companyId,
       date: {
-        $gte: new Date(`${startDate}T00:00:00.000Z`),
-        $lte: new Date(`${today}T23:59:59.999Z`),
+        $gte: startUTC,
+        $lt: endUTC,
       },
     }).select("date");
 
-    // Store holiday dates in Set
     const holidayDates = new Set(
       holidays.map((holiday) => getIndiaDate(holiday.date))
     );
 
+    // -------------------------------------------------
+    // FETCH THIS EMPLOYEE'S APPROVED COMP-OFFS
+    // -------------------------------------------------
+
+    const approvedCompOffs = await CompOff.find({
+      companyId,
+      employeeId: employee._id,
+      status: "Approved",
+      leaveDate: {
+        $gte: startUTC,
+        $lt: endUTC,
+      },
+    }).select("leaveDate");
+
+    const approvedCompOffDates = new Set(
+      approvedCompOffs.map((compOff) =>
+        getIndiaDate(compOff.leaveDate)
+      )
+    );
+
+    // -------------------------------------------------
+    // CALCULATE ABSENT DATES
+    // -------------------------------------------------
+
     const absentDates = [];
 
-    // Check every date from employee creation to today
-    const currentDate = new Date(`${startDate}T00:00:00.000Z`);
-    const endDate = new Date(`${today}T00:00:00.000Z`);
+    const currentDate = getUTCStart(startDate);
+    const endDate = getUTCStart(today);
 
     while (currentDate <= endDate) {
       const dateString = currentDate.toISOString().slice(0, 10);
 
-      // Sunday check
       const isSunday = currentDate.getUTCDay() === 0;
-
-      // Attendance check
       const hasAttendance = attendanceDates.has(dateString);
-
-      // Holiday check
       const isHoliday = holidayDates.has(dateString);
+      const hasApprovedCompOff =
+        approvedCompOffDates.has(dateString);
 
-      // If Sunday, holiday or attendance exists, skip
-      if (!isSunday && !isHoliday && !hasAttendance) {
+      if (
+        !isSunday &&
+        !isHoliday &&
+        !hasAttendance &&
+        !hasApprovedCompOff
+      ) {
         absentDates.push(dateString);
       }
 
-      // Next day
       currentDate.setUTCDate(currentDate.getUTCDate() + 1);
     }
 
@@ -128,10 +184,20 @@ export const getAbsentDates = async (req, res) => {
   }
 };
 
+// =====================================================
+// GET ALL EMPLOYEES ABSENT DATES
+// =====================================================
 
 export const getAllEmployeesAbsentDates = async (req, res) => {
   try {
     const companyId = req.companyId;
+
+    if (!companyId) {
+      return res.status(401).json({
+        success: false,
+        message: "Company authentication information missing.",
+      });
+    }
 
     // Fetch all employees of authenticated company
     const employees = await Employee.find({ companyId })
@@ -150,14 +216,20 @@ export const getAllEmployeesAbsentDates = async (req, res) => {
 
     const today = getIndiaDate(new Date());
 
-    // Earliest employee creation date
+    // Find earliest employee creation date
     const earliestDate = employees.reduce((earliest, employee) => {
       const employeeDate = getIndiaDate(employee.createdAt);
 
       return employeeDate < earliest ? employeeDate : earliest;
     }, today);
 
-    // Fetch all attendance records of this company
+    const startUTC = getUTCStart(earliestDate);
+    const endUTC = getUTCEndExclusive(today);
+
+    // -------------------------------------------------
+    // FETCH COMPANY ATTENDANCE
+    // -------------------------------------------------
+
     const attendanceRecords = await Attendance.find({
       companyId,
       attendanceDate: {
@@ -168,7 +240,6 @@ export const getAllEmployeesAbsentDates = async (req, res) => {
       .select("employeeId attendanceDate")
       .lean();
 
-    // Employee-wise attendance lookup
     const attendanceSet = new Set(
       attendanceRecords.map(
         (record) =>
@@ -176,12 +247,15 @@ export const getAllEmployeesAbsentDates = async (req, res) => {
       )
     );
 
-    // Fetch company holidays
+    // -------------------------------------------------
+    // FETCH COMPANY HOLIDAYS
+    // -------------------------------------------------
+
     const holidays = await Holiday.find({
       companyId,
       date: {
-        $gte: new Date(`${earliestDate}T00:00:00.000Z`),
-        $lte: new Date(`${today}T23:59:59.999Z`),
+        $gte: startUTC,
+        $lt: endUTC,
       },
     })
       .select("date")
@@ -191,27 +265,62 @@ export const getAllEmployeesAbsentDates = async (req, res) => {
       holidays.map((holiday) => getIndiaDate(holiday.date))
     );
 
-    // Generate absent dates for every employee
+    // -------------------------------------------------
+    // FETCH ALL APPROVED COMPANY COMP-OFFS
+    // -------------------------------------------------
+
+    const approvedCompOffs = await CompOff.find({
+      companyId,
+      status: "Approved",
+      leaveDate: {
+        $gte: startUTC,
+        $lt: endUTC,
+      },
+    })
+      .select("employeeId leaveDate")
+      .lean();
+
+    // Employee-wise approved Comp-Off lookup
+    const approvedCompOffSet = new Set(
+      approvedCompOffs.map(
+        (compOff) =>
+          `${compOff.employeeId.toString()}_${getIndiaDate(
+            compOff.leaveDate
+          )}`
+      )
+    );
+
+    // -------------------------------------------------
+    // CALCULATE ABSENT DATES FOR EVERY EMPLOYEE
+    // -------------------------------------------------
+
     const employeeResults = employees.map((employee) => {
       const startDate = getIndiaDate(employee.createdAt);
 
-      const currentDate = new Date(`${startDate}T00:00:00.000Z`);
-      const endDate = new Date(`${today}T00:00:00.000Z`);
+      const currentDate = getUTCStart(startDate);
+      const endDate = getUTCStart(today);
 
       const absentDates = [];
 
       while (currentDate <= endDate) {
         const dateString = currentDate.toISOString().slice(0, 10);
 
+        const employeeDateKey =
+          `${employee._id.toString()}_${dateString}`;
+
         const isSunday = currentDate.getUTCDay() === 0;
-
         const isHoliday = holidayDates.has(dateString);
+        const hasAttendance = attendanceSet.has(employeeDateKey);
 
-        const hasAttendance = attendanceSet.has(
-          `${employee._id.toString()}_${dateString}`
-        );
+        const hasApprovedCompOff =
+          approvedCompOffSet.has(employeeDateKey);
 
-        if (!isSunday && !isHoliday && !hasAttendance) {
+        if (
+          !isSunday &&
+          !isHoliday &&
+          !hasAttendance &&
+          !hasApprovedCompOff
+        ) {
           absentDates.push(dateString);
         }
 
@@ -220,6 +329,7 @@ export const getAllEmployeesAbsentDates = async (req, res) => {
 
       return {
         employeeId: employee._id,
+        name: employee.name,
         empId: employee.empId,
         totalAbsentDays: absentDates.length,
         absentDates,

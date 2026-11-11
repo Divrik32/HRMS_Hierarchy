@@ -917,6 +917,56 @@ export const getMyCompOffCredits = async (req, res) => {
 };
 
 // =====================================================
+// GET APPROVED COMP-OFF RECORDS
+// Employee: Own approved Comp-Off records
+// Super Admin: All employees' approved Comp-Off records
+// =====================================================
+
+export const getApprovedCompOffs = async (req, res) => {
+  try {
+    const companyId = getCompanyId(req);
+    const userId = getCurrentUserId(req);
+
+    if (!companyId || !userId) {
+      return sendError(
+        res,
+        401,
+        "Authentication information missing."
+      );
+    }
+
+    const query = {
+      companyId,
+      status: "Approved",
+    };
+
+    // Employee can see only their own approved Comp-Off records.
+    if (!isSuperAdmin(req)) {
+      query.employeeId = userId;
+    }
+
+    const compOffs = await CompOff.find(query)
+      .populate("employeeId", "name empId")
+      .populate("createdBy", "name empId")
+      .sort({ leaveDate: 1 });
+
+    return res.status(200).json({
+      success: true,
+      count: compOffs.length,
+      compOffs,
+    });
+  } catch (error) {
+    console.error("Get Approved Comp-Offs Error:", error);
+
+    return sendError(
+      res,
+      500,
+      "Failed to fetch approved Comp-Off records."
+    );
+  }
+};
+
+// =====================================================
 // GET PENDING LEAVE REQUESTS FOR CURRENT APPROVER
 // =====================================================
 

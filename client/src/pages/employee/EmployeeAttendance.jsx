@@ -42,7 +42,7 @@ const formatTime = (date) => {
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
-  });
+  }).toUpperCase();
 };
 
 const formatDate = (date) => {
@@ -564,10 +564,10 @@ const years = [
   ...new Set(dateKeys.map((dateKey) => dateKey.slice(0, 4))),
 ];
 
-// Company holidays fetch করো
+// Employee's company holidays fetch করো
 const holidayResponses = await Promise.all(
   years.map((year) =>
-    api.get(`/holidays/${companyId}`, {
+    api.get("/holidays/employee", {
       params: {
         year: Number(year),
       },
@@ -637,7 +637,6 @@ setSummary({
 });
 
   }, [
-  companyId,
   attendanceView,
   selectedDate,
   startDate,

@@ -69,7 +69,7 @@ const EmployeeHolidayCalendar = () => {
     setError("");
 
     try {
-      const response = await api.get(`/holidays/${companyId}`, {
+      const response = await api.get(`/holidays/employee`, {
         params: { year },
         withCredentials: true,
       });

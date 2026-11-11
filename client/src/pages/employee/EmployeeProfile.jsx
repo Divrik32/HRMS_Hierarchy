@@ -22,6 +22,7 @@ const EmployeeProfile = () => {
   const [cropFile, setCropFile] = useState(null);
   const [employee, setEmployee] = useState(null);
   const [profilePic, setProfilePic] = useState(null);
+  const [removeProfilePic, setRemoveProfilePic] = useState(false);
   const [preview, setPreview] = useState("");
 const [form, setForm] = useState({
   name: "",
@@ -191,6 +192,7 @@ const handleProfilePic = (event) => {
 const handleProfileImageCrop = (croppedFile) => {
   setProfilePic(croppedFile);
   setPreview(URL.createObjectURL(croppedFile));
+  setRemoveProfilePic(false);
   setCropFile(null);
 };
 
@@ -211,10 +213,13 @@ const handleSubmit = async (event) => {
     formData.append("phone", form.phone.trim());
     formData.append("presentAddress", form.presentAddress.trim());
     formData.append("gender", form.gender);
+if (profilePic) {
+  formData.append("profilePic", profilePic);
+}
 
-    if (profilePic) {
-      formData.append("profilePic", profilePic);
-    }
+if (removeProfilePic) {
+  formData.append("removeProfilePic", "true");
+}
 
     const response = await api.put(
       "/employees/profile/me",
@@ -236,12 +241,13 @@ setForm({
 });
     }
 
-    setProfilePic(null);
+setProfilePic(null);
+setRemoveProfilePic(false);
 
-    if (preview) {
-      URL.revokeObjectURL(preview);
-      setPreview("");
-    }
+if (preview) {
+  URL.revokeObjectURL(preview);
+  setPreview("");
+}
 
     toast.update(toastId, {
       render: response.data.message || "Profile updated successfully.",
@@ -373,6 +379,23 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
                 onChange={handleProfilePic}
               />
             </label>
+            {(employee.profilePic || preview) && (
+  <button
+    type="button"
+    onClick={() => {
+      if (preview) {
+        URL.revokeObjectURL(preview);
+      }
+
+      setPreview("");
+      setProfilePic(null);
+      setRemoveProfilePic(true);
+    }}
+    className="ml-3 text-sm font-semibold text-red-600 hover:text-red-700"
+  >
+    Remove picture
+  </button>
+)}
           </div>
         </div>
 

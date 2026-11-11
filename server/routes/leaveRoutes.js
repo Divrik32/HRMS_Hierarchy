@@ -1,4 +1,3 @@
-
 import express from "express";
 
 import {
@@ -25,6 +24,7 @@ import {
 
   // Super Admin All Employee Leaves
   getAllEmployeeLeaves,
+  getApprovedCompOffs,
 } from "../controllers/leaveController.js";
 
 import employeeAuth from "../middleware/employeeAuth.js";
@@ -138,6 +138,26 @@ router.get(
   "/comp-off/employees",
   employeeAuth,
   getCompOffEmployees
+);
+
+// =====================================================
+// EMPLOYEE — OWN APPROVED COMP-OFF RECORDS
+// =====================================================
+
+router.get(
+  "/comp-off/approved",
+  employeeAuth,
+  getApprovedCompOffs
+);
+
+// =====================================================
+// SUPER ADMIN — ALL EMPLOYEES' APPROVED COMP-OFF RECORDS
+// =====================================================
+
+router.get(
+  "/comp-off/super-admin/approved",
+  superAdminCompanyAuth,
+  getApprovedCompOffs
 );
 
 // =====================================================

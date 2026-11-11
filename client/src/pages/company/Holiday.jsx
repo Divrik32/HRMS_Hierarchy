@@ -101,7 +101,7 @@ const Holiday = () => {
     setError("");
 
     try {
-      const response = await api.get(`/holidays/${companyId}`, {
+      const response = await api.get(`/holidays/company/${companyId}`, {
         params: { year },
         withCredentials: true,
       });

@@ -1956,3 +1956,107 @@ export const getTimesheetsForApproval = async (req, res) => {
     });
   }
 };
+
+
+// =====================================================
+// EDIT TIMESHEET — EMPLOYEE
+// Supports estimatedTime editing in all task statuses
+// =====================================================
+
+export const editTimesheet = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { field, value } = req.body;
+
+    // Only employees can edit their own timesheets.
+    if (!isEmployee(req)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only employees can edit their timesheets.",
+      });
+    }
+
+    const employeeId = getEmployeeId(req);
+    const companyId = req.user?.companyId;
+
+    if (
+      !isValidObjectId(id) ||
+      !isValidObjectId(employeeId) ||
+      !isValidObjectId(companyId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid employee, company or timesheet ID.",
+      });
+    }
+
+    // Only explicitly allowed fields can be edited.
+    const allowedFields = ["estimatedTime"];
+
+    if (!allowedFields.includes(field)) {
+      return res.status(400).json({
+        success: false,
+        message: "This field cannot be edited.",
+      });
+    }
+
+    // Find only the logged-in employee's own timesheet.
+    const timesheet = await Timesheet.findOne({
+      _id: id,
+      employeeId,
+      companyId,
+    });
+
+    if (!timesheet) {
+      return res.status(404).json({
+        success: false,
+        message: "Timesheet not found.",
+      });
+    }
+
+    // =========================================
+    // ESTIMATED TIME
+    // =========================================
+
+    switch (field) {
+      case "estimatedTime": {
+        const minutes = getMinutes(value);
+
+        if (minutes === null || minutes <= 0) {
+          return res.status(400).json({
+            success: false,
+            message: "Estimated time must be a positive number of minutes.",
+          });
+        }
+
+        timesheet.estimatedTime = minutes;
+
+        break;
+      }
+
+      default:
+        return res.status(400).json({
+          success: false,
+          message: "Unsupported field.",
+        });
+    }
+
+    // Save updated timesheet.
+    await timesheet.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Estimated time updated successfully.",
+      timesheet,
+    });
+
+  } catch (error) {
+    console.error("Edit Timesheet Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to edit timesheet.",
+      error: error.message,
+    });
+  }
+};

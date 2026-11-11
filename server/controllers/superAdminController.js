@@ -2,6 +2,8 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import SuperAdmin from "../models/SuperAdmin.js";
 import sendEmail from "../utils/sendEmail.js";
+import fs from "fs/promises";
+import path from "path";
 
 // Create Super Admin
 export const createSuperAdmin = async (req, res) => {
@@ -440,11 +442,10 @@ export const getSuperAdminProfile = async (req, res) => {
   }
 };
 
-
 // Update Super Admin
 export const updateSuperAdmin = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, removeProfilePic } = req.body;
 
     const superAdmin = await SuperAdmin.findById(req.user.id);
 
@@ -454,6 +455,9 @@ export const updateSuperAdmin = async (req, res) => {
         message: "Super Admin not found",
       });
     }
+
+    // Store old profile picture before updating
+    const oldProfilePic = superAdmin.profilePic;
 
     // Update name
     if (name !== undefined) {
@@ -493,8 +497,12 @@ export const updateSuperAdmin = async (req, res) => {
       superAdmin.email = normalizedEmail;
     }
 
-    // Update profile picture only when a new file is uploaded
-    if (req.file) {
+    // Remove profile picture
+    if (removeProfilePic === "true") {
+      superAdmin.profilePic = null;
+    }
+    // Update profile picture when a new file is uploaded
+    else if (req.file) {
       superAdmin.profilePic = req.file.filename;
     }
 
@@ -511,6 +519,36 @@ export const updateSuperAdmin = async (req, res) => {
     }
 
     await superAdmin.save();
+
+    // Delete old profile picture if it was replaced or removed
+    const profilePicChanged =
+      oldProfilePic &&
+      oldProfilePic !== superAdmin.profilePic;
+
+    if (profilePicChanged) {
+      try {
+        // Only delete local uploaded files, not external URLs
+        if (
+          !oldProfilePic.startsWith("http://") &&
+          !oldProfilePic.startsWith("https://")
+        ) {
+          const oldImagePath = path.resolve(
+            process.cwd(),
+            "uploads",
+            path.basename(oldProfilePic)
+          );
+
+          await fs.unlink(oldImagePath);
+        }
+      } catch (deleteError) {
+        if (deleteError.code !== "ENOENT") {
+          console.error(
+            "Old Super Admin profile picture deletion error:",
+            deleteError
+          );
+        }
+      }
+    }
 
     return res.status(200).json({
       success: true,
@@ -540,7 +578,6 @@ export const updateSuperAdmin = async (req, res) => {
     });
   }
 };
-
 
 // Delete Super Admin
 export const deleteSuperAdmin = async (req, res) => {

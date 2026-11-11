@@ -6,6 +6,8 @@ import Company from "../models/Company.js";
 import Department from "../models/Department.js";
 import Role from "../models/Role.js";
 import sendEmail from "../utils/sendEmail.js";
+import fs from "fs/promises";
+import path from "path";
 
 // Create Employee
 export const createEmployee = async (req, res) => {
@@ -918,6 +920,8 @@ export const getMyEmployeeProfile = async (req, res) => {
 };
 
 // Update My Employee Profile
+
+// Update My Employee Profile
 export const updateMyEmployeeProfile = async (req, res) => {
   try {
     const {
@@ -926,6 +930,7 @@ export const updateMyEmployeeProfile = async (req, res) => {
       presentAddress,
       gender,
       email,
+      removeProfilePic,
     } = req.body;
 
     const employee = await Employee.findOne({
@@ -940,6 +945,9 @@ export const updateMyEmployeeProfile = async (req, res) => {
       });
     }
 
+    // Keep previous profile picture for file deletion
+    const oldProfilePic = employee.profilePic;
+
     // Update name
     if (name !== undefined) {
       if (typeof name !== "string" || !name.trim()) {
@@ -952,8 +960,12 @@ export const updateMyEmployeeProfile = async (req, res) => {
       employee.name = name.trim();
     }
 
+    // Remove profile picture
+    if (removeProfilePic === "true") {
+      employee.profilePic = null;
+    }
     // Update profile picture from Multer
-    if (req.file) {
+    else if (req.file) {
       employee.profilePic = req.file.filename;
     }
 
@@ -1022,8 +1034,43 @@ export const updateMyEmployeeProfile = async (req, res) => {
       employee.email = normalizedEmail;
     }
 
+    // Save updated employee
     await employee.save();
 
+    // Delete previous profile picture after successful database update
+    const profilePicChanged =
+      oldProfilePic &&
+      oldProfilePic !== employee.profilePic &&
+      (removeProfilePic === "true" || !!req.file);
+
+    if (profilePicChanged) {
+      try {
+        // Only delete local uploaded files, never external URLs
+        if (
+          typeof oldProfilePic === "string" &&
+          !oldProfilePic.startsWith("http://") &&
+          !oldProfilePic.startsWith("https://")
+        ) {
+          const fileName = path.basename(oldProfilePic);
+          const oldFilePath = path.resolve(
+            process.cwd(),
+            "uploads",
+            fileName
+          );
+
+          await fs.unlink(oldFilePath);
+        }
+      } catch (fileError) {
+        if (fileError.code !== "ENOENT") {
+          console.error(
+            "Old profile picture deletion error:",
+            fileError
+          );
+        }
+      }
+    }
+
+    // Fetch updated employee
     const updatedEmployee = await Employee.findById(employee._id)
       .select("-password -resetOtp -resetOtpExpire")
       .populate("companyId", "companyName companyType")
@@ -1052,6 +1099,7 @@ export const updateMyEmployeeProfile = async (req, res) => {
     });
   }
 };
+
 
 const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
 

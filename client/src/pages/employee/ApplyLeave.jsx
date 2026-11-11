@@ -275,9 +275,6 @@ const ApplyLeave = () => {
 
       return updated;
     });
-
-    toast.success("");
-    toast.error("");
   };
 
   // =====================================================
@@ -300,9 +297,6 @@ const ApplyLeave = () => {
       ...prev,
       halfDayDate: "",
     }));
-
-    toast.success("");
-    toast.error("");
   };
 
   const clearAllocation = (leaveType) => {
@@ -328,10 +322,7 @@ const ApplyLeave = () => {
       halfDayDate: "",
       reason: "",
     });
-
     setAllocations(initialAllocations);
-    toast.success("");
-    toast.error("");
   };
 
   // =====================================================
@@ -340,9 +331,6 @@ const ApplyLeave = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    toast.success("");
-    toast.error("");
 
     if (!leaveBreakdown.length) {
       toast.error("Please allocate days to at least one leave type.");
