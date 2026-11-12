@@ -155,23 +155,24 @@ const fetchProjects = useCallback(async () => {
   // FETCH COMPANY ROLES AND EMPLOYEES
   // =====================================================
 
-  const fetchCompanyData = useCallback(async () => {
-    if (!employeeCompanyId) return;
+const fetchCompanyData = useCallback(async () => {
+  if (!employeeCompanyId) return;
 
-    try {
-      const [roleResponse, employeeResponse] = await Promise.all([
-        api.get(`/roles/company/${employeeCompanyId}`),
-        api.get(`/employees/company/${employeeCompanyId}`),
-      ]);
+  try {
+    const [roleResponse, employeeResponse] = await Promise.all([
+      api.get(`/roles/company/${employeeCompanyId}/employee`),
+      api.get(`/employees/company/${employeeCompanyId}/employee`),
+    ]);
 
-      setRoles(getList(roleResponse, "roles"));
-      setEmployees(getList(employeeResponse, "employees"));
-    } catch (error) {
-      toast.error(
-        `Could not load employees and roles: ${getErrorMessage(error)}`
-      );
-    }
-  }, [employeeCompanyId]);
+    setRoles(getList(roleResponse, "roles"));
+    setEmployees(getList(employeeResponse, "employees"));
+  } catch (error) {
+    toast.error(
+      `Could not load employees and roles: ${getErrorMessage(error)}`
+    );
+  }
+}, [employeeCompanyId]);
+
 
   useEffect(() => {
     fetchCompanyData();

@@ -111,7 +111,19 @@ router.post(
 
 router.get("/", superAdminAuth, getAllEmployees);
 
-router.get("/company/:companyId", superAdminAuth, getCompanyEmployees);
+// Super Admin: Fetch employees of selected company
+router.get(
+  "/company/:companyId",
+  superAdminAuth,
+  getCompanyEmployees
+);
+
+// Employee: Fetch employees of own company
+router.get(
+  "/company/:companyId/employee",
+  employeeAuth,
+  getCompanyEmployees
+);
 
 router.get(
   "/department/:departmentId",

@@ -11,6 +11,7 @@ import {
 import superAdminAuth from "../middleware/superAdminAuth.js";
 import { approveSuperAdminCompOffRequest, getAllEmployeeLeaves, getSuperAdminPendingCompOffRequests, rejectSuperAdminCompOffRequest } from "../controllers/leaveController.js";
 import superAdminCompanyAuth from "../middleware/superAdminCompanyAuth.js";
+import employeeAuth from "../middleware/employeeAuth.js";
 
 const router = express.Router();
 
@@ -20,6 +21,12 @@ router.post("/", superAdminAuth, createRole);
 
 // Get All Roles Of A Company
 router.get("/company/:companyId", superAdminAuth, getCompanyRoles);
+// Get All Roles Of Own Company - Employee
+router.get(
+  "/company/:companyId/employee",
+  employeeAuth,
+  getCompanyRoles
+);
 
 // Get Root Roles Of A Company
 router.get("/company/:companyId/root", superAdminAuth, getRootRoles);
