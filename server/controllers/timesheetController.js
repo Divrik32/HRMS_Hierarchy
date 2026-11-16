@@ -1991,7 +1991,7 @@ export const editTimesheet = async (req, res) => {
     }
 
     // Only explicitly allowed fields can be edited.
-    const allowedFields = ["estimatedTime"];
+    const allowedFields = ["estimatedTime", "idleTime"];
 
     if (!allowedFields.includes(field)) {
       return res.status(400).json({
@@ -2033,6 +2033,19 @@ export const editTimesheet = async (req, res) => {
 
         break;
       }
+      case "idleTime": {
+  const minutes = getMinutes(value);
+
+  if (minutes === null || minutes < 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Idle time must be a non-negative number of minutes.",
+    });
+  }
+
+  timesheet.idleTime = minutes;
+  break;
+}
 
       default:
         return res.status(400).json({
@@ -2046,7 +2059,10 @@ export const editTimesheet = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Estimated time updated successfully.",
+      message:
+  field === "idleTime"
+    ? "Idle time updated successfully."
+    : "Estimated time updated successfully.",
       timesheet,
     });
 

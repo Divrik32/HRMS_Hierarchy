@@ -28,11 +28,14 @@ import {
   getActiveProjectsByCompany,
   grantProjectAccessBySuperAdmin,
   getMyCreatedProjects,
+  removeEmployeeFromProjectModule,
+  getSuperAdminProjectOverview,
 } from "../controllers/projectController.js";
 
 import superAdminAuth from "../middleware/superAdminAuth.js";
 import employeeOrSuperAdminAuth from "../middleware/employeeOrSuperAdminAuth.js";
 import employeeAuth from "../middleware/employeeAuth.js";
+import superAdminCompanyAuth from "../middleware/superAdminCompanyAuth.js";
 
 const router = express.Router();
 
@@ -228,4 +231,79 @@ router.get(
   getActiveProjectsByCompany
 );
 
+router.delete(
+  "/:projectId/modules/:moduleId/employees/:employeeId/employee",
+  employeeAuth,
+  removeEmployeeFromProjectModule
+);
+
+router.delete(
+  "/:projectId/modules/:moduleId/employees/:employeeId/super-admin",
+  superAdminCompanyAuth,
+  removeEmployeeFromProjectModule
+);
+
+// =====================================================
+// SUPER ADMIN COMPANY — MODULE ACCESS ROUTES
+// Existing Employee routes remain unchanged.
+// =====================================================
+
+// Get project role access
+router.get(
+  "/:projectId/role-access/super-admin",
+  superAdminCompanyAuth,
+  getProjectRoleAccess
+);
+
+// Get project modules
+router.get(
+  "/:projectId/modules/super-admin",
+  superAdminCompanyAuth,
+  getProjectModules
+);
+
+// Get employees eligible for module assignment
+router.get(
+  "/:projectId/modules/eligible-employees/super-admin",
+  superAdminCompanyAuth,
+  getEmployeesForModuleAssignment
+);
+
+// Assign project module to employees
+router.patch(
+  "/:projectId/modules/:moduleId/assign/super-admin",
+  superAdminCompanyAuth,
+  assignProjectModule
+);
+
+router.get(
+  "/super-admin/overview",
+  superAdminCompanyAuth,
+  getSuperAdminProjectOverview
+);
+router.get(
+  "/super-admin/:projectId/assignable-employees",
+  superAdminCompanyAuth,
+  getAssignableEmployees
+);
+router.get(
+  "/super-admin/:projectId/module-assignable-employees",
+  superAdminCompanyAuth,
+  getEmployeesForModuleAssignment
+);
+router.post(
+  "/super-admin/:projectId/modules/:moduleId/assign",
+  superAdminCompanyAuth,
+  assignProjectModule
+);
+router.patch(
+  "/super-admin/:projectId/modules/:moduleId/status",
+  superAdminCompanyAuth,
+  updateProjectModuleStatus
+);
+router.delete(
+  "/super-admin/:projectId/modules/:moduleId/employees/:employeeId",
+  superAdminCompanyAuth,
+  removeEmployeeFromProjectModule
+);
 export default router;

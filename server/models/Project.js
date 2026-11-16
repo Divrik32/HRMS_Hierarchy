@@ -21,13 +21,20 @@ const generateProjectCode = (projectName, clientName) => {
   return `${clientInitials}-${projectInitials}-${uniqueNumber}`;
 };
 
-// One project can contain many modules
-const moduleSchema = new mongoose.Schema(
+
+// One module can contain multiple employees
+const moduleEmployeeSchema = new mongoose.Schema(
   {
-    moduleName: {
-      type: String,
+    employeeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Employee",
       required: true,
+    },
+
+    description: {
+      type: String,
       trim: true,
+      default: "",
     },
 
     status: {
@@ -38,30 +45,33 @@ const moduleSchema = new mongoose.Schema(
         "In Progress",
         "Completed",
       ],
-      default: "Not Assigned",
-    },
-
-    assignedEmployee: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Employee",
-      default: null,
-    },
-
-    assignedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Employee",
-      default: null,
-    },
-
-    assignedAt: {
-      type: Date,
-      default: null,
+      default: "Assigned",
     },
   },
   {
     timestamps: true,
   }
 );
+
+// One project can contain many modules
+const moduleSchema = new mongoose.Schema(
+  {
+    moduleName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    employees: {
+      type: [moduleEmployeeSchema],
+      default: [],
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
 
 const projectSchema = new mongoose.Schema(
   {

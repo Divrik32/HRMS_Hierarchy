@@ -98,6 +98,9 @@ export default function Timesheet() {
   const [editingEstimatedId, setEditingEstimatedId] = useState("");
   const [editingEstimatedValue, setEditingEstimatedValue] = useState("");
   const [savingEstimated, setSavingEstimated] = useState(false);
+  const [editingIdleId, setEditingIdleId] = useState("");
+  const [editingIdleValue, setEditingIdleValue] = useState("");
+  const [savingIdle, setSavingIdle] = useState(false);
 
   // Live date/time display. Backend will save the actual submit timestamp.
   const [liveTime, setLiveTime] = useState(new Date());
@@ -310,6 +313,55 @@ const handleSaveEstimated = async (item) => {
     );
   } finally {
     setSavingEstimated(false);
+  }
+};
+
+// =========================================
+// OPEN IDLE TIME EDIT
+// =========================================
+
+const handleEditIdle = (item) => {
+  setEditingIdleId(item._id);
+  setEditingIdleValue(String(item.idleTime ?? 0));
+};
+
+// =========================================
+// SAVE IDLE TIME
+// =========================================
+
+const handleSaveIdle = async (item) => {
+  const minutes = Number(editingIdleValue);
+
+  if (
+    !editingIdleValue.trim() ||
+    !Number.isInteger(minutes) ||
+    minutes < 0
+  ) {
+    toast.error("Idle time must be a non-negative whole number.");
+    return;
+  }
+
+  setSavingIdle(true);
+
+  try {
+    await api.patch(`/timesheets/${item._id}/edit`, {
+      field: "idleTime",
+      value: minutes,
+    });
+
+    toast.success("Idle time updated successfully.");
+
+    setEditingIdleId("");
+    setEditingIdleValue("");
+
+    await loadData();
+  } catch (err) {
+    toast.error(
+      err.response?.data?.message ||
+        "Failed to update idle time."
+    );
+  } finally {
+    setSavingIdle(false);
   }
 };
 
@@ -649,9 +701,66 @@ const handleSaveEstimated = async (item) => {
                         <td className="whitespace-nowrap px-4 py-4">
                           {formatMinutes(item.totalCompletionTime)}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-4">
-                          {formatMinutes(item.idleTime)}
-                        </td>
+<td className="whitespace-nowrap px-4 py-4">
+  {editingIdleId === item._id ? (
+    <div className="flex items-center gap-2">
+      <input
+        type="number"
+        min="0"
+        step="1"
+        value={editingIdleValue}
+        onChange={(event) =>
+          setEditingIdleValue(event.target.value)
+        }
+        disabled={savingIdle}
+        autoFocus
+        className="w-20 rounded-lg border border-blue-300 px-2 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+      />
+
+      <button
+        type="button"
+        onClick={() => handleSaveIdle(item)}
+        disabled={savingIdle}
+        title="Save idle time"
+        className="rounded-lg bg-emerald-50 p-1.5 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
+      >
+        {savingIdle ? (
+          <RefreshCw size={15} className="animate-spin" />
+        ) : (
+          <Check size={16} />
+        )}
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          setEditingIdleId("");
+          setEditingIdleValue("");
+        }}
+        disabled={savingIdle}
+        title="Cancel editing"
+        className="rounded-lg bg-red-50 p-1.5 text-red-600 hover:bg-red-100 disabled:opacity-50"
+      >
+        <X size={16} />
+      </button>
+    </div>
+  ) : (
+    <div className="flex items-center gap-2">
+      <span className="font-medium text-slate-700">
+        {formatMinutes(item.idleTime)}
+      </span>
+
+      <button
+        type="button"
+        onClick={() => handleEditIdle(item)}
+        title="Edit idle time"
+        className="rounded-md p-1.5 text-slate-400 transition hover:bg-blue-50 hover:text-blue-600"
+      >
+        <Pencil size={14} />
+      </button>
+    </div>
+  )}
+</td>
                         <td className="whitespace-nowrap px-4 py-4">
                           {item.estimatedError == null
                             ? "—"

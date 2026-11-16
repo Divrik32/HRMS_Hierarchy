@@ -18,6 +18,7 @@ import holidayRoutes from "./routes/holidayRoutes.js";
 import leaveRoutes from "./routes/leaveRoutes.js";
 import roleHierarchyRoutes from "./routes/roleHierarchyRoutes.js";
 import absentRoutes from "./routes/absentRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
 import { startWeeklyTimesheetReminderCron } from "./services/weeklyTimesheetReminder.js";
 import { startLeaveAccrualJob } from "./jobs/leaveAccrualJob.js";
 dotenv.config();
@@ -65,6 +66,7 @@ app.use("/api/holidays", holidayRoutes);
 app.use("/api/leaves", leaveRoutes);
 app.use("/api/role-hierarchy", roleHierarchyRoutes);
 app.use("/api/absent", absentRoutes);
+app.use("/api/auth", authRoutes);
 
 // Test route
 app.get("/", (req, res) => {
