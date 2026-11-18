@@ -58,6 +58,7 @@ import CompanyCompOffApprovals from "./pages/company/CompanyCompOffApprovals";
 import AllEmployeeLeaves from "./pages/company/AllEmployeeLeaves";
 import AttendanceManagement from "./pages/employee/AttendanceManagement";
 import ProjectManagement from "./pages/employee/ProjectManagement";
+import Tickets from "./pages/employee/Tickets";
 
 const router = createBrowserRouter([
   // =====================================================
@@ -276,6 +277,10 @@ const router = createBrowserRouter([
       {
         path: "comp-off-approvals",
         element: <CompOffApprovals />,
+      },
+      {
+        path: "tickets",
+        element: <Tickets />,
       },
     ],
   },

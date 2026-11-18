@@ -8,24 +8,45 @@ import api from "../api/axios";
 const testimonials = [
   {
     quote:
-      "Beautiful components with thoughtful details. Our onboarding experience instantly felt more premium.",
-    name: "Emma Wilson",
-    role: "Founder of BrightFlow",
-    initials: "EW",
+      "Manage your entire workforce from one centralized platform. Keep employee information organized and accessible.",
+    name: "Employee Management",
+    role: "Centralized Workforce Management",
+    initials: "EM",
   },
   {
     quote:
-      "A perfect balance of simplicity and flexibility. It helped us launch faster without compromising quality.",
-    name: "Lucas Martin",
-    role: "Engineering Lead at Orbit Systems",
+      "Track employee attendance, monitor working hours and maintain accurate daily attendance records with ease.",
+    name: "Attendance Tracking",
+    role: "Smart Attendance Management",
+    initials: "AT",
+  },
+  {
+    quote:
+      "Simplify leave applications, manage approvals and keep employee leave balances organized in one place.",
+    name: "Leave Management",
+    role: "Streamlined Leave Administration",
     initials: "LM",
   },
   {
     quote:
-      "Authentication that is fast, secure and polished. It just works the way you expect it to.",
-    name: "Daniel Brooks",
-    role: "Product Designer",
-    initials: "DB",
+      "Plan projects, organize responsibilities and manage employee access with a structured project management system.",
+    name: "Project Management",
+    role: "Organized Team Collaboration",
+    initials: "PM",
+  },
+  {
+    quote:
+      "Record daily work activities, monitor productivity and simplify timesheet tracking across your organization.",
+    name: "Timesheet Management",
+    role: "Work Hours & Productivity Tracking",
+    initials: "TM",
+  },
+  {
+    quote:
+      "Manage your organizational structure, departments and employee roles with centralized workforce controls.",
+    name: "Organization Management",
+    role: "Structured HR Administration",
+    initials: "OM",
   },
 ];
 

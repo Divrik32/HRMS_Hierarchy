@@ -138,7 +138,7 @@ const CompanySidebar = ({ open }) => {
           Leave Management
         </div>
 
-        <Link
+        {/* <Link
           to={`/company/${companyId}/leave-approvals`}
           className={linkClass}
         >
@@ -152,7 +152,7 @@ const CompanySidebar = ({ open }) => {
         >
           <CalendarPlus size={20} />
           Comp-Off Approvals
-        </Link>
+        </Link> */}
 
         <Link
           to={`/company/${companyId}/all-employee-leaves`}

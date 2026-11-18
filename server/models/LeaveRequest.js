@@ -14,7 +14,30 @@ const leaveBreakdownSchema = new mongoose.Schema(
         "Sick Leave",
         "Paid Leave",
         "Unpaid Leave",
+        "Comp-Off",
       ],
+      required: true,
+    },
+
+    days: {
+      type: Number,
+      required: true,
+      min: 0.5,
+    },
+  },
+  { _id: false }
+);
+
+// =====================================================
+// COMP-OFF ALLOCATION
+// Tracks which earning records provide the Comp-Off days.
+// =====================================================
+
+const compOffAllocationSchema = new mongoose.Schema(
+  {
+    compOffId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "CompOff",
       required: true,
     },
 
@@ -122,7 +145,6 @@ const leaveRequestSchema = new mongoose.Schema(
 
     // =================================================
     // LEAVE CATEGORY
-    // Automatically derived by controller
     // =================================================
 
     leaveCategory: {
@@ -131,13 +153,13 @@ const leaveRequestSchema = new mongoose.Schema(
         "Paid Leave",
         "Unpaid Leave",
         "Mixed Leave",
+        "Comp-Off",
       ],
       required: true,
     },
 
     // =================================================
     // LEGACY LEAVE TYPE
-    // Kept for old records compatibility
     // =================================================
 
     leaveType: {
@@ -147,20 +169,27 @@ const leaveRequestSchema = new mongoose.Schema(
         "Sick Leave",
         "Paid Leave",
         "Unpaid Leave",
+        "Comp-Off",
       ],
       default: undefined,
     },
 
     // =================================================
     // MULTIPLE LEAVE TYPES
-    // Example:
-    // Sick Leave: 0.5
-    // Casual Leave: 0.5
-    // Unpaid Leave: 6.5
     // =================================================
 
     leaveBreakdown: {
       type: [leaveBreakdownSchema],
+      default: [],
+    },
+
+    // =================================================
+    // COMP-OFF ALLOCATION
+    // Each allocation references an approved earning record.
+    // =================================================
+
+    compOffAllocations: {
+      type: [compOffAllocationSchema],
       default: [],
     },
 
@@ -180,7 +209,6 @@ const leaveRequestSchema = new mongoose.Schema(
 
     // =================================================
     // DAILY BREAKDOWN
-    // Employee-selected Half Day date
     // =================================================
 
     dailyBreakdown: {
@@ -190,7 +218,6 @@ const leaveRequestSchema = new mongoose.Schema(
 
     // =================================================
     // TOTAL LEAVE DAYS
-    // Sum of leaveBreakdown and dailyBreakdown
     // =================================================
 
     totalDays: {
@@ -229,17 +256,23 @@ const leaveRequestSchema = new mongoose.Schema(
     // PAYMENT INFORMATION
     // =================================================
 
-    // True only when the entire request is unpaid.
-    // Mixed Leave should have isUnpaid = false.
-
     isUnpaid: {
       type: Boolean,
       default: false,
     },
 
-    // True when any paid leave allocation was deducted.
-
     balanceDeducted: {
+      type: Boolean,
+      default: false,
+    },
+
+    // =================================================
+    // COMP-OFF RESERVATION TRACKING
+    // True when Comp-Off days have been reserved
+    // for this pending Leave Request.
+    // =================================================
+
+    compOffBalanceDeducted: {
       type: Boolean,
       default: false,
     },
@@ -335,6 +368,13 @@ leaveRequestSchema.index({
   companyId: 1,
   status: 1,
   startDate: 1,
+});
+
+leaveRequestSchema.index({
+  companyId: 1,
+  employeeId: 1,
+  status: 1,
+  createdAt: -1,
 });
 
 // =====================================================

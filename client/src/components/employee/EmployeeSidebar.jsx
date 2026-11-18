@@ -215,7 +215,7 @@ const EmployeeSidebar = ({ open, employee }) => {
 
     // Leave Management
 {
-  label: "My Leave",
+  label: "My Leaves",
   path: `${basePath}/leaves`,
   icon: CalendarDays,
   end: true,
@@ -238,49 +238,60 @@ const EmployeeSidebar = ({ open, employee }) => {
         ]
       : []),
 
-    ...(isHR
-      ? [
-          {
-            label: "Absent Management",
-            path: `${basePath}/absent`,
-            icon: UserX,
-          },
-        ]
-      : []),
+    // ...(isHR
+    //   ? [
+    //       {
+    //         label: "Absent Management",
+    //         path: `${basePath}/absent`,
+    //         icon: UserX,
+    //       },
+    //     ]
+    //   : []),
 
-    ...(isHR
-      ? [
-          {
-            label: "Attendance Management",
-            path: `${basePath}/attendance-management`,
-            icon: Clock,
-          },
-        ]
-      : []),
+    // ...(isHR
+    //   ? [
+    //       {
+    //         label: "Attendance Management",
+    //         path: `${basePath}/attendance-management`,
+    //         icon: Clock,
+    //       },
+    //     ]
+    //   : []),
 
     // Comp-Off
-    {
-      label: "My Comp-Off",
-      path: `${basePath}/comp-off`,
-      icon: CalendarPlus,
-    },
+    // {
+    //   label: "My Comp-Off",
+    //   path: `${basePath}/comp-off`,
+    //   icon: CalendarPlus,
+    // },
+
+    // Tickets - HR Only
+    ...(isHR
+      ? [
+          {
+            label: "Tickets",
+            path: `${basePath}/tickets`,
+            icon: ClipboardList,
+          },
+        ]
+      : []),
   ];
 
   // Only HR can apply Comp-Off for selected employees
-  if (isHR) {
-    navigationItems.push(
-      {
-        label: "Apply Comp-Off",
-        path: `${basePath}/comp-off-apply`,
-        icon: FilePlus2,
-      },
-      {
-        label: "Comp-Off Approvals",
-        path: `${basePath}/comp-off-approvals`,
-        icon: CheckCircle2,
-      }
-    );
-  }
+  // if (isHR) {
+  //   navigationItems.push(
+  //     {
+  //       label: "Apply Comp-Off",
+  //       path: `${basePath}/comp-off-apply`,
+  //       icon: FilePlus2,
+  //     },
+  //     {
+  //       label: "Comp-Off Approvals",
+  //       path: `${basePath}/comp-off-approvals`,
+  //       icon: CheckCircle2,
+  //     }
+  //   );
+  // }
 
   return (
     <aside className="flex min-h-[calc(100vh-64px)] w-72 shrink-0 flex-col border-r border-slate-200 bg-white p-4">

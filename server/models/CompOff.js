@@ -1,8 +1,60 @@
 
 import mongoose from "mongoose";
 
+// =====================================================
+// WORK ENTRY SCHEMA
+// =====================================================
+
+const workEntrySchema = new mongoose.Schema(
+  {
+    attendanceId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Attendance",
+      required: true,
+    },
+
+    workDate: {
+      type: String,
+      required: true,
+    },
+
+    workType: {
+      type: String,
+      enum: ["Normal", "Sunday", "Holiday"],
+      required: true,
+    },
+
+    actualMinutes: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+
+    eligibleMinutes: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+
+    claimedMinutes: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+  },
+  { _id: false }
+);
+
+// =====================================================
+// MAIN COMP-OFF SCHEMA
+// =====================================================
+
 const compOffSchema = new mongoose.Schema(
   {
+    // =================================================
+    // COMPANY
+    // =================================================
+
     companyId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Company",
@@ -10,7 +62,10 @@ const compOffSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Employee for whom HR is applying Comp-Off.
+    // =================================================
+    // EMPLOYEE
+    // =================================================
+
     employeeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Employee",
@@ -18,100 +73,195 @@ const compOffSchema = new mongoose.Schema(
       index: true,
     },
 
-    // HR who submitted the Comp-Off request.
+    // =================================================
+    // RECORD TYPE
+    // Request = Comp-Off earned through extra work.
+    // Usage = Comp-Off consumed through Leave Request.
+    // =================================================
+
+    recordType: {
+      type: String,
+      enum: ["Request", "Usage"],
+      default: "Request",
+      required: true,
+    },
+
+    // =================================================
+    // WORK ENTRIES
+    // =================================================
+
+    workEntries: {
+      type: [workEntrySchema],
+      default: [],
+    },
+
+    // =================================================
+    // EARNED MINUTES
+    // =================================================
+
+    totalClaimedMinutes: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // =================================================
+    // CREDITED DAYS
+    // Total approved Comp-Off days earned.
+    // =================================================
+
+    creditedDays: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // =================================================
+    // USED DAYS
+    // Total days consumed from this credit group.
+    // =================================================
+
+    usedDays: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // =================================================
+    // REMAINING DAYS
+    // Available days remaining in this credit group.
+    // =================================================
+
+    remainingDays: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // =================================================
+    // STATUS
+    // =================================================
+
+    status: {
+      type: String,
+      enum: [
+        "Pending",
+        "Approved",
+        "Rejected",
+        "Used",
+      ],
+      default: "Pending",
+      index: true,
+    },
+
+    // =================================================
+    // CREATED BY
+    // =================================================
+
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Employee",
       required: true,
     },
 
-    // Actual date on which the employee worked.
-    workDate: {
-      type: Date,
-      required: true,
-    },
+    // =================================================
+    // VERIFIED BY
+    // =================================================
 
-    // Date on which the employee will use the Comp-Off.
-    leaveDate: {
-      type: Date,
-      required: true,
-    },
-
-    // Only Sunday or declared company holiday is eligible.
-    dayType: {
-      type: String,
-      enum: ["Sunday", "Holiday"],
-      required: true,
-    },
-
-    // Required when dayType is Holiday.
-    holidayId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Holiday",
-      default: null,
-    },
-
-    workDescription: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    creditedDays: {
-      type: Number,
-      default: 1,
-      min: 0.5,
-    },
-
-    // Every new request must wait for approval.
-    status: {
-      type: String,
-      enum: ["Pending", "Approved", "Rejected", "Used"],
-      default: "Pending",
-      index: true,
-    },
-
-    // Employee approver, when approval is done by HR.
     verifiedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Employee",
       default: null,
     },
 
-    verifiedBySuperAdmin: {
-  type: mongoose.Schema.Types.ObjectId,
-  ref: "SuperAdmin",
-  default: null,
-},
-
     verifiedAt: {
       type: Date,
       default: null,
     },
 
-    leaveRequestId: {
+    // =================================================
+    // REJECTION
+    // =================================================
+
+    rejectionReason: {
+      type: String,
+      default: "",
+    },
+
+    // =================================================
+    // USAGE DATE
+    // =================================================
+
+    usageDate: {
+      type: String,
+      default: null,
+    },
+
+    // =================================================
+    // USAGE REFERENCE
+    // LeaveRequest that consumed this Comp-Off.
+    // =================================================
+
+    usageReference: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "LeaveRequest",
       default: null,
     },
 
-    rejectionReason: {
+    // =================================================
+    // SOURCE COMP-OFF REFERENCE
+    // Original earning record used by a Usage record.
+    // =================================================
+
+    sourceCompOffId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "CompOff",
+      default: null,
+    },
+
+    // =================================================
+    // REMARKS
+    // =================================================
+
+    remarks: {
       type: String,
       default: "",
-      trim: true,
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-// Prevent duplicate Comp-Off requests for the same employee and work date.
-compOffSchema.index(
-  {
-    companyId: 1,
-    employeeId: 1,
-    workDate: 1,
-  },
-  { unique: true }
-);
+// =====================================================
+// INDEXES
+// =====================================================
+
+compOffSchema.index({
+  companyId: 1,
+  employeeId: 1,
+  createdAt: -1,
+});
+
+compOffSchema.index({
+  companyId: 1,
+  status: 1,
+  createdAt: -1,
+});
+
+compOffSchema.index({
+  companyId: 1,
+  employeeId: 1,
+  recordType: 1,
+  status: 1,
+});
+
+compOffSchema.index({
+  usageReference: 1,
+});
+
+// =====================================================
+// EXPORT MODEL
+// =====================================================
 
 export default mongoose.model("CompOff", compOffSchema);

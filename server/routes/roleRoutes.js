@@ -1,3 +1,4 @@
+
 import express from "express";
 import {
   createRole,
@@ -8,19 +9,27 @@ import {
   updateRole,
   deleteRole,
 } from "../controllers/roleController.js";
+
+import {
+  getPendingCompOffRequests,
+  approveCompOffRequest,
+  rejectCompOffRequest,
+} from "../controllers/compOffController.js";
+
+import { getAllEmployeeLeaves } from "../controllers/leaveController.js";
+
 import superAdminAuth from "../middleware/superAdminAuth.js";
-import { approveSuperAdminCompOffRequest, getAllEmployeeLeaves, getSuperAdminPendingCompOffRequests, rejectSuperAdminCompOffRequest } from "../controllers/leaveController.js";
 import superAdminCompanyAuth from "../middleware/superAdminCompanyAuth.js";
 import employeeAuth from "../middleware/employeeAuth.js";
 
 const router = express.Router();
-
 
 // Create Role
 router.post("/", superAdminAuth, createRole);
 
 // Get All Roles Of A Company
 router.get("/company/:companyId", superAdminAuth, getCompanyRoles);
+
 // Get All Roles Of Own Company - Employee
 router.get(
   "/company/:companyId/employee",
@@ -51,19 +60,19 @@ router.delete("/:roleId", superAdminAuth, deleteRole);
 router.get(
   "/comp-off/super-admin/pending",
   superAdminCompanyAuth,
-  getSuperAdminPendingCompOffRequests
+  getPendingCompOffRequests
 );
 
 router.patch(
   "/comp-off/:id/super-admin/approve",
   superAdminCompanyAuth,
-  approveSuperAdminCompOffRequest
+  approveCompOffRequest
 );
 
 router.patch(
   "/comp-off/:id/super-admin/reject",
   superAdminCompanyAuth,
-  rejectSuperAdminCompOffRequest
+  rejectCompOffRequest
 );
 
 
@@ -76,6 +85,5 @@ router.get(
   superAdminCompanyAuth,
   getAllEmployeeLeaves
 );
-
 
 export default router;

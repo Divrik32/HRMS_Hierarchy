@@ -1,3 +1,4 @@
+
 import {
   useCallback,
   useEffect,
@@ -5,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+
 import {
   CalendarDays,
   LogIn,
@@ -16,90 +18,79 @@ import {
   LoaderCircle,
   UserRound,
   Building2,
+  Pencil,
+  X,
+  Save,
 } from "lucide-react";
+
 import { toast } from "react-toastify";
 import api from "../../api/axios";
-import { useParams } from "react-router-dom";
 
 // =========================================
 // DATE & TIME HELPERS
 // =========================================
 
-const getTodayDate = () => {
-  return new Intl.DateTimeFormat("en-CA", {
+const getTodayDate = () =>
+  new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kolkata",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+
+const getCurrentMonth = () => {
+  const [year, month] = getTodayDate().split("-");
+  return { month: Number(month), year: Number(year) };
 };
 
 const formatTime = (date) => {
   if (!date) return "—";
 
-  return new Date(date).toLocaleTimeString("en-IN", {
+  return new Date(date)
+    .toLocaleTimeString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .toUpperCase();
+};
+
+const getTimeInputValue = (date) => {
+  if (!date) return "";
+
+  const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Kolkata",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: true,
-  }).toUpperCase();
+    hourCycle: "h23",
+  }).formatToParts(new Date(date));
+
+  const hour = parts.find((part) => part.type === "hour")?.value;
+  const minute = parts.find((part) => part.type === "minute")?.value;
+
+  return hour && minute ? `${hour}:${minute}` : "";
 };
 
 const formatDate = (date) => {
   if (!date) return "—";
 
-  return new Date(`${date}T00:00:00`).toLocaleDateString("en-IN", {
-    timeZone: "Asia/Kolkata",
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-IN", {
+    timeZone: "UTC",
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
 };
 
-const getStatusClasses = (status) => {
-  switch (status) {
-    case "Checked Out":
-      return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+const getAttendanceDateKey = (date) => {
+  if (!date) return "";
 
-    case "Checked In":
-      return "bg-blue-50 text-blue-700 ring-blue-200";
-
-    case "Not Checked In":
-      return "bg-slate-100 text-slate-600 ring-slate-200";
-
-    default:
-      return "bg-slate-100 text-slate-600 ring-slate-200";
+  if (typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return date;
   }
-};
 
-const getStatusDotClasses = (status) => {
-  switch (status) {
-    case "Checked Out":
-      return "bg-emerald-500";
-
-    case "Checked In":
-      return "bg-blue-500";
-
-    default:
-      return "bg-slate-400";
-  }
-};
-
-const getCurrentMonth = () => {
-  const today = getTodayDate();
-  const [year, month] = today.split("-");
-
-  return {
-    month: Number(month),
-    year: Number(year),
-  };
-};
-
-const getEmployeeSearchText = (employee) => {
-  return [employee?.name, employee?.empId, employee?.email]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  return new Date(date).toISOString().slice(0, 10);
 };
 
 const getDateKeysBetween = (startDate, endDate) => {
@@ -118,46 +109,89 @@ const getDateKeysBetween = (startDate, endDate) => {
 };
 
 const getMonthDateKeys = (month, year) => {
+  if (!month || !year) return [];
+
   const totalDays = new Date(Number(year), Number(month), 0).getDate();
 
-  return Array.from({ length: totalDays }, (_, index) => {
-    return `${year}-${String(month).padStart(2, "0")}-${String(
-      index + 1
-    ).padStart(2, "0")}`;
-  });
+  return Array.from({ length: totalDays }, (_, index) =>
+    `${year}-${String(month).padStart(2, "0")}-${String(index + 1).padStart(2, "0")}`
+  );
 };
 
-const getMonthLabel = (dateKey) => {
-  return new Date(`${dateKey}T00:00:00Z`).toLocaleDateString("en-IN", {
+const getMonthLabel = (dateKey) =>
+  new Date(`${dateKey}T00:00:00Z`).toLocaleDateString("en-IN", {
     month: "long",
     year: "numeric",
     timeZone: "UTC",
   });
-};
 
-const getDayNumber = (dateKey) => {
-  return Number(dateKey.slice(8, 10));
-};
+const getDayNumber = (dateKey) => Number(dateKey.slice(8, 10));
 
-const getWeekdayLabel = (dateKey) => {
-  return new Date(`${dateKey}T00:00:00Z`).toLocaleDateString("en-IN", {
+const getWeekdayLabel = (dateKey) =>
+  new Date(`${dateKey}T00:00:00Z`).toLocaleDateString("en-IN", {
     weekday: "short",
     timeZone: "UTC",
   });
+
+const isSunday = (dateKey) =>
+  new Date(`${dateKey}T00:00:00Z`).getUTCDay() === 0;
+
+const getEmployeeSearchText = (employee) =>
+  [employee?.name, employee?.empId, employee?.email]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+const getEmployeeName = (employee) =>
+  employee?.name || "Unknown employee";
+
+const getEmployeeId = (employee) =>
+  employee?.empId || "—";
+
+const getEmployeeMongoId = (employee) => {
+  if (!employee) return "";
+
+  if (typeof employee === "string") return employee;
+
+  return employee._id || employee.id || "";
 };
 
-const isSunday = (dateKey) => {
-  return new Date(`${dateKey}T00:00:00Z`).getUTCDay() === 0;
+const getStatusClasses = (status) => {
+  switch (status) {
+    case "Checked Out":
+    case "Present":
+      return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+
+    case "Checked In":
+    case "Incomplete":
+      return "bg-blue-50 text-blue-700 ring-blue-200";
+
+    case "Not Checked In":
+    case "No Record":
+      return "bg-slate-100 text-slate-600 ring-slate-200";
+
+    default:
+      return "bg-slate-100 text-slate-600 ring-slate-200";
+  }
 };
 
-const getAttendanceDateKey = (date) => {
-  if (!date) return "";
-
-  if (typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return date;
+const getStatusDotClasses = (status) => {
+  if (["Checked Out", "Present"].includes(status)) {
+    return "bg-emerald-500";
   }
 
-  return new Date(date).toISOString().slice(0, 10);
+  if (["Checked In", "Incomplete"].includes(status)) {
+    return "bg-blue-500";
+  }
+
+  return "bg-slate-400";
+};
+
+const getDisplayStatus = (attendance) => {
+  if (!attendance) return "Not Checked In";
+  if (attendance.checkOut) return "Checked Out";
+  if (attendance.checkIn) return "Checked In";
+  return "Not Checked In";
 };
 
 // =========================================
@@ -199,14 +233,13 @@ const getAvatarColor = (name) => {
 
 const Avatar = ({ name, size = "md" }) => {
   const initials = getInitials(name);
+
   const sizeClasses =
     size === "sm" ? "h-8 w-8 text-xs" : "h-10 w-10 text-sm";
 
   return (
     <div
-      className={`flex shrink-0 items-center justify-center rounded-full font-bold ${sizeClasses} ${getAvatarColor(
-        name
-      )}`}
+      className={`flex shrink-0 items-center justify-center rounded-full font-bold ${sizeClasses} ${getAvatarColor(name)}`}
     >
       {initials || <UserRound size={16} />}
     </div>
@@ -215,7 +248,6 @@ const Avatar = ({ name, size = "md" }) => {
 
 // =========================================
 // SCROLL STYLES
-// Top horizontal scrollbar + right vertical scrollbar
 // =========================================
 
 const SCROLLBAR_CSS = `
@@ -249,9 +281,7 @@ const SCROLLBAR_CSS = `
 `;
 
 // =========================================
-// DUAL SCROLL TABLE WRAPPER
-// - Horizontal scrollbar on TOP (synced)
-// - Vertical scrollbar on the RIGHT
+// DUAL SCROLL TABLE
 // =========================================
 
 const DualScrollTable = ({ children, maxHeight = "68vh" }) => {
@@ -259,7 +289,6 @@ const DualScrollTable = ({ children, maxHeight = "68vh" }) => {
   const mainRef = useRef(null);
   const contentRef = useRef(null);
 
-  const today = getTodayDate();
   const [contentWidth, setContentWidth] = useState(0);
   const [scrollbarWidth, setScrollbarWidth] = useState(0);
   const [scrollbarHeight, setScrollbarHeight] = useState(0);
@@ -314,7 +343,6 @@ const DualScrollTable = ({ children, maxHeight = "68vh" }) => {
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       <style>{SCROLLBAR_CSS}</style>
 
-      {/* Top horizontal scrollbar */}
       <div
         ref={topRef}
         onScroll={handleTopScroll}
@@ -328,8 +356,6 @@ const DualScrollTable = ({ children, maxHeight = "68vh" }) => {
         <div style={{ width: contentWidth, height: 1 }} />
       </div>
 
-      {/* Main scroll area (vertical scrollbar on the right) */}
-      {/* Wrapper clips the bottom horizontal scrollbar (all browsers) */}
       <div className="overflow-hidden">
         <div
           ref={mainRef}
@@ -350,13 +376,11 @@ const DualScrollTable = ({ children, maxHeight = "68vh" }) => {
 };
 
 // =========================================
-// SMALL UI PIECES
+// SMALL UI COMPONENTS
 // =========================================
 
 const TimePill = ({ value, type }) => {
-  if (!value) {
-    return <span className="text-slate-300">—</span>;
-  }
+  if (!value) return <span className="text-slate-300">—</span>;
 
   const isIn = type === "in";
 
@@ -379,9 +403,7 @@ const StatusBadge = ({ status }) => {
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset ${getStatusClasses(
-        label
-      )}`}
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset ${getStatusClasses(label)}`}
     >
       <span
         className={`h-1.5 w-1.5 rounded-full ${getStatusDotClasses(label)}`}
@@ -391,34 +413,208 @@ const StatusBadge = ({ status }) => {
   );
 };
 
+const EditTimeButton = ({ onClick, label }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    title={label}
+    aria-label={label}
+    className="ml-2 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+  >
+    <Pencil size={13} />
+  </button>
+);
+
+// =========================================
+// ATTENDANCE EDIT MODAL
+// =========================================
+
+const AttendanceEditModal = ({
+  editData,
+  onClose,
+  onSave,
+  saving,
+}) => {
+  const [checkInTime, setCheckInTime] = useState(
+    getTimeInputValue(editData?.attendance?.checkIn)
+  );
+
+  const [checkOutTime, setCheckOutTime] = useState(
+    getTimeInputValue(editData?.attendance?.checkOut)
+  );
+
+  if (!editData) return null;
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+
+    if (!checkInTime && !checkOutTime) {
+      toast.error("Please provide at least one attendance time.");
+      return;
+    }
+
+    onSave({
+      employeeId: editData.employee?._id,
+      date: editData.date,
+      checkInTime,
+      checkOutTime,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <div>
+            <h3 className="text-lg font-bold text-slate-800">
+              Edit Attendance
+            </h3>
+            <p className="mt-1 text-xs text-slate-500">
+              Add or update employee attendance time.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5 p-5">
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="font-semibold text-slate-800">
+              {getEmployeeName(editData.employee)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Employee ID: {getEmployeeId(editData.employee)}
+            </p>
+            <p className="mt-2 flex items-center gap-2 text-sm text-slate-600">
+              <CalendarDays size={15} />
+              {formatDate(editData.date)}
+            </p>
+          </div>
+
+          <div>
+            <label
+              htmlFor="edit-check-in"
+              className="mb-2 block text-sm font-semibold text-slate-700"
+            >
+              Check In Time
+            </label>
+
+            <div className="relative">
+              <LogIn
+                size={17}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-600"
+              />
+              <input
+                id="edit-check-in"
+                type="time"
+                value={checkInTime}
+                onChange={(event) => setCheckInTime(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white py-3 pl-10 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label
+              htmlFor="edit-check-out"
+              className="mb-2 block text-sm font-semibold text-slate-700"
+            >
+              Check Out Time
+            </label>
+
+            <div className="relative">
+              <LogOut
+                size={17}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600"
+              />
+              <input
+                id="edit-check-out"
+                type="time"
+                value={checkOutTime}
+                onChange={(event) => setCheckOutTime(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white py-3 pl-10 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-500">
+            Leave an existing time unchanged if you do not want to modify it.
+            At least one time is required.
+          </p>
+
+          <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="submit"
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {saving ? (
+                <LoaderCircle size={16} className="animate-spin" />
+              ) : (
+                <Save size={16} />
+              )}
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 // =========================================
 // EMPLOYEE ATTENDANCE PAGE
 // =========================================
 
 const EmployeeAttendance = () => {
-  const { companyId } = useParams();
   const today = getTodayDate();
   const currentMonth = getCurrentMonth();
 
-  const [selectedDate, setSelectedDate] = useState(today);
+  // =========================================
+  // VIEW STATES
+  // =========================================
 
+  const [isCompanyWide, setIsCompanyWide] = useState(null);
   const [attendanceView, setAttendanceView] = useState("single");
 
+  const [selectedDate, setSelectedDate] = useState(today);
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
 
   const [selectedMonth, setSelectedMonth] = useState(
     String(currentMonth.month).padStart(2, "0")
   );
+
   const [selectedYear, setSelectedYear] = useState(
     String(currentMonth.year)
   );
 
   const [employeeSearch, setEmployeeSearch] = useState("");
 
+  // =========================================
+  // ATTENDANCE DATA
+  // =========================================
+
   const [myAttendance, setMyAttendance] = useState(null);
   const [companyAttendance, setCompanyAttendance] = useState([]);
   const [companyAttendanceGroups, setCompanyAttendanceGroups] = useState([]);
+
   const [summary, setSummary] = useState({
     totalEmployees: 0,
     checkedIn: 0,
@@ -426,12 +622,66 @@ const EmployeeAttendance = () => {
     notCheckedIn: 0,
   });
 
+  // =========================================
+  // HR / LEAVE / HOLIDAY STATES
+  // =========================================
+
+  const [isHRViewer, setIsHRViewer] = useState(false);
+
+  // Key format: employeeMongoId_YYYY-MM-DD
+  // Value: "Full Day" / "Half Day"
+  const [approvedLeaveDates, setApprovedLeaveDates] = useState({});
+
+  const [companyHolidayDates, setCompanyHolidayDates] = useState([]);
+
+  // =========================================
+  // LOADING STATES
+  // =========================================
+
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editData, setEditData] = useState(null);
+
+  // =========================================
+  // LOAD VIEWER PROFILE / DETECT HR
+  // =========================================
+
+  const loadViewerProfile = useCallback(async () => {
+    try {
+      const response = await api.get("/employees/profile/me");
+
+      const profile =
+        response.data?.employee ||
+        response.data?.profile ||
+        response.data?.data ||
+        response.data;
+
+      const roleName = String(
+        profile?.roleId?.roleName ||
+        profile?.role?.roleName ||
+        profile?.roleName ||
+        ""
+      )
+        .trim()
+        .toLowerCase();
+
+      const isHR = ["hr", "head recruiter"].includes(roleName);
+
+      setIsHRViewer(isHR);
+
+      return isHR;
+    } catch (error) {
+      // Super Admin may not have an employee profile.
+      setIsHRViewer(false);
+      return false;
+    }
+  }, []);
 
   // =========================================
   // LOAD MY ATTENDANCE
-  // EMPLOYEE ONLY
+  // HR + ORDINARY EMPLOYEE
+  // SUPER ADMIN DOES NOT NEED THIS
   // =========================================
 
   const loadMyAttendance = useCallback(async () => {
@@ -443,51 +693,107 @@ const EmployeeAttendance = () => {
       [];
 
     const todayRecord = records.find(
-      (item) => item.attendanceDate === getTodayDate()
+      (item) =>
+        getAttendanceDateKey(item.attendanceDate) === getTodayDate()
     );
 
     setMyAttendance(todayRecord || null);
   }, []);
 
   // =========================================
-  // LOAD COMPANY ATTENDANCE
-  // SINGLE DATE / DATE RANGE / MONTHLY
+  // LOAD APPROVED LEAVES
+  // HR ONLY
   // =========================================
 
-  const loadCompanyAttendance = useCallback(async () => {
+  const loadApprovedLeaves = useCallback(async () => {
+    try {
+      const response = await api.get("/leaves/all-employee-leaves");
+
+      const requests = response.data?.requests || [];
+      const leaveMap = {};
+
+      requests.forEach((request) => {
+        // Only Approved leave requests should be highlighted.
+        if (request?.status !== "Approved") return;
+
+        const employeeId = getEmployeeMongoId(request.employeeId);
+
+        if (!employeeId) return;
+
+        // Preferred source: exact daily breakdown.
+        // This supports both Full Day and Half Day.
+        if (
+          Array.isArray(request.dailyBreakdown) &&
+          request.dailyBreakdown.length > 0
+        ) {
+          request.dailyBreakdown.forEach((day) => {
+            const dateKey = getAttendanceDateKey(day.date);
+
+            if (!dateKey) return;
+
+            leaveMap[`${employeeId}_${dateKey}`] =
+              day.dayType || (Number(day.days) === 0.5 ? "Half Day" : "Full Day");
+          });
+
+          return;
+        }
+
+        // Fallback for requests without dailyBreakdown.
+        // Use the request's startDate and endDate.
+        const dates = getDateKeysBetween(
+          getAttendanceDateKey(request.startDate),
+          getAttendanceDateKey(request.endDate)
+        );
+
+        dates.forEach((dateKey) => {
+          leaveMap[`${employeeId}_${dateKey}`] = "Full Day";
+        });
+      });
+
+      setApprovedLeaveDates(leaveMap);
+    } catch (error) {
+      setApprovedLeaveDates({});
+
+      toast.error(
+        error.response?.data?.message ||
+          "Failed to load approved employee leaves."
+      );
+    }
+  }, []);
+
+  // =========================================
+  // LOAD COMPANY / OWN ATTENDANCE
+  // =========================================
+
+  const loadAttendanceData = useCallback(async () => {
     if (attendanceView === "range" && startDate > endDate) {
-      toast.error("Start date cannot be after end date.");
-      return;
+      throw new Error("Start date cannot be after end date.");
     }
 
     if (
       attendanceView === "monthly" &&
-      (!selectedYear ||
+      (
+        !selectedYear ||
         !Number.isInteger(Number(selectedYear)) ||
         Number(selectedYear) < 1000 ||
         Number(selectedYear) > currentMonth.year ||
         !selectedMonth ||
         Number(selectedMonth) < 1 ||
-        Number(selectedMonth) > 12)
+        Number(selectedMonth) > 12
+      )
     ) {
-      toast.error("Please select a valid month and year.");
-      return;
+      throw new Error("Please select a valid month and year.");
     }
 
     let response;
 
     if (attendanceView === "single") {
       response = await api.get("/attendance/company", {
-        params: {
-          date: selectedDate,
-        },
+        params: { date: selectedDate },
       });
     } else if (attendanceView === "range") {
       response = await api.get("/attendance/date-range", {
-        params: {
-          startDate,
-          endDate,
-        },
+        params: { startDate, endDate },
       });
     } else {
       response = await api.get("/attendance/monthly", {
@@ -498,17 +804,25 @@ const EmployeeAttendance = () => {
       });
     }
 
-    const records = response.data?.records || [];
-
-    // Preserve employee-wise attendance data for Range and Monthly matrix.
-    if (attendanceView === "single") {
-      setCompanyAttendanceGroups([]);
-    } else {
-      setCompanyAttendanceGroups(records);
+    if (typeof response.data?.isCompanyWide !== "boolean") {
+      throw new Error(
+        "Attendance access information is missing. Please add isCompanyWide to the attendance controller responses."
+      );
     }
 
-    // Single Date: one row per employee.
-    // Range / Monthly: flatten records for existing summary and search.
+    const companyWide = response.data.isCompanyWide;
+    setIsCompanyWide(companyWide);
+
+    const records = response.data?.records || [];
+
+    setCompanyAttendanceGroups(
+      attendanceView === "single" ? [] : records
+    );
+
+    // =========================================
+    // NORMALIZE ATTENDANCE RECORDS
+    // =========================================
+
     const normalizedRecords =
       attendanceView === "single"
         ? records
@@ -523,6 +837,7 @@ const EmployeeAttendance = () => {
                   checkIn: null,
                   checkOut: null,
                   status: "Not Checked In",
+                  attendance: null,
                 },
               ];
             }
@@ -531,138 +846,165 @@ const EmployeeAttendance = () => {
               ...attendance,
               employee: item.employee,
               attendanceDate: attendance.attendanceDate,
+              attendance,
+              status: getDisplayStatus(attendance),
             }));
           });
 
     setCompanyAttendance(normalizedRecords);
 
- 
-// =========================================
-// SUMMARY CALCULATION
-// EXCLUDE SUNDAYS AND COMPANY HOLIDAYS
-// =========================================
+    // =========================================
+    // DATE KEYS
+    // =========================================
 
-const totalEmployees =
-  response.data?.totalEmployees ?? records.length;
+    let dateKeys = [];
 
-// Selected date / range / month-এর date keys
-let dateKeys = [];
+    if (attendanceView === "single") {
+      dateKeys = [selectedDate];
+    } else if (attendanceView === "range") {
+      dateKeys = getDateKeysBetween(startDate, endDate);
+    } else {
+      dateKeys = getMonthDateKeys(
+        selectedMonth,
+        selectedYear
+      ).filter((dateKey) => dateKey <= getTodayDate());
+    }
 
-if (attendanceView === "single") {
-  dateKeys = [selectedDate];
-} else if (attendanceView === "range") {
-  dateKeys = getDateKeysBetween(startDate, endDate);
-} else if (attendanceView === "monthly") {
-  dateKeys = getMonthDateKeys(
-    selectedMonth,
-    selectedYear
-  ).filter((dateKey) => dateKey <= getTodayDate());
-}
+    // =========================================
+    // HOLIDAY FETCH
+    // =========================================
 
-// যে বছরগুলোর holiday প্রয়োজন, সেগুলো বের করো
-const years = [
-  ...new Set(dateKeys.map((dateKey) => dateKey.slice(0, 4))),
-];
+    const years = [
+      ...new Set(dateKeys.map((dateKey) => dateKey.slice(0, 4))),
+    ];
 
-// Employee's company holidays fetch করো
-const holidayResponses = await Promise.all(
-  years.map((year) =>
-    api.get("/holidays/employee", {
-      params: {
-        year: Number(year),
-      },
-    })
-  )
-);
+    const holidayResponses = await Promise.all(
+      years.map((year) =>
+        api.get("/holidays/employee", {
+          params: { year: Number(year) },
+        })
+      )
+    );
 
-// Holiday date Set তৈরি করো
-const holidayDates = new Set(
-  holidayResponses.flatMap((holidayResponse) =>
-    (holidayResponse.data?.holidays || []).map((holiday) =>
-      getAttendanceDateKey(holiday.date)
-    )
-  )
-);
+    const holidayDates = new Set(
+      holidayResponses.flatMap((holidayResponse) =>
+        (holidayResponse.data?.holidays || []).map((holiday) =>
+          getAttendanceDateKey(holiday.date)
+        )
+      )
+    );
 
-// Sunday এবং Holiday বাদ দিয়ে eligible working dates
-const eligibleDateKeys = dateKeys.filter((dateKey) => {
-  return (
-    !isSunday(dateKey) &&
-    !holidayDates.has(dateKey)
-  );
-});
+    setCompanyHolidayDates([...holidayDates]);
 
-const eligibleDateSet = new Set(eligibleDateKeys);
+    // =========================================
+    // ELIGIBLE WORKING DAYS
+    // EXCLUDE SUNDAY + COMPANY HOLIDAYS
+    // =========================================
 
-// শুধু eligible working dates-এর attendance count
-const checkedIn = normalizedRecords.filter((item) => {
-  const attendanceDate =
-    attendanceView === "single"
-      ? selectedDate
-      : getAttendanceDateKey(item.attendanceDate);
+    const eligibleDateKeys = dateKeys.filter(
+      (dateKey) =>
+        !isSunday(dateKey) && !holidayDates.has(dateKey)
+    );
 
-  return (
-    eligibleDateSet.has(attendanceDate) &&
-    Boolean(item.checkIn)
-  );
-}).length;
+    const eligibleDateSet = new Set(eligibleDateKeys);
 
-const checkedOut = normalizedRecords.filter((item) => {
-  const attendanceDate =
-    attendanceView === "single"
-      ? selectedDate
-      : getAttendanceDateKey(item.attendanceDate);
+    // =========================================
+    // SUMMARY
+    // =========================================
 
-  return (
-    eligibleDateSet.has(attendanceDate) &&
-    Boolean(item.checkOut)
-  );
-}).length;
+    const totalEmployees =
+      response.data?.totalEmployees ?? records.length;
 
-// Eligible employee-days
-const totalEmployeeDays =
-  totalEmployees * eligibleDateKeys.length;
+    const checkedInCount = normalizedRecords.filter((item) => {
+      const attendanceDate =
+        attendanceView === "single"
+          ? selectedDate
+          : getAttendanceDateKey(item.attendanceDate);
 
-// Final Not Checked In
-const notCheckedIn = Math.max(
-  0,
-  totalEmployeeDays - checkedIn
-);
+      return (
+        eligibleDateSet.has(attendanceDate) &&
+        Boolean(item.checkIn)
+      );
+    }).length;
 
-setSummary({
-  totalEmployees,
-  checkedIn,
-  checkedOut,
-  notCheckedIn,
-});
+    const checkedOutCount = normalizedRecords.filter((item) => {
+      const attendanceDate =
+        attendanceView === "single"
+          ? selectedDate
+          : getAttendanceDateKey(item.attendanceDate);
 
+      return (
+        eligibleDateSet.has(attendanceDate) &&
+        Boolean(item.checkOut)
+      );
+    }).length;
+
+    const totalEmployeeDays =
+      totalEmployees * eligibleDateKeys.length;
+
+    const notCheckedInCount = Math.max(
+      0,
+      totalEmployeeDays - checkedInCount
+    );
+
+    setSummary({
+      totalEmployees,
+      checkedIn: checkedInCount,
+      checkedOut: checkedOutCount,
+      notCheckedIn: notCheckedInCount,
+    });
+
+    return companyWide;
   }, [
-  attendanceView,
-  selectedDate,
-  startDate,
-  endDate,
-  selectedMonth,
-  selectedYear,
-]);
+    attendanceView,
+    selectedDate,
+    startDate,
+    endDate,
+    selectedMonth,
+    selectedYear,
+    currentMonth.year,
+  ]);
 
   // =========================================
-  // LOAD ALL ATTENDANCE DATA
+  // LOAD ALL DATA
   // =========================================
 
   const loadAttendance = useCallback(async () => {
     setLoading(true);
 
     try {
-      await Promise.all([loadMyAttendance(), loadCompanyAttendance()]);
-    } catch (err) {
+      const hrViewer = await loadViewerProfile();
+      const companyWide = await loadAttendanceData();
+
+      // HR and ordinary employees both have their own attendance.
+      // Super Admin only has company attendance.
+      if (!companyWide || hrViewer) {
+        await loadMyAttendance();
+      } else {
+        setMyAttendance(null);
+      }
+
+      // Only HR / Head Recruiter can call this employee endpoint.
+      if (hrViewer && companyWide) {
+        await loadApprovedLeaves();
+      } else {
+        setApprovedLeaveDates({});
+      }
+    } catch (error) {
       toast.error(
-        err.response?.data?.message ||
+        error.response?.data?.message ||
+          error.message ||
           "Failed to load attendance information."
       );
     } finally {
       setLoading(false);
     }
-  }, [loadMyAttendance, loadCompanyAttendance]);
+  }, [
+    loadViewerProfile,
+    loadAttendanceData,
+    loadMyAttendance,
+    loadApprovedLeaves,
+  ]);
 
   useEffect(() => {
     loadAttendance();
@@ -674,15 +1016,18 @@ setSummary({
 
   const handleCheckIn = async () => {
     setActionLoading("check-in");
+
     try {
       const response = await api.post("/attendance/check-in");
+
       toast.success(
         response.data?.message || "Checked in successfully."
       );
+
       await loadAttendance();
-    } catch (err) {
+    } catch (error) {
       toast.error(
-        err.response?.data?.message || "Unable to check in."
+        error.response?.data?.message || "Unable to check in."
       );
     } finally {
       setActionLoading("");
@@ -715,7 +1060,6 @@ setSummary({
               type="button"
               onClick={async () => {
                 closeToast();
-
                 setActionLoading("check-out");
 
                 try {
@@ -729,9 +1073,9 @@ setSummary({
                   );
 
                   await loadAttendance();
-                } catch (err) {
+                } catch (error) {
                   toast.error(
-                    err.response?.data?.message ||
+                    error.response?.data?.message ||
                       "Unable to check out."
                   );
                 } finally {
@@ -756,21 +1100,102 @@ setSummary({
   };
 
   // =========================================
-  // SEARCH EMPLOYEES
-  // NAME / EMPLOYEE ID / EMAIL
+  // OPEN EDIT MODAL
+  // =========================================
+
+  const openEditModal = (employee, date, attendance) => {
+    if (!isCompanyWide) return;
+
+    setEditData({
+      employee,
+      date,
+      attendance: attendance || null,
+    });
+  };
+
+  // =========================================
+  // SAVE HR ATTENDANCE EDIT
+  // =========================================
+
+  const handleSaveAttendanceEdit = async (payload) => {
+    if (!payload.employeeId || !payload.date) {
+      toast.error("Employee and attendance date are required.");
+      return;
+    }
+
+    const requestBody = {
+      employeeId: payload.employeeId,
+      date: payload.date,
+    };
+
+    if (payload.checkInTime) {
+      requestBody.checkInTime = payload.checkInTime;
+    }
+
+    if (payload.checkOutTime) {
+      requestBody.checkOutTime = payload.checkOutTime;
+    }
+
+    if (
+      !requestBody.checkInTime &&
+      !requestBody.checkOutTime
+    ) {
+      toast.error("Please provide at least one attendance time.");
+      return;
+    }
+
+    setSavingEdit(true);
+
+    try {
+      const response = await api.put(
+        "/attendance/update-employee-time",
+        requestBody
+      );
+
+      toast.success(
+        response.data?.message ||
+          "Employee attendance updated successfully."
+      );
+
+      setEditData(null);
+      await loadAttendance();
+    } catch (error) {
+      toast.error(
+        error.response?.data?.message ||
+          "Failed to update employee attendance."
+      );
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // =========================================
+  // SEARCH
   // =========================================
 
   const filteredCompanyAttendance = useMemo(() => {
     const searchText = employeeSearch.trim().toLowerCase();
 
-    if (!searchText) {
-      return companyAttendance;
-    }
+    if (!searchText) return companyAttendance;
 
     return companyAttendance.filter((record) =>
       getEmployeeSearchText(record.employee).includes(searchText)
     );
   }, [companyAttendance, employeeSearch]);
+
+  const filteredMatrixEmployees = useMemo(() => {
+    const searchText = employeeSearch.trim().toLowerCase();
+
+    if (!searchText) return companyAttendanceGroups;
+
+    return companyAttendanceGroups.filter((item) =>
+      getEmployeeSearchText(item.employee).includes(searchText)
+    );
+  }, [companyAttendanceGroups, employeeSearch]);
+
+  // =========================================
+  // MATRIX DATES
+  // =========================================
 
   const matrixDates = useMemo(() => {
     if (attendanceView === "range") {
@@ -778,23 +1203,25 @@ setSummary({
     }
 
     if (attendanceView === "monthly") {
-      return getMonthDateKeys(selectedMonth, selectedYear);
+      return getMonthDateKeys(
+        selectedMonth,
+        selectedYear
+      ).filter((dateKey) => dateKey <= today);
     }
 
     return [];
-  }, [attendanceView, startDate, endDate, selectedMonth, selectedYear]);
+  }, [
+    attendanceView,
+    startDate,
+    endDate,
+    selectedMonth,
+    selectedYear,
+    today,
+  ]);
 
-  const filteredMatrixEmployees = useMemo(() => {
-    const searchText = employeeSearch.trim().toLowerCase();
-
-    if (!searchText) {
-      return companyAttendanceGroups;
-    }
-
-    return companyAttendanceGroups.filter((item) =>
-      getEmployeeSearchText(item.employee).includes(searchText)
-    );
-  }, [companyAttendanceGroups, employeeSearch]);
+  // =========================================
+  // MATRIX MONTH GROUPS
+  // =========================================
 
   const monthGroups = useMemo(() => {
     const groups = [];
@@ -817,20 +1244,94 @@ setSummary({
   }, [matrixDates]);
 
   // =========================================
-  // ATTENDANCE STATUS
+  // MY ATTENDANCE STATUS
   // =========================================
 
   const checkedIn = Boolean(myAttendance?.checkIn);
   const checkedOut = Boolean(myAttendance?.checkOut);
-
   const isToday = selectedDate === getTodayDate();
 
-  const getEmployeeName = (employee) => {
-    return employee?.name || "Unknown employee";
+  // =========================================
+  // DATE CELL HELPERS
+  // =========================================
+
+  const isCompanyHoliday = (dateKey) =>
+    companyHolidayDates.includes(dateKey);
+
+  const getApprovedLeaveType = (employee, dateKey) => {
+    const employeeId = getEmployeeMongoId(employee);
+
+    if (!employeeId || !dateKey) return "";
+
+    return approvedLeaveDates[`${employeeId}_${dateKey}`] || "";
   };
 
-  const getEmployeeId = (employee) => {
-    return employee?.empId || "—";
+  const getMatrixDateClasses = (dateKey) => {
+    if (isSunday(dateKey)) {
+      return "bg-rose-100 text-rose-700 border-rose-200";
+    }
+
+    if (isCompanyHoliday(dateKey)) {
+      return "bg-amber-100 text-amber-800 border-amber-200";
+    }
+
+    return "bg-slate-50 text-slate-600 border-slate-200";
+  };
+
+  const getMatrixCellClasses = (employee, dateKey) => {
+    // Sunday has priority over holiday/leave.
+    if (isSunday(dateKey)) {
+      return "bg-rose-50 text-rose-700";
+    }
+
+    // Company holiday has priority over employee leave.
+    if (isCompanyHoliday(dateKey)) {
+      return "bg-amber-50 text-amber-800";
+    }
+
+    // Only this employee's approved leave is green.
+    const leaveType = getApprovedLeaveType(employee, dateKey);
+
+    if (leaveType) {
+      return "bg-emerald-100 text-emerald-800";
+    }
+
+    return "bg-white";
+  };
+
+  // =========================================
+  // ATTENDANCE EDIT CELL
+  // =========================================
+
+  const renderEditableTime = (
+    employee,
+    date,
+    attendance,
+    type
+  ) => {
+    const value =
+      type === "in"
+        ? attendance?.checkIn
+        : attendance?.checkOut;
+
+    return (
+      <div className="flex items-center justify-center gap-1">
+        <TimePill value={value} type={type} />
+
+        {isCompanyWide && (
+          <EditTimeButton
+            label={
+              type === "in"
+                ? "Edit Check In Time"
+                : "Edit Check Out Time"
+            }
+            onClick={() =>
+              openEditModal(employee, date, attendance)
+            }
+          />
+        )}
+      </div>
+    );
   };
 
   // =========================================
@@ -839,7 +1340,8 @@ setSummary({
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
-      {/* Header */}
+      {/* HEADER */}
+
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div className="flex items-center gap-3">
           <div className="rounded-xl bg-blue-50 p-3 text-blue-600">
@@ -852,7 +1354,9 @@ setSummary({
             </h1>
 
             <p className="mt-1 text-sm text-slate-500">
-              Manage your attendance and view company attendance.
+              {isCompanyWide === true
+                ? "Manage and monitor company employee attendance."
+                : "Manage your attendance and view your attendance history."}
             </p>
           </div>
         </div>
@@ -871,664 +1375,869 @@ setSummary({
         </button>
       </div>
 
-      {/* =========================================
-          MY ATTENDANCE
-      ========================================= */}
+      {/* INITIAL ACCESS LOADING */}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="mb-5">
-          <h2 className="text-lg font-bold text-slate-800">
-            My Attendance
-          </h2>
-
-          <p className="mt-1 text-sm text-slate-500">
-            Check in when you start work and check out when you finish.
-          </p>
+      {isCompanyWide === null && loading && (
+        <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white p-10 text-sm text-slate-500">
+          <LoaderCircle size={18} className="animate-spin" />
+          Checking attendance access...
         </div>
+      )}
 
-        {loading ? (
-          <div className="flex items-center gap-2 py-5 text-sm text-slate-500">
-            <LoaderCircle size={18} className="animate-spin" />
-            Loading your attendance...
-          </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {/* Check In Time */}
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
-                  <LogIn size={17} />
-                  Check In
-                </div>
+      {/* MY ATTENDANCE
+          HR + ORDINARY EMPLOYEE ONLY */}
 
-                <p className="mt-2 text-2xl font-bold text-slate-800">
-                  {formatTime(myAttendance?.checkIn)}
-                </p>
-              </div>
+      {isCompanyWide !== null &&
+        (isCompanyWide === false || isHRViewer) && (
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-5">
+              <h2 className="text-lg font-bold text-slate-800">
+                My Attendance
+              </h2>
 
-              {/* Check Out Time */}
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
-                  <LogOut size={17} />
-                  Check Out
-                </div>
-
-                <p className="mt-2 text-2xl font-bold text-slate-800">
-                  {formatTime(myAttendance?.checkOut)}
-                </p>
-              </div>
+              <p className="mt-1 text-sm text-slate-500">
+                Check in when you start work and check out when you finish.
+              </p>
             </div>
 
-            {/* Check In / Check Out Buttons */}
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-              <button
-                type="button"
-                onClick={handleCheckIn}
-                disabled={
-                  !isToday || checkedIn || Boolean(actionLoading)
-                }
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {actionLoading === "check-in" ? (
-                  <LoaderCircle size={17} className="animate-spin" />
-                ) : (
-                  <LogIn size={17} />
+            {loading ? (
+              <div className="flex items-center gap-2 py-5 text-sm text-slate-500">
+                <LoaderCircle size={18} className="animate-spin" />
+                Loading your attendance...
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+                      <LogIn size={17} />
+                      Check In
+                    </div>
+
+                    <p className="mt-2 text-2xl font-bold text-slate-800">
+                      {formatTime(myAttendance?.checkIn)}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+                      <LogOut size={17} />
+                      Check Out
+                    </div>
+
+                    <p className="mt-2 text-2xl font-bold text-slate-800">
+                      {formatTime(myAttendance?.checkOut)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={handleCheckIn}
+                    disabled={
+                      !isToday ||
+                      checkedIn ||
+                      Boolean(actionLoading)
+                    }
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {actionLoading === "check-in" ? (
+                      <LoaderCircle
+                        size={17}
+                        className="animate-spin"
+                      />
+                    ) : (
+                      <LogIn size={17} />
+                    )}
+
+                    {checkedIn ? "Already Checked In" : "Check In"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCheckOut}
+                    disabled={
+                      !isToday ||
+                      !checkedIn ||
+                      checkedOut ||
+                      Boolean(actionLoading)
+                    }
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {actionLoading === "check-out" ? (
+                      <LoaderCircle
+                        size={17}
+                        className="animate-spin"
+                      />
+                    ) : (
+                      <LogOut size={17} />
+                    )}
+
+                    {checkedOut ? "Already Checked Out" : "Check Out"}
+                  </button>
+                </div>
+
+                {!isToday && (
+                  <p className="mt-3 text-xs text-amber-700">
+                    You can only check in or check out for today's date.
+                  </p>
                 )}
 
-                {checkedIn ? "Already Checked In" : "Check In"}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleCheckOut}
-                disabled={
-                  !isToday ||
-                  !checkedIn ||
-                  checkedOut ||
-                  Boolean(actionLoading)
-                }
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {actionLoading === "check-out" ? (
-                  <LoaderCircle size={17} className="animate-spin" />
-                ) : (
-                  <LogOut size={17} />
+                {checkedIn && !checkedOut && isToday && (
+                  <p className="mt-3 text-sm text-blue-700">
+                    You have checked in. Don't forget to check out when
+                    you finish work.
+                  </p>
                 )}
 
-                {checkedOut ? "Already Checked Out" : "Check Out"}
-              </button>
-            </div>
-
-            {!isToday && (
-              <p className="mt-3 text-xs text-amber-700">
-                You can only check in or check out for today's date.
-              </p>
+                {checkedOut && (
+                  <p className="mt-3 text-sm text-emerald-700">
+                    Your attendance for today is complete.
+                  </p>
+                )}
+              </>
             )}
-
-            {checkedIn && !checkedOut && isToday && (
-              <p className="mt-3 text-sm text-blue-700">
-                You have checked in. Don't forget to check out when you finish work.
-              </p>
-            )}
-
-            {checkedOut && (
-              <p className="mt-3 text-sm text-emerald-700">
-                Your attendance for today is complete.
-              </p>
-            )}
-          </>
+          </section>
         )}
-      </section>
 
-      {/* =========================================
-          COMPANY ATTENDANCE
-      ========================================= */}
+      {/* ATTENDANCE HISTORY / COMPANY ATTENDANCE */}
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        {/* Section Header */}
-        <div className="space-y-5 border-b border-slate-200 p-5">
-          <div>
-            <h2 className="text-lg font-bold text-slate-800">
-              Company Attendance
-            </h2>
+      {isCompanyWide !== null && (
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          {/* SECTION HEADER */}
 
-            <p className="mt-1 text-sm text-slate-500">
-              View employee attendance by single date, date range or month.
-            </p>
-          </div>
+          <div className="space-y-5 border-b border-slate-200 p-5">
+            <div>
+              <h2 className="text-lg font-bold text-slate-800">
+                {isCompanyWide
+                  ? "Company Attendance"
+                  : "My Attendance History"}
+              </h2>
 
-          {/* Attendance Tabs */}
-          <div className="grid grid-cols-1 gap-2 rounded-xl bg-slate-100 p-1 sm:grid-cols-3">
-            {[
-              { value: "single", label: "Single Date" },
-              { value: "range", label: "Date Range" },
-              { value: "monthly", label: "Monthly" },
-            ].map((tab) => (
-              <button
-                key={tab.value}
-                type="button"
-                onClick={() => setAttendanceView(tab.value)}
-                className={`rounded-lg px-3 py-3 text-sm font-semibold transition ${
-                  attendanceView === tab.value
-                    ? "bg-white text-blue-700 shadow-sm"
-                    : "text-slate-600 hover:bg-white/70"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Date Selection */}
-          {attendanceView === "single" && (
-            <div className="max-w-xs">
-              <label
-                htmlFor="attendance-date"
-                className="mb-1.5 block text-xs font-semibold text-slate-600"
-              >
-                Select Date
-              </label>
-
-              <input
-                id="attendance-date"
-                type="date"
-                value={selectedDate}
-                max={today}
-                onChange={(event) => setSelectedDate(event.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              />
+              <p className="mt-1 text-sm text-slate-500">
+                {isCompanyWide
+                  ? "View and manage attendance of all employees in your company."
+                  : "View your attendance by single date, date range or month."}
+              </p>
             </div>
-          )}
 
-          {attendanceView === "range" && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
+            {/* ATTENDANCE TABS */}
+
+            <div className="grid grid-cols-1 gap-2 rounded-xl bg-slate-100 p-1 sm:grid-cols-3">
+              {[
+                { value: "single", label: "Single Date" },
+                { value: "range", label: "Date Range" },
+                { value: "monthly", label: "Monthly" },
+              ].map((tab) => (
+                <button
+                  key={tab.value}
+                  type="button"
+                  onClick={() => setAttendanceView(tab.value)}
+                  className={`rounded-lg px-3 py-3 text-sm font-semibold transition ${
+                    attendanceView === tab.value
+                      ? "bg-white text-blue-700 shadow-sm"
+                      : "text-slate-600 hover:bg-white/70"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* SINGLE DATE */}
+
+            {attendanceView === "single" && (
+              <div className="max-w-xs">
                 <label
-                  htmlFor="attendance-start-date"
+                  htmlFor="attendance-date"
                   className="mb-1.5 block text-xs font-semibold text-slate-600"
                 >
-                  Start Date
+                  Select Date
                 </label>
 
                 <input
-                  id="attendance-start-date"
+                  id="attendance-date"
                   type="date"
-                  value={startDate}
+                  value={selectedDate}
                   max={today}
-                  onChange={(event) => setStartDate(event.target.value)}
+                  onChange={(event) =>
+                    setSelectedDate(event.target.value)
+                  }
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               </div>
+            )}
 
+            {/* DATE RANGE */}
+
+            {attendanceView === "range" && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="attendance-start-date"
+                    className="mb-1.5 block text-xs font-semibold text-slate-600"
+                  >
+                    Start Date
+                  </label>
+
+                  <input
+                    id="attendance-start-date"
+                    type="date"
+                    value={startDate}
+                    max={today}
+                    onChange={(event) =>
+                      setStartDate(event.target.value)
+                    }
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="attendance-end-date"
+                    className="mb-1.5 block text-xs font-semibold text-slate-600"
+                  >
+                    End Date
+                  </label>
+
+                  <input
+                    id="attendance-end-date"
+                    type="date"
+                    value={endDate}
+                    min={startDate}
+                    max={today}
+                    onChange={(event) =>
+                      setEndDate(event.target.value)
+                    }
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* MONTHLY */}
+
+            {attendanceView === "monthly" && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="attendance-month"
+                    className="mb-1.5 block text-xs font-semibold text-slate-600"
+                  >
+                    Select Month
+                  </label>
+
+                  <select
+                    id="attendance-month"
+                    value={selectedMonth}
+                    onChange={(event) =>
+                      setSelectedMonth(event.target.value)
+                    }
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                  >
+                    {[
+                      "January",
+                      "February",
+                      "March",
+                      "April",
+                      "May",
+                      "June",
+                      "July",
+                      "August",
+                      "September",
+                      "October",
+                      "November",
+                      "December",
+                    ].map((month, index) => (
+                      <option
+                        key={month}
+                        value={String(index + 1).padStart(2, "0")}
+                      >
+                        {month}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="attendance-year"
+                    className="mb-1.5 block text-xs font-semibold text-slate-600"
+                  >
+                    Select Year
+                  </label>
+
+                  <input
+                    id="attendance-year"
+                    type="number"
+                    min="1000"
+                    max={currentMonth.year}
+                    value={selectedYear}
+                    onChange={(event) =>
+                      setSelectedYear(event.target.value)
+                    }
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* EMPLOYEE SEARCH */}
+
+            {isCompanyWide && (
               <div>
                 <label
-                  htmlFor="attendance-end-date"
+                  htmlFor="attendance-search"
                   className="mb-1.5 block text-xs font-semibold text-slate-600"
                 >
-                  End Date
+                  Search Employee
                 </label>
 
-                <input
-                  id="attendance-end-date"
-                  type="date"
-                  value={endDate}
-                  min={startDate}
-                  max={today}
-                  onChange={(event) => setEndDate(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                <div className="relative">
+                  <UserRound
+                    size={18}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+
+                  <input
+                    id="attendance-search"
+                    type="text"
+                    value={employeeSearch}
+                    onChange={(event) =>
+                      setEmployeeSearch(event.target.value)
+                    }
+                    placeholder="Search by employee name, ID or email..."
+                    className="w-full rounded-lg border border-slate-300 bg-white py-3 pl-10 pr-4 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* LEGEND */}
+
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-slate-100 px-5 py-3 text-xs font-medium text-slate-600">
+            <span className="inline-flex items-center gap-2">
+              <span className="h-3 w-3 rounded-sm bg-rose-200 ring-1 ring-rose-300" />
+              Sunday
+            </span>
+
+            <span className="inline-flex items-center gap-2">
+              <span className="h-3 w-3 rounded-sm bg-amber-200 ring-1 ring-amber-300" />
+              Company Holiday
+            </span>
+
+            {isHRViewer && (
+              <span className="inline-flex items-center gap-2">
+                <span className="h-3 w-3 rounded-sm bg-emerald-200 ring-1 ring-emerald-300" />
+                Approved Leave
+              </span>
+            )}
+          </div>
+
+          {/* SUMMARY CARDS */}
+
+          <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4">
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="rounded-lg bg-white p-2.5 text-slate-600 shadow-sm">
+                <Users size={18} />
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-slate-500">
+                  {isCompanyWide ? "Total Employees" : "My Records"}
+                </p>
+                <p className="mt-0.5 text-2xl font-bold text-slate-800">
+                  {summary.totalEmployees}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4">
+              <div className="rounded-lg bg-white p-2.5 text-blue-600 shadow-sm">
+                <LogIn size={18} />
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-blue-700">
+                  Checked In
+                </p>
+                <p className="mt-0.5 text-2xl font-bold text-blue-700">
+                  {summary.checkedIn}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+              <div className="rounded-lg bg-white p-2.5 text-emerald-600 shadow-sm">
+                <CheckCircle2 size={18} />
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-emerald-700">
+                  Checked Out
+                </p>
+                <p className="mt-0.5 text-2xl font-bold text-emerald-700">
+                  {summary.checkedOut}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 rounded-xl border border-amber-100 bg-amber-50 p-4">
+              <div className="rounded-lg bg-white p-2.5 text-amber-600 shadow-sm">
+                <AlertCircle size={18} />
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-amber-700">
+                  Not Checked In
+                </p>
+                <p className="mt-0.5 text-2xl font-bold text-amber-700">
+                  {summary.notCheckedIn}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* ATTENDANCE TABLE / MATRIX */}
+
+          <div className="px-5 pb-5">
+            {loading ? (
+              <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 p-10 text-sm text-slate-500">
+                <LoaderCircle
+                  size={18}
+                  className="animate-spin"
                 />
+                Loading attendance...
               </div>
-            </div>
-          )}
+            ) : attendanceView === "single" ? (
+              filteredCompanyAttendance.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-10 text-center">
+                  <Users
+                    size={32}
+                    className="mx-auto text-slate-300"
+                  />
 
-          {attendanceView === "monthly" && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <label
-                  htmlFor="attendance-month"
-                  className="mb-1.5 block text-xs font-semibold text-slate-600"
-                >
-                  Select Month
-                </label>
+                  <p className="mt-3 font-medium text-slate-700">
+                    {employeeSearch
+                      ? "No matching employees found"
+                      : "No attendance records found"}
+                  </p>
 
-                <select
-                  id="attendance-month"
-                  value={selectedMonth}
-                  onChange={(event) => setSelectedMonth(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                >
-                  {[
-                    "January",
-                    "February",
-                    "March",
-                    "April",
-                    "May",
-                    "June",
-                    "July",
-                    "August",
-                    "September",
-                    "October",
-                    "November",
-                    "December",
-                  ].map((month, index) => (
-                    <option
-                      key={month}
-                      value={String(index + 1).padStart(2, "0")}
-                    >
-                      {month}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  <p className="mt-1 text-sm text-slate-500">
+                    No attendance information is available for this selection.
+                  </p>
+                </div>
+              ) : (
+                <DualScrollTable maxHeight="68vh">
+                  <table className="w-full min-w-[1050px] border-separate border-spacing-0 text-left text-sm">
+                    <thead>
+                      <tr>
+                        {[
+                          "Employee",
+                          "Employee ID",
+                          "Attendance Date",
+                          "Department",
+                          "Check In",
+                          "Check Out",
+                          "Status",
+                        ].map((heading, index) => (
+                          <th
+                            key={heading}
+                            className={`sticky top-0 border-b border-slate-200 bg-slate-50 px-5 py-3.5 text-xs font-semibold tracking-wide text-slate-500 ${
+                              index === 0
+                                ? "left-0 z-30"
+                                : "z-20"
+                            }`}
+                          >
+                            {heading}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
 
-              <div>
-                <label
-                  htmlFor="attendance-year"
-                  className="mb-1.5 block text-xs font-semibold text-slate-600"
-                >
-                  Select Year
-                </label>
+                    <tbody>
+                      {filteredCompanyAttendance.map(
+                        (record, index) => {
+                          const employee = record.employee;
 
-                <input
-                  id="attendance-year"
-                  type="number"
-                  min="1000"
-                  max={currentMonth.year}
-                  value={selectedYear}
-                  onChange={(event) => setSelectedYear(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                />
-              </div>
-            </div>
-          )}
+                          const attendance =
+                            record.attendance ||
+                            (record.checkIn || record.checkOut
+                              ? record
+                              : null);
 
-          {/* Employee Search */}
-          <div>
-            <label
-              htmlFor="attendance-search"
-              className="mb-1.5 block text-xs font-semibold text-slate-600"
-            >
-              Search Employee
-            </label>
+                          const attendanceDate =
+                            record.attendanceDate ||
+                            record.date ||
+                            selectedDate;
 
-            <div className="relative">
-              <UserRound
-                size={18}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-              />
+                          const status = getDisplayStatus(attendance);
 
-              <input
-                id="attendance-search"
-                type="text"
-                value={employeeSearch}
-                onChange={(event) => setEmployeeSearch(event.target.value)}
-                placeholder="Search by employee name, ID or email..."
-                className="w-full rounded-lg border border-slate-300 bg-white py-3 pl-10 pr-4 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              />
-            </div>
-          </div>
-        </div>
+                          return (
+                            <tr
+                              key={`${employee?._id || index}-${index}`}
+                              className="group"
+                            >
+                              <td className="sticky left-0 z-10 border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
+                                <div className="flex items-center gap-3">
+                                  <Avatar name={employee?.name} />
 
-        {/* Summary */}
-        <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4">
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <div className="rounded-lg bg-white p-2.5 text-slate-600 shadow-sm">
-              <Users size={18} />
-            </div>
+                                  <div className="min-w-0">
+                                    <p className="truncate font-semibold text-slate-800">
+                                      {getEmployeeName(employee)}
+                                    </p>
 
-            <div>
-              <p className="text-xs font-medium text-slate-500">
-                Total Employees
-              </p>
-              <p className="mt-0.5 text-2xl font-bold text-slate-800">
-                {summary.totalEmployees}
-              </p>
-            </div>
-          </div>
+                                    {employee?.email && (
+                                      <p className="truncate text-xs text-slate-500">
+                                        {employee.email}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
 
-          <div className="flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4">
-            <div className="rounded-lg bg-white p-2.5 text-blue-600 shadow-sm">
-              <LogIn size={18} />
-            </div>
+                              <td className="border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
+                                <span className="inline-flex rounded-md bg-slate-100 px-2 py-1 font-mono text-xs font-medium text-slate-600">
+                                  {getEmployeeId(employee)}
+                                </span>
+                              </td>
 
-            <div>
-              <p className="text-xs font-medium text-blue-700">
-                Checked In
-              </p>
-              <p className="mt-0.5 text-2xl font-bold text-blue-700">
-                {summary.checkedIn}
-              </p>
-            </div>
-          </div>
+                              <td className="border-b border-slate-100 bg-white px-5 py-3.5 text-slate-600 group-hover:bg-blue-50/60">
+                                <span className="inline-flex items-center gap-2">
+                                  <CalendarDays
+                                    size={14}
+                                    className="text-slate-400"
+                                  />
+                                  {formatDate(attendanceDate)}
+                                </span>
+                              </td>
 
-          <div className="flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50 p-4">
-            <div className="rounded-lg bg-white p-2.5 text-emerald-600 shadow-sm">
-              <CheckCircle2 size={18} />
-            </div>
+                              <td className="border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
+                                {employee?.departmentId?.departmentName ? (
+                                  <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700 ring-1 ring-inset ring-violet-100">
+                                    <Building2 size={12} />
+                                    {employee.departmentId.departmentName}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-300">—</span>
+                                )}
+                              </td>
 
-            <div>
-              <p className="text-xs font-medium text-emerald-700">
-                Checked Out
-              </p>
-              <p className="mt-0.5 text-2xl font-bold text-emerald-700">
-                {summary.checkedOut}
-              </p>
-            </div>
-          </div>
+                              <td className="border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
+                                {renderEditableTime(
+                                  employee,
+                                  attendanceDate,
+                                  attendance,
+                                  "in"
+                                )}
+                              </td>
 
-          <div className="flex items-center gap-3 rounded-xl border border-amber-100 bg-amber-50 p-4">
-            <div className="rounded-lg bg-white p-2.5 text-amber-600 shadow-sm">
-              <AlertCircle size={18} />
-            </div>
+                              <td className="border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
+                                {renderEditableTime(
+                                  employee,
+                                  attendanceDate,
+                                  attendance,
+                                  "out"
+                                )}
+                              </td>
 
-            <div>
-              <p className="text-xs font-medium text-amber-700">
-                Not Checked In
-              </p>
-              <p className="mt-0.5 text-2xl font-bold text-amber-700">
-                {summary.notCheckedIn}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Attendance Table / Matrix */}
-        <div className="px-5 pb-5">
-          {loading ? (
-            <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 p-10 text-sm text-slate-500">
-              <LoaderCircle size={18} className="animate-spin" />
-              Loading company attendance...
-            </div>
-          ) : attendanceView === "single" ? (
-            /* =====================================
-               SINGLE DATE TABLE
-            ===================================== */
-            filteredCompanyAttendance.length === 0 ? (
+                              <td className="border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
+                                <StatusBadge status={status} />
+                              </td>
+                            </tr>
+                          );
+                        }
+                      )}
+                    </tbody>
+                  </table>
+                </DualScrollTable>
+              )
+            ) : filteredMatrixEmployees.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-10 text-center">
-                <Users size={32} className="mx-auto text-slate-300" />
+                <Users
+                  size={32}
+                  className="mx-auto text-slate-300"
+                />
 
                 <p className="mt-3 font-medium text-slate-700">
                   {employeeSearch
                     ? "No matching employees found"
-                    : "No attendance records found"}
+                    : "No employees found"}
                 </p>
 
                 <p className="mt-1 text-sm text-slate-500">
-                  No attendance information is available for this selection.
+                  No employee attendance information is available.
                 </p>
               </div>
             ) : (
-              <DualScrollTable maxHeight="68vh">
-                <table className="w-full min-w-[900px] border-separate border-spacing-0 text-left text-sm">
+              <DualScrollTable maxHeight="72vh">
+                <table className="border-separate border-spacing-0 text-center text-xs">
                   <thead>
+                    {/* MONTH HEADER */}
+
                     <tr>
-                      {[
-                        "Employee",
-                        "Employee ID",
-                        "Attendance Date",
-                        "Department",
-                        "Check In",
-                        "Check Out",
-                        "Status",
-                      ].map((heading, index) => (
+                      <th
+                        rowSpan={2}
+                        className="sticky left-0 top-0 z-40 min-w-[220px] border-b border-r border-slate-200 bg-slate-100 px-4 py-3 text-left text-sm font-bold text-slate-700"
+                      >
+                        Employee
+                      </th>
+
+                      {monthGroups.map((group) => (
                         <th
-                          key={heading}
-                          className={`sticky top-0 border-b border-slate-200 bg-slate-50 px-5 py-3.5 text-xs font-semibold tracking-wide text-slate-500 ${
-                            index === 0
-                              ? "left-0 z-30"
-                              : "z-20"
-                          }`}
+                          key={group.label}
+                          colSpan={group.dates.length}
+                          style={{ height: 44 }}
+                          className="sticky top-0 z-20 border-b border-r border-blue-100 bg-blue-50 px-3 text-left text-sm font-bold text-blue-800"
                         >
-                          {heading}
+                          <span className="sticky left-[236px]">
+                            {group.label}
+                          </span>
                         </th>
                       ))}
+                    </tr>
+
+                    {/* INDIVIDUAL DATE HEADER */}
+
+                    <tr>
+                      {matrixDates.map((dateKey) => {
+                        const isCurrentDay = dateKey === today;
+
+                        return (
+                          <th
+                            key={dateKey}
+                            style={{ top: 44 }}
+                            className={`sticky z-20 min-w-[108px] border-b border-r px-2 py-2 font-semibold ${getMatrixDateClasses(dateKey)}`}
+                          >
+                            <div className="flex flex-col items-center gap-1">
+                              <span
+                                className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${
+                                  isCurrentDay
+                                    ? "bg-blue-600 text-white"
+                                    : ""
+                                }`}
+                              >
+                                {getDayNumber(dateKey)}
+                              </span>
+
+                              <span className="text-[11px] font-medium opacity-80">
+                                {getWeekdayLabel(dateKey)}
+                              </span>
+
+                              {isSunday(dateKey) && (
+                                <span className="text-[9px] font-bold">
+                                  SUNDAY
+                                </span>
+                              )}
+
+                              {!isSunday(dateKey) &&
+                                isCompanyHoliday(dateKey) && (
+                                  <span className="text-[9px] font-bold">
+                                    HOLIDAY
+                                  </span>
+                                )}
+                            </div>
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
 
                   <tbody>
-                    {filteredCompanyAttendance.map((record, index) => {
-                      const employee = record.employee;
+                    {filteredMatrixEmployees.map(
+                      (item, index) => {
+                        const employee = item.employee;
 
-                      return (
-                        <tr
-                          key={`${employee?._id || index}-${index}`}
-                          className="group"
-                        >
-                          <td className="sticky left-0 z-10 border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
-                            <div className="flex items-center gap-3">
-                              <Avatar name={employee?.name} />
+                        const attendanceByDate = new Map(
+                          (item.attendance || []).map(
+                            (attendance) => [
+                              getAttendanceDateKey(
+                                attendance.attendanceDate
+                              ),
+                              attendance,
+                            ]
+                          )
+                        );
 
-                              <div className="min-w-0">
-                                <p className="truncate font-semibold text-slate-800">
-                                  {getEmployeeName(employee)}
-                                </p>
+                        return (
+                          <tr
+                            key={employee?._id || index}
+                            className="group"
+                          >
+                            {/* EMPLOYEE COLUMN */}
 
-                                {employee?.email && (
-                                  <p className="truncate text-xs text-slate-500">
-                                    {employee.email}
+                            <td className="sticky left-0 z-10 border-b border-r border-slate-200 bg-white px-4 py-3 text-left group-hover:bg-blue-50">
+                              <div className="flex min-w-[190px] items-center gap-3">
+                                <Avatar
+                                  name={employee?.name}
+                                  size="sm"
+                                />
+
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-slate-800">
+                                    {getEmployeeName(employee)}
                                   </p>
-                                )}
+
+                                  <p className="mt-0.5 font-mono text-[11px] text-slate-500">
+                                    {getEmployeeId(employee)}
+                                  </p>
+                                </div>
                               </div>
-                            </div>
-                          </td>
+                            </td>
 
-                          <td className="border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
-                            <span className="inline-flex rounded-md bg-slate-100 px-2 py-1 font-mono text-xs font-medium text-slate-600">
-                              {getEmployeeId(employee)}
-                            </span>
-                          </td>
+                            {/* DAILY ATTENDANCE CELLS */}
 
-                          <td className="border-b border-slate-100 bg-white px-5 py-3.5 text-slate-600 group-hover:bg-blue-50/60">
-                            <span className="inline-flex items-center gap-2">
-                              <CalendarDays
-                                size={14}
-                                className="text-slate-400"
-                              />
-                              {formatDate(
-      record.attendanceDate || record.date || selectedDate
-    )}
-                            </span>
-                          </td>
+                            {matrixDates.map((dateKey) => {
+                              const attendance =
+                                attendanceByDate.get(dateKey) || null;
 
-                          <td className="border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
-                            {employee?.departmentId?.departmentName ? (
-                              <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700 ring-1 ring-inset ring-violet-100">
-                                <Building2 size={12} />
-                                {employee.departmentId.departmentName}
-                              </span>
-                            ) : (
-                              <span className="text-slate-300">—</span>
-                            )}
-                          </td>
+                              const leaveType =
+                                getApprovedLeaveType(employee, dateKey);
 
-                          <td className="border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
-                            <TimePill value={record.checkIn} type="in" />
-                          </td>
+                              const cellClasses =
+                                getMatrixCellClasses(employee, dateKey);
 
-                          <td className="border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
-                            <TimePill value={record.checkOut} type="out" />
-                          </td>
+                              return (
+                                <td
+                                  key={dateKey}
+                                  className={`min-w-[108px] border-b border-r border-slate-100 px-2 py-2.5 ${cellClasses}`}
+                                >
+                                  {attendance || isCompanyWide ? (
+                                    <div
+                                      className={`mx-auto w-[104px] space-y-1 rounded-lg border px-1.5 py-2 shadow-sm ${
+                                        leaveType &&
+                                        !isSunday(dateKey) &&
+                                        !isCompanyHoliday(dateKey)
+                                          ? "border-emerald-300 bg-emerald-100"
+                                          : isSunday(dateKey)
+                                            ? "border-rose-200 bg-rose-50"
+                                            : isCompanyHoliday(dateKey)
+                                              ? "border-amber-200 bg-amber-50"
+                                              : "border-slate-200 bg-white"
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-center gap-0.5">
+                                        <span className="text-blue-700">
+                                          <LogIn size={11} />
+                                        </span>
 
-                          <td className="border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
-                            <StatusBadge status={record.status} />
-                          </td>
-                        </tr>
-                      );
-                    })}
+                                        <span className="font-semibold tabular-nums text-blue-700">
+                                          {formatTime(attendance?.checkIn)}
+                                        </span>
+
+                                        {isCompanyWide && (
+                                          <button
+                                            type="button"
+                                            title="Edit Check In"
+                                            onClick={() =>
+                                              openEditModal(
+                                                employee,
+                                                dateKey,
+                                                attendance
+                                              )
+                                            }
+                                            className="ml-0.5 rounded p-1 text-slate-400 hover:bg-blue-50 hover:text-blue-700"
+                                          >
+                                            <Pencil size={11} />
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      <div className="flex items-center justify-center gap-0.5">
+                                        <span className="text-emerald-700">
+                                          <LogOut size={11} />
+                                        </span>
+
+                                        <span
+                                          className={`font-semibold tabular-nums ${
+                                            attendance?.checkOut
+                                              ? "text-emerald-700"
+                                              : "text-slate-400"
+                                          }`}
+                                        >
+                                          {formatTime(attendance?.checkOut)}
+                                        </span>
+
+                                        {isCompanyWide && (
+                                          <button
+                                            type="button"
+                                            title="Edit Check Out"
+                                            onClick={() =>
+                                              openEditModal(
+                                                employee,
+                                                dateKey,
+                                                attendance
+                                              )
+                                            }
+                                            className="ml-0.5 rounded p-1 text-slate-400 hover:bg-emerald-50 hover:text-emerald-700"
+                                          >
+                                            <Pencil size={11} />
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      {leaveType &&
+                                        !isSunday(dateKey) &&
+                                        !isCompanyHoliday(dateKey) && (
+                                          <div className="pt-1 text-[10px] font-bold text-emerald-800">
+                                            Approved Leave
+                                            {String(leaveType)
+                                              .toLowerCase()
+                                              .includes("half") && (
+                                              <span> · Half Day</span>
+                                            )}
+                                          </div>
+                                        )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-300">—</span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      }
+                    )}
                   </tbody>
                 </table>
               </DualScrollTable>
-            )
-          ) : /* =====================================
-               DATE RANGE / MONTHLY - MATRIX
-            ===================================== */
-          filteredMatrixEmployees.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-10 text-center">
-              <Users size={32} className="mx-auto text-slate-300" />
+            )}
+          </div>
 
-              <p className="mt-3 font-medium text-slate-700">
-                {employeeSearch
-                  ? "No matching employees found"
-                  : "No employees found"}
-              </p>
+          {/* FOOTER */}
 
-              <p className="mt-1 text-sm text-slate-500">
-                No employee attendance information is available.
-              </p>
-            </div>
-          ) : (
-            <DualScrollTable maxHeight="72vh">
-              <table className="border-separate border-spacing-0 text-center text-xs">
-                <thead>
-                  {/* Month Header */}
-                  <tr>
-                    <th
-                      rowSpan={2}
-                      className="sticky left-0 top-0 z-40 min-w-[220px] border-b border-r border-slate-200 bg-slate-100 px-4 py-3 text-left text-sm font-bold text-slate-700"
-                    >
-                      Employee
-                    </th>
+          <div className="border-t border-slate-200 bg-slate-50 px-5 py-3 text-xs text-slate-500">
+            Showing{" "}
+            <span className="font-semibold text-slate-700">
+              {attendanceView === "single"
+                ? filteredCompanyAttendance.length
+                : filteredMatrixEmployees.length}
+            </span>{" "}
+            {isCompanyWide ? "employees" : "attendance record"}
+            {attendanceView !== "single" &&
+              ` across ${matrixDates.length} days`}
+            {employeeSearch && " matching your search"}.
+          </div>
+        </section>
+      )}
 
-                    {monthGroups.map((group) => (
-                      <th
-                        key={group.label}
-                        colSpan={group.dates.length}
-                        style={{ height: 44 }}
-                        className="sticky top-0 z-20 border-b border-r border-blue-100 bg-blue-50 px-3 text-left text-sm font-bold text-blue-800"
-                      >
-                        <span className="sticky left-[236px]">
-                          {group.label}
-                        </span>
-                      </th>
-                    ))}
-                  </tr>
+      {/* EDIT ATTENDANCE MODAL */}
 
-                  {/* Individual Date Header */}
-                  <tr>
-                    {matrixDates.map((dateKey) => {
-                      const sunday = isSunday(dateKey);
-                      const isCurrentDay = dateKey === today;
-
-                      return (
-                        <th
-                          key={dateKey}
-                          style={{ top: 44 }}
-                          className={`sticky z-20 min-w-[108px] border-b border-r border-slate-200 px-2 py-2 font-semibold ${
-                            sunday
-                              ? "bg-rose-50 text-rose-600"
-                              : "bg-slate-50 text-slate-600"
-                          }`}
-                        >
-                          <div className="flex flex-col items-center gap-1">
-                            <span
-                              className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${
-                                isCurrentDay
-                                  ? "bg-blue-600 text-white"
-                                  : ""
-                              }`}
-                            >
-                              {getDayNumber(dateKey)}
-                            </span>
-
-                            <span className="text-[11px] font-medium opacity-80">
-                              {getWeekdayLabel(dateKey)}
-                            </span>
-                          </div>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredMatrixEmployees.map((item, index) => {
-                    const employee = item.employee;
-
-                    const attendanceByDate = new Map(
-                      (item.attendance || []).map((attendance) => [
-                        getAttendanceDateKey(attendance.attendanceDate),
-                        attendance,
-                      ])
-                    );
-
-                    return (
-                      <tr key={employee?._id || index} className="group">
-                        {/* Fixed Employee Column */}
-                        <td className="sticky left-0 z-10 border-b border-r border-slate-200 bg-white px-4 py-3 text-left group-hover:bg-blue-50">
-                          <div className="flex min-w-[190px] items-center gap-3">
-                            <Avatar name={employee?.name} size="sm" />
-
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-slate-800">
-                                {getEmployeeName(employee)}
-                              </p>
-
-                              <p className="mt-0.5 font-mono text-[11px] text-slate-500">
-                                {getEmployeeId(employee)}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Daily Attendance Cells */}
-                        {matrixDates.map((dateKey) => {
-                          const attendance = attendanceByDate.get(dateKey);
-                          const sunday = isSunday(dateKey);
-
-                          return (
-                            <td
-                              key={dateKey}
-                              className={`min-w-[108px] border-b border-r border-slate-100 px-2 py-2.5 group-hover:bg-blue-50/50 ${
-                                sunday ? "bg-rose-50/40" : "bg-white"
-                              }`}
-                            >
-                              {attendance ? (
-                                <div className="mx-auto w-[92px] space-y-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 shadow-sm">
-                                  <p className="flex items-center justify-between gap-1 whitespace-nowrap font-semibold tabular-nums text-blue-700">
-                                    <LogIn size={11} />
-                                    {formatTime(attendance.checkIn)}
-                                  </p>
-
-                                  <p
-                                    className={`flex items-center justify-between gap-1 whitespace-nowrap font-semibold tabular-nums ${
-                                      attendance.checkOut
-                                        ? "text-emerald-700"
-                                        : "text-slate-400"
-                                    }`}
-                                  >
-                                    <LogOut size={11} />
-                                    {formatTime(attendance.checkOut)}
-                                  </p>
-                                </div>
-                              ) : (
-                                <span className="text-slate-300">—</span>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </DualScrollTable>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="border-t border-slate-200 bg-slate-50 px-5 py-3 text-xs text-slate-500">
-          Showing{" "}
-          <span className="font-semibold text-slate-700">
-            {attendanceView === "single"
-              ? filteredCompanyAttendance.length
-              : filteredMatrixEmployees.length}
-          </span>{" "}
-          employees
-          {attendanceView !== "single" &&
-            ` across ${matrixDates.length} days`}
-          {employeeSearch && " matching your search"}.
-        </div>
-      </section>
+      {editData && (
+        <AttendanceEditModal
+          editData={editData}
+          onClose={() => {
+            if (!savingEdit) {
+              setEditData(null);
+            }
+          }}
+          onSave={handleSaveAttendanceEdit}
+          saving={savingEdit}
+        />
+      )}
     </div>
   );
 };

@@ -1,54 +1,50 @@
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   FilePlus2,
   Send,
   X,
   RefreshCw,
-  Clock,
   Wallet,
   Plus,
   Minus,
+  Clock,
+  AlertCircle,
 } from "lucide-react";
-
 import api from "../../api/axios";
 import { toast } from "react-toastify";
+
+// =====================================================
+// LEAVE TYPES
+// =====================================================
+
 const LEAVE_TYPES = [
-  {
-    leaveType: "Casual Leave",
-    field: "casualLeave",
-    shortName: "CL",
-  },
-  {
-    leaveType: "Sick Leave",
-    field: "sickLeave",
-    shortName: "SL",
-  },
-  {
-    leaveType: "Paid Leave",
-    field: "paidLeave",
-    shortName: "PL",
-  },
-  {
-    leaveType: "Unpaid Leave",
-    field: null,
-    shortName: "UL",
-  },
+  { leaveType: "Casual Leave", field: "casualLeave", shortName: "CL" },
+  { leaveType: "Sick Leave", field: "sickLeave", shortName: "SL" },
+  { leaveType: "Paid Leave", field: "paidLeave", shortName: "PL" },
+  { leaveType: "Comp-Off", field: "compOffBalance", shortName: "CO" },
+  { leaveType: "Unpaid Leave", field: null, shortName: "UL" },
 ];
 
-const initialAllocations = {
+const createInitialAllocations = () => ({
   "Casual Leave": "",
   "Sick Leave": "",
   "Paid Leave": "",
+  "Comp-Off": "",
   "Unpaid Leave": "",
-};
+});
+
+// =====================================================
+// DATE HELPERS
+// =====================================================
 
 const getToday = () => {
   const date = new Date();
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
+
   return `${year}-${month}-${day}`;
 };
 
@@ -66,6 +62,24 @@ const formatDateInput = (date) => {
   const day = String(date.getUTCDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
+};
+
+const formatDate = (date) => {
+  if (!date) return "—";
+
+  const dateString =
+    typeof date === "string" ? date.slice(0, 10) : date;
+
+  const parsed = parseLocalDate(dateString);
+
+  if (!parsed || Number.isNaN(parsed.getTime())) return "—";
+
+  return parsed.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 };
 
 const getDateRange = (startDate, endDate) => {
@@ -87,17 +101,35 @@ const getDateRange = (startDate, endDate) => {
   return dates;
 };
 
-const formatDate = (date) =>
-  date
-    ? new Date(`${date}T00:00:00`).toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      })
-    : "—";
+const getStatusClass = (status) => {
+  const normalized = String(status || "Pending").toLowerCase();
+
+  if (normalized === "approved" || normalized === "used") {
+    return "bg-emerald-50 text-emerald-700";
+  }
+
+  if (normalized === "rejected") {
+    return "bg-rose-50 text-rose-700";
+  }
+
+  return "bg-amber-50 text-amber-700";
+};
+
+const toNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+};
+
+// =====================================================
+// COMPONENT
+// =====================================================
 
 const ApplyLeave = () => {
   const today = getToday();
+
+  // =====================================================
+  // STATES
+  // =====================================================
 
   const [form, setForm] = useState({
     startDate: "",
@@ -106,12 +138,15 @@ const ApplyLeave = () => {
     reason: "",
   });
 
-  const [allocations, setAllocations] = useState(initialAllocations);
+  const [allocations, setAllocations] = useState(
+    createInitialAllocations()
+  );
 
   const [balance, setBalance] = useState({
     casualLeave: 0,
     sickLeave: 0,
     paidLeave: 0,
+    compOffBalance: 0,
     extraLeaveTaken: 0,
   });
 
@@ -119,60 +154,128 @@ const ApplyLeave = () => {
   const [submitting, setSubmitting] = useState(false);
 
   // =====================================================
-  // FETCH LEAVE BALANCE
+  // COMP-OFF STATES
   // =====================================================
 
-  const fetchLeaveBalance = async () => {
-    try {
-      setLoadingBalance(true);
+  const [compOffWorkDates, setCompOffWorkDates] = useState([""]);
+  const [compOffSubmitting, setCompOffSubmitting] = useState(false);
+  const [compOffRequests, setCompOffRequests] = useState([]);
+  const [loadingCompOffRequests, setLoadingCompOffRequests] =
+    useState(false);
 
+  // =====================================================
+  // FETCH LEAVE + COMP-OFF BALANCE
+  // =====================================================
+
+  const fetchLeaveBalance = useCallback(async () => {
+    try {
       const response = await api.get("/leaves/my-balance");
 
-      if (response.data.success) {
-        setBalance({
-          casualLeave: Number(response.data.balance?.casualLeave ?? 0),
-          sickLeave: Number(response.data.balance?.sickLeave ?? 0),
-          paidLeave: Number(response.data.balance?.paidLeave ?? 0),
-          extraLeaveTaken: Number(
-            response.data.balance?.extraLeaveTaken ?? 0
-          ),
-        });
+      if (!response.data?.success) {
+        throw new Error(
+          response.data?.message || "Unable to load leave balance."
+        );
       }
+
+      const data = response.data.balance || {};
+
+      setBalance({
+        casualLeave: toNumber(data.casualLeave),
+        sickLeave: toNumber(data.sickLeave),
+        paidLeave: toNumber(data.paidLeave),
+        compOffBalance: toNumber(
+          data.compOffBalance ??
+          data.availableCompOffBalance ??
+          data.availableBalance
+        ),
+        extraLeaveTaken: toNumber(data.extraLeaveTaken),
+      });
     } catch (error) {
       console.error("Fetch Leave Balance Error:", error);
 
       toast.error(
-        error.response?.data?.message || "Unable to load leave balance."
+        error.response?.data?.message ||
+          error.message ||
+          "Unable to load leave balance."
       );
+    }
+  }, []);
+
+  // =====================================================
+  // FETCH COMP-OFF REQUESTS
+  // =====================================================
+
+  const fetchCompOffRequests = useCallback(async () => {
+    try {
+      setLoadingCompOffRequests(true);
+
+      const response = await api.get("/comp-off/my-requests");
+
+      if (response.data?.success) {
+        const requests = response.data.requests;
+
+        setCompOffRequests(
+          Array.isArray(requests) ? requests : []
+        );
+      } else {
+        setCompOffRequests([]);
+      }
+    } catch (error) {
+      console.error("Fetch Comp-Off Requests Error:", error);
+
+      toast.error(
+        error.response?.data?.message ||
+          "Unable to load Comp-Off requests."
+      );
+    } finally {
+      setLoadingCompOffRequests(false);
+    }
+  }, []);
+
+  // =====================================================
+  // REFRESH ALL DATA
+  // =====================================================
+
+  const refreshAllData = useCallback(async () => {
+    setLoadingBalance(true);
+
+    try {
+      await Promise.all([
+        fetchLeaveBalance(),
+        fetchCompOffRequests(),
+      ]);
     } finally {
       setLoadingBalance(false);
     }
-  };
+  }, [fetchLeaveBalance, fetchCompOffRequests]);
 
   useEffect(() => {
-    fetchLeaveBalance();
-  }, []);
+    refreshAllData();
+  }, [refreshAllData]);
 
   // =====================================================
   // LEAVE BREAKDOWN
   // =====================================================
 
   const leaveBreakdown = useMemo(() => {
-    return LEAVE_TYPES
-      .map((item) => ({
-        leaveType: item.leaveType,
-        days: Number(allocations[item.leaveType]) || 0,
-      }))
-      .filter((item) => item.days > 0);
+    return LEAVE_TYPES.map((item) => ({
+      leaveType: item.leaveType,
+      days: toNumber(allocations[item.leaveType]),
+    })).filter((item) => item.days > 0);
   }, [allocations]);
 
   const totalDays = useMemo(
     () =>
-      leaveBreakdown.reduce((sum, item) => sum + item.days, 0),
+      leaveBreakdown.reduce(
+        (sum, item) => sum + item.days,
+        0
+      ),
     [leaveBreakdown]
   );
 
-  const hasFractionalDays = !Number.isInteger(totalDays);
+  const hasFractionalDays =
+    Math.abs(totalDays - Math.round(totalDays)) > 0.000001;
+
   const expectedCalendarDays = Math.ceil(totalDays);
 
   // =====================================================
@@ -196,7 +299,8 @@ const ApplyLeave = () => {
     if (!isDateRangeValid) return [];
 
     return dateRange.map((date) => {
-      const isHalfDay = hasFractionalDays && date === form.halfDayDate;
+      const isHalfDay =
+        hasFractionalDays && date === form.halfDayDate;
 
       return {
         date,
@@ -212,7 +316,7 @@ const ApplyLeave = () => {
   ]);
 
   // =====================================================
-  // PAID LEAVE BALANCE VALIDATION
+  // BALANCE VALIDATION
   // =====================================================
 
   const insufficientBalances = useMemo(() => {
@@ -223,19 +327,33 @@ const ApplyLeave = () => {
         (type) => type.leaveType === item.leaveType
       );
 
-      return item.days > Number(balance[config.field] || 0);
+      return (
+        item.days >
+        toNumber(balance[config?.field])
+      );
     });
   }, [leaveBreakdown, balance]);
 
-  const hasInsufficientBalance = insufficientBalances.length > 0;
+  const hasInsufficientBalance =
+    insufficientBalances.length > 0;
 
   // =====================================================
-  // DERIVE CATEGORY
+  // CATEGORY
   // =====================================================
 
-  const hasPaidLeave = leaveBreakdown.some(
-    (item) => item.leaveType !== "Unpaid Leave"
+  const hasCompOff = leaveBreakdown.some(
+    (item) => item.leaveType === "Comp-Off"
   );
+
+  const hasRegularPaidLeave = leaveBreakdown.some(
+    (item) =>
+      ["Casual Leave", "Sick Leave", "Paid Leave"].includes(
+        item.leaveType
+      )
+  );
+
+  const hasPaidLeave =
+    hasCompOff || hasRegularPaidLeave;
 
   const hasUnpaidLeave = leaveBreakdown.some(
     (item) => item.leaveType === "Unpaid Leave"
@@ -246,7 +364,9 @@ const ApplyLeave = () => {
       ? "Mixed Leave"
       : hasUnpaidLeave
         ? "Unpaid Leave"
-        : "Paid Leave";
+        : hasCompOff && !hasRegularPaidLeave
+          ? "Comp-Off"
+          : "Paid Leave";
 
   // =====================================================
   // HANDLE FORM CHANGE
@@ -269,7 +389,7 @@ const ApplyLeave = () => {
         updated.halfDayDate = "";
       }
 
-      if (name === "endDate" || name === "startDate") {
+      if (name === "endDate") {
         updated.halfDayDate = "";
       }
 
@@ -282,7 +402,10 @@ const ApplyLeave = () => {
   // =====================================================
 
   const handleAllocationChange = (leaveType, value) => {
-    if (value !== "" && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+    if (
+      value !== "" &&
+      (!Number.isFinite(Number(value)) || Number(value) < 0)
+    ) {
       return;
     }
 
@@ -322,7 +445,95 @@ const ApplyLeave = () => {
       halfDayDate: "",
       reason: "",
     });
-    setAllocations(initialAllocations);
+
+    setAllocations(createInitialAllocations());
+  };
+
+  // =====================================================
+  // COMP-OFF WORK DATE HANDLERS
+  // =====================================================
+
+  const handleAddWorkDate = () => {
+    setCompOffWorkDates((prev) => [...prev, ""]);
+  };
+
+  const handleRemoveWorkDate = (index) => {
+    setCompOffWorkDates((prev) => {
+      const updated = prev.filter((_, i) => i !== index);
+      return updated.length ? updated : [""];
+    });
+  };
+
+  const handleWorkDateChange = (index, value) => {
+    setCompOffWorkDates((prev) =>
+      prev.map((date, i) => (i === index ? value : date))
+    );
+  };
+
+  // =====================================================
+  // SUBMIT COMP-OFF REQUEST
+  // =====================================================
+
+  const handleCompOffRequest = async (e) => {
+    e.preventDefault();
+
+    const workDates = compOffWorkDates
+      .map((date) => date.trim())
+      .filter(Boolean)
+      .sort();
+
+    if (!workDates.length) {
+      toast.error("Please select at least one attendance date.");
+      return;
+    }
+
+    if (new Set(workDates).size !== workDates.length) {
+      toast.error("Duplicate attendance dates are not allowed.");
+      return;
+    }
+
+    if (workDates.some((date) => date >= today)) {
+      toast.error(
+        "Only completed past attendance dates can be selected."
+      );
+      return;
+    }
+
+    try {
+      setCompOffSubmitting(true);
+
+      const response = await api.post("/comp-off/request", {
+        workDates,
+      });
+
+      if (response.data?.success) {
+        toast.success(
+          response.data.message ||
+            "Comp-Off request submitted successfully."
+        );
+
+        setCompOffWorkDates([""]);
+
+        await Promise.all([
+          fetchLeaveBalance(),
+          fetchCompOffRequests(),
+        ]);
+      } else {
+        toast.error(
+          response.data?.message ||
+            "Unable to submit Comp-Off request."
+        );
+      }
+    } catch (error) {
+      console.error("Comp-Off Request Error:", error);
+
+      toast.error(
+        error.response?.data?.message ||
+          "Unable to submit Comp-Off request."
+      );
+    } finally {
+      setCompOffSubmitting(false);
+    }
   };
 
   // =====================================================
@@ -333,7 +544,9 @@ const ApplyLeave = () => {
     e.preventDefault();
 
     if (!leaveBreakdown.length) {
-      toast.error("Please allocate days to at least one leave type.");
+      toast.error(
+        "Please allocate days to at least one leave type."
+      );
       return;
     }
 
@@ -352,18 +565,26 @@ const ApplyLeave = () => {
       return;
     }
 
+    const invalidAllocation = leaveBreakdown.some(
+      (item) =>
+        Math.abs(item.days * 2 - Math.round(item.days * 2)) >
+        0.000001
+    );
+
     if (
       !Number.isFinite(totalDays) ||
       totalDays < 0.5 ||
-      Math.abs(totalDays * 2 - Math.round(totalDays * 2)) > 0.000001
+      invalidAllocation
     ) {
-      toast.error("Leave allocation must be in multiples of 0.5 days.");
+      toast.error(
+        "Each leave allocation must be in multiples of 0.5 days."
+      );
       return;
     }
 
     if (!isDateRangeValid) {
       toast.error(
-        `For ${totalDays} leave days, you must select exactly ${expectedCalendarDays} calendar date(s).`
+        `For ${totalDays} leave days, select exactly ${expectedCalendarDays} calendar date(s).`
       );
       return;
     }
@@ -377,12 +598,16 @@ const ApplyLeave = () => {
       hasFractionalDays &&
       !dateRange.includes(form.halfDayDate)
     ) {
-      toast.error("The selected Half Day must be within the leave date range.");
+      toast.error(
+        "The selected Half Day must be within the leave date range."
+      );
       return;
     }
 
     if (!hasFractionalDays && form.halfDayDate) {
-      toast.error("Half Day is not required for a whole-day leave request.");
+      toast.error(
+        "Half Day is not required for a whole-day leave request."
+      );
       return;
     }
 
@@ -398,9 +623,9 @@ const ApplyLeave = () => {
             (type) => type.leaveType === item.leaveType
           );
 
-          return `${item.leaveType}: requested ${item.days}, available ${
-            balance[config.field]
-          }`;
+          return `${item.leaveType}: requested ${item.days}, available ${toNumber(
+            balance[config?.field]
+          )}`;
         })
         .join("; ");
 
@@ -414,13 +639,17 @@ const ApplyLeave = () => {
     );
 
     if (Math.abs(dailyTotal - totalDays) > 0.000001) {
-      toast.error("Daily breakdown does not match total leave days.");
+      toast.error(
+        "Daily breakdown does not match total leave days."
+      );
       return;
     }
 
     try {
       setSubmitting(true);
 
+      // Backend payload structure unchanged.
+      // Comp-Off reservation is handled by leaveController.
       const payload = {
         startDate: form.startDate,
         endDate: form.endDate,
@@ -432,19 +661,30 @@ const ApplyLeave = () => {
 
       const response = await api.post("/leaves", payload);
 
-      if (response.data.success) {
+      if (response.data?.success) {
         toast.success(
-          response.data.message || "Leave request submitted successfully."
+          response.data.message ||
+            "Leave request submitted successfully."
         );
 
         handleReset();
-        await fetchLeaveBalance();
+
+        await Promise.all([
+          fetchLeaveBalance(),
+          fetchCompOffRequests(),
+        ]);
+      } else {
+        toast.error(
+          response.data?.message ||
+            "Failed to submit leave request."
+        );
       }
     } catch (error) {
       console.error("Apply Leave Error:", error);
 
       toast.error(
-        error.response?.data?.message || "Failed to submit leave request."
+        error.response?.data?.message ||
+          "Failed to submit leave request."
       );
 
       await fetchLeaveBalance();
@@ -482,6 +722,14 @@ const ApplyLeave = () => {
       textColor: "text-emerald-600",
       borderColor: "border-emerald-100",
     },
+    {
+      title: "Comp-Off",
+      shortName: "CO",
+      value: balance.compOffBalance,
+      color: "bg-violet-50",
+      textColor: "text-violet-600",
+      borderColor: "border-violet-100",
+    },
   ];
 
   // =====================================================
@@ -489,8 +737,8 @@ const ApplyLeave = () => {
   // =====================================================
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
+    <div className="min-h-screen bg-slate-50 p-3 sm:p-5 lg:p-6">
+      <div className="mx-auto max-w-7xl space-y-5">
 
         {/* HEADER */}
 
@@ -507,14 +755,15 @@ const ApplyLeave = () => {
             </div>
 
             <p className="mt-2 text-sm text-slate-500">
-              Select multiple leave types and choose your Half Day date if required.
+              Manage your leave applications and Comp-Off requests
+              from one place.
             </p>
           </div>
 
           <button
             type="button"
-            onClick={fetchLeaveBalance}
-            disabled={loadingBalance}
+            onClick={refreshAllData}
+            disabled={loadingBalance || submitting}
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
           >
             <RefreshCw
@@ -535,32 +784,33 @@ const ApplyLeave = () => {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {balanceCards.map((item) => (
               <div
                 key={item.shortName}
-                className={`rounded-xl border ${item.borderColor} bg-white p-5 shadow-sm`}
+                className={`rounded-xl border ${item.borderColor} bg-white p-3 shadow-sm sm:p-4`}
               >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-500">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium text-slate-500 sm:text-sm">
                       {item.title}
                     </p>
 
-                    <p className="mt-2 text-3xl font-bold text-slate-800">
+                    <p className="mt-2 text-2xl font-bold text-slate-800 sm:text-3xl">
                       {loadingBalance ? (
-                        <span className="inline-block h-8 w-12 animate-pulse rounded bg-slate-100" />
+                        <span className="inline-block h-7 w-10 animate-pulse rounded bg-slate-100" />
                       ) : (
-                        Number(item.value).toFixed(1)
+                        toNumber(item.value).toFixed(1)
                       )}
-                      <span className="ml-1 text-sm font-medium text-slate-400">
+
+                      <span className="ml-1 text-xs font-medium text-slate-400">
                         Days
                       </span>
                     </p>
                   </div>
 
                   <div
-                    className={`flex h-12 w-12 items-center justify-center rounded-xl ${item.color} ${item.textColor} text-lg font-bold`}
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${item.color} ${item.textColor} text-sm font-bold sm:h-11 sm:w-11 sm:text-base`}
                   >
                     {item.shortName}
                   </div>
@@ -570,21 +820,35 @@ const ApplyLeave = () => {
           </div>
         </section>
 
-        {/* FORM */}
+        {/* =====================================================
+            MAIN LEAVE APPLICATION
+            Placed directly after balance cards
+        ===================================================== */}
 
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
-            <h2 className="font-semibold text-slate-800">
-              Leave Application Form
-            </h2>
+        <div className="overflow-hidden rounded-xl border border-indigo-200 bg-white shadow-sm">
 
-            <p className="mt-1 text-sm text-slate-500">
-              Allocate your leave days across one or more leave types.
-            </p>
+          <div className="border-b border-indigo-100 bg-indigo-50/50 px-4 py-4 sm:px-6">
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-indigo-100 p-2">
+                <CalendarDays className="h-5 w-5 text-indigo-600" />
+              </div>
+
+              <div>
+                <h2 className="font-semibold text-slate-800">
+                  Leave Application Form
+                </h2>
+
+                <p className="mt-1 text-xs text-slate-500 sm:text-sm">
+                  Apply for Casual, Sick, Paid, Comp-Off or Unpaid Leave.
+                </p>
+              </div>
+            </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6 p-5 sm:p-6">
-
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-5 p-4 sm:p-6"
+          >
             {/* LEAVE ALLOCATION */}
 
             <section>
@@ -594,22 +858,26 @@ const ApplyLeave = () => {
                     Leave Type Allocation
                     <span className="ml-1 text-rose-500">*</span>
                   </h3>
+
                   <p className="mt-1 text-xs text-slate-500">
-                    Enter the number of days for each leave type. Use 0.5 increments.
+                    Enter the number of days for each leave type.
+                    Use 0.5 increments.
                   </p>
                 </div>
 
-                <span className="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">
+                <span className="shrink-0 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">
                   Multiple Types
                 </span>
               </div>
 
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {LEAVE_TYPES.map((item) => {
                   const value = allocations[item.leaveType];
-                  const requested = Number(value) || 0;
+
+                  const requested = toNumber(value);
+
                   const available = item.field
-                    ? Number(balance[item.field] || 0)
+                    ? toNumber(balance[item.field])
                     : null;
 
                   const insufficient =
@@ -618,16 +886,16 @@ const ApplyLeave = () => {
                   return (
                     <div
                       key={item.leaveType}
-                      className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-[1fr_160px_auto] sm:items-center"
+                      className="rounded-xl border border-slate-200 p-3 sm:p-4"
                     >
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">
                             {item.shortName}
                           </span>
 
-                          <div>
-                            <p className="text-sm font-semibold text-slate-800">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-800">
                               {item.leaveType}
                             </p>
 
@@ -645,9 +913,19 @@ const ApplyLeave = () => {
                             )}
                           </div>
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={() => clearAllocation(item.leaveType)}
+                          disabled={!value}
+                          className="shrink-0 rounded-md border border-slate-200 p-1.5 text-slate-400 hover:bg-slate-50 hover:text-rose-600 disabled:opacity-30"
+                          title="Clear allocation"
+                        >
+                          <X size={14} />
+                        </button>
                       </div>
 
-                      <div>
+                      <div className="mt-3">
                         <label className="mb-1 block text-xs font-medium text-slate-500">
                           Requested Days
                         </label>
@@ -678,16 +956,6 @@ const ApplyLeave = () => {
                           </p>
                         )}
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => clearAllocation(item.leaveType)}
-                        disabled={!value}
-                        className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-medium text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <Minus size={14} />
-                        Clear
-                      </button>
                     </div>
                   );
                 })}
@@ -696,31 +964,36 @@ const ApplyLeave = () => {
 
             {/* TOTAL SUMMARY */}
 
-            <section className="grid grid-cols-1 gap-3 rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 sm:grid-cols-3">
+            <section className="grid grid-cols-3 gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 sm:gap-4 sm:p-4">
               <div>
-                <p className="text-xs font-medium text-slate-500">
+                <p className="text-[10px] font-medium text-slate-500 sm:text-xs">
                   Total Leave Days
                 </p>
-                <p className="mt-1 text-2xl font-bold text-indigo-700">
+
+                <p className="mt-1 text-xl font-bold text-indigo-700 sm:text-2xl">
                   {totalDays.toFixed(1)}
                 </p>
               </div>
 
               <div>
-                <p className="text-xs font-medium text-slate-500">
+                <p className="text-[10px] font-medium text-slate-500 sm:text-xs">
                   Calendar Days Required
                 </p>
-                <p className="mt-1 text-2xl font-bold text-slate-800">
+
+                <p className="mt-1 text-xl font-bold text-slate-800 sm:text-2xl">
                   {expectedCalendarDays}
                 </p>
               </div>
 
               <div>
-                <p className="text-xs font-medium text-slate-500">
+                <p className="text-[10px] font-medium text-slate-500 sm:text-xs">
                   Leave Category
                 </p>
-                <p className="mt-1 text-lg font-bold text-slate-800">
-                  {leaveBreakdown.length ? leaveCategory : "Not Selected"}
+
+                <p className="mt-1 break-words text-sm font-bold text-slate-800 sm:text-lg">
+                  {leaveBreakdown.length
+                    ? leaveCategory
+                    : "Not Selected"}
                 </p>
               </div>
             </section>
@@ -728,7 +1001,7 @@ const ApplyLeave = () => {
             {/* ALLOCATION SUMMARY */}
 
             {leaveBreakdown.length > 0 && (
-              <section className="rounded-xl border border-slate-200 p-4">
+              <section className="rounded-xl border border-slate-200 p-3 sm:p-4">
                 <h3 className="mb-3 text-sm font-semibold text-slate-800">
                   Allocation Summary
                 </h3>
@@ -740,7 +1013,9 @@ const ApplyLeave = () => {
                       className={`rounded-lg px-3 py-2 text-xs font-semibold ${
                         item.leaveType === "Unpaid Leave"
                           ? "bg-amber-50 text-amber-700"
-                          : "bg-emerald-50 text-emerald-700"
+                          : item.leaveType === "Comp-Off"
+                            ? "bg-violet-50 text-violet-700"
+                            : "bg-emerald-50 text-emerald-700"
                       }`}
                     >
                       {item.leaveType}: {item.days.toFixed(1)} day(s)
@@ -757,7 +1032,7 @@ const ApplyLeave = () => {
                 Leave Date Range
               </h3>
 
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label
                     htmlFor="startDate"
@@ -838,7 +1113,8 @@ const ApplyLeave = () => {
                 </h3>
 
                 <p className="mt-1 text-xs text-slate-600">
-                  Your request contains a half day. Select which date will be Half Day. All other dates will be Full Day.
+                  Your request contains a half day. Select which date
+                  will be Half Day. All other dates will be Full Day.
                 </p>
 
                 <div className="mt-3">
@@ -882,6 +1158,7 @@ const ApplyLeave = () => {
                   <h3 className="text-sm font-semibold text-slate-800">
                     Daily Leave Breakdown
                   </h3>
+
                   <p className="mt-1 text-xs text-slate-500">
                     Review the dates and day types before submitting.
                   </p>
@@ -898,6 +1175,7 @@ const ApplyLeave = () => {
                           size={16}
                           className="text-slate-400"
                         />
+
                         <span className="text-sm font-medium text-slate-700">
                           {formatDate(item.date)}
                         </span>
@@ -926,6 +1204,7 @@ const ApplyLeave = () => {
                   <span className="text-sm font-semibold text-slate-700">
                     Total
                   </span>
+
                   <span className="text-sm font-bold text-indigo-700">
                     {dailyBreakdown
                       .reduce((sum, item) => sum + item.days, 0)
@@ -951,7 +1230,7 @@ const ApplyLeave = () => {
                 name="reason"
                 value={form.reason}
                 onChange={handleFormChange}
-                rows={4}
+                rows={3}
                 maxLength={1000}
                 placeholder="Please explain the reason for your leave..."
                 className="w-full resize-y rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
@@ -978,11 +1257,32 @@ const ApplyLeave = () => {
 
                   return (
                     <p key={item.leaveType} className="mt-1">
-                      {item.leaveType}: Requested {item.days.toFixed(1)}, Available{" "}
-                      {Number(balance[config.field]).toFixed(1)} days.
+                      {item.leaveType}: Requested{" "}
+                      {item.days.toFixed(1)}, Available{" "}
+                      {toNumber(balance[config?.field]).toFixed(1)} days.
                     </p>
                   );
                 })}
+              </div>
+            )}
+
+            {/* COMP-OFF RESERVATION INFORMATION */}
+
+            {leaveBreakdown.some(
+              (item) => item.leaveType === "Comp-Off"
+            ) && (
+              <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm text-violet-800">
+                <div className="flex items-center gap-2 font-semibold">
+                  <AlertCircle size={16} />
+                  Comp-Off Reservation
+                </div>
+
+                <p className="mt-1 text-xs">
+                  Requested Comp-Off days will be reserved from your
+                  approved Comp-Off credits when this leave application
+                  is submitted. If the leave is rejected or withdrawn,
+                  the reserved days will be returned.
+                </p>
               </div>
             )}
 
@@ -1026,6 +1326,269 @@ const ApplyLeave = () => {
             </div>
           </form>
         </div>
+
+        {/* =====================================================
+            COMP-OFF APPLICATION
+            Moved below the main Leave Application
+        ===================================================== */}
+
+        <section className="overflow-hidden rounded-xl border border-violet-200 bg-white shadow-sm">
+          <div className="border-b border-violet-100 bg-violet-50/60 px-4 py-4 sm:px-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Clock className="h-5 w-5 text-violet-600" />
+
+                  <h2 className="font-semibold text-slate-800">
+                    Apply for Comp-Off
+                  </h2>
+                </div>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Select completed attendance dates to claim eligible
+                  extra work hours.
+                </p>
+              </div>
+
+              <span className="w-fit rounded-lg bg-white px-3 py-2 text-sm font-semibold text-violet-700">
+                Available Balance:{" "}
+                {toNumber(balance.compOffBalance).toFixed(1)} Days
+              </span>
+            </div>
+          </div>
+
+          <form
+            onSubmit={handleCompOffRequest}
+            className="space-y-4 p-4 sm:p-6"
+          >
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">
+              <div className="flex items-center gap-2 font-semibold">
+                <Clock size={16} />
+                Comp-Off Eligibility
+              </div>
+
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
+                <li>
+                  Normal working day: eligible extra work after 8 hours.
+                </li>
+                <li>
+                  Sunday: complete eligible attendance duration.
+                </li>
+                <li>
+                  Company Holiday: complete eligible attendance duration.
+                </li>
+                <li>8 eligible hours = 1 Comp-Off day.</li>
+                <li>
+                  Submitted attendance dates will be verified by HR.
+                </li>
+                <li>
+                  Only approved Comp-Off credits can be used in Leave
+                  Application.
+                </li>
+              </ul>
+            </div>
+
+            <div className="space-y-3">
+              {compOffWorkDates.map((date, index) => (
+                <div
+                  key={index}
+                  className="flex flex-col gap-2 sm:flex-row sm:items-end"
+                >
+                  <div className="flex-1">
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      Work Date {index + 1}
+                    </label>
+
+                    <input
+                      type="date"
+                      value={date}
+                      max={today}
+                      onChange={(e) =>
+                        handleWorkDateChange(index, e.target.value)
+                      }
+                      required
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveWorkDate(index)}
+                    disabled={compOffWorkDates.length === 1}
+                    className="inline-flex items-center justify-center gap-1 rounded-lg border border-rose-200 px-3 py-2.5 text-sm font-medium text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Minus size={15} />
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
+              <button
+                type="button"
+                onClick={handleAddWorkDate}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-violet-200 px-4 py-2.5 text-sm font-semibold text-violet-700 hover:bg-violet-50"
+              >
+                <Plus size={16} />
+                Add Work Date
+              </button>
+
+              <button
+                type="submit"
+                disabled={compOffSubmitting}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {compOffSubmitting ? (
+                  <>
+                    <RefreshCw size={16} className="animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <Send size={16} />
+                    Submit Comp-Off Request
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        {/* =====================================================
+            COMP-OFF REQUEST HISTORY
+        ===================================================== */}
+
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <div>
+              <h2 className="font-semibold text-slate-800">
+                My Comp-Off Requests
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Track your submitted Comp-Off claims and credited days.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={fetchCompOffRequests}
+              disabled={loadingCompOffRequests}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <RefreshCw
+                size={15}
+                className={
+                  loadingCompOffRequests ? "animate-spin" : ""
+                }
+              />
+              Refresh
+            </button>
+          </div>
+
+          {loadingCompOffRequests ? (
+            <div className="p-8 text-center text-sm text-slate-500">
+              Loading Comp-Off requests...
+            </div>
+          ) : compOffRequests.length === 0 ? (
+            <div className="p-8 text-center">
+              <Clock className="mx-auto h-9 w-9 text-slate-300" />
+
+              <p className="mt-2 text-sm font-medium text-slate-600">
+                No Comp-Off requests found.
+              </p>
+
+              <p className="mt-1 text-xs text-slate-400">
+                Your submitted requests will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-5 py-3">Request Date</th>
+                    <th className="px-5 py-3">Work Dates</th>
+                    <th className="px-5 py-3">Claimed Hours</th>
+                    <th className="px-5 py-3">Status</th>
+                    <th className="px-5 py-3">Credited Days</th>
+                    <th className="px-5 py-3">Available Days</th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {compOffRequests.map((request) => {
+                    const workDates = [
+                      ...new Set(
+                        (request.workEntries || [])
+                          .map((entry) => entry.workDate)
+                          .filter(Boolean)
+                      ),
+                    ];
+
+                    const claimedHours =
+                      toNumber(request.totalClaimedMinutes) / 60;
+
+                    return (
+                      <tr key={request._id}>
+                        <td className="px-5 py-4 text-slate-600">
+                          {formatDate(request.createdAt)}
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <div className="flex flex-wrap gap-1">
+                            {workDates.length ? (
+                              workDates.map((date) => (
+                                <span
+                                  key={date}
+                                  className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600"
+                                >
+                                  {formatDate(date)}
+                                </span>
+                              ))
+                            ) : (
+                              "—"
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="px-5 py-4 font-medium text-slate-700">
+                          {claimedHours.toFixed(2)} hrs
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-semibold ${getStatusClass(
+                              request.status
+                            )}`}
+                          >
+                            {request.status || "Pending"}
+                          </span>
+
+                          {request.rejectionReason && (
+                            <p className="mt-1 max-w-[180px] text-xs text-rose-500">
+                              {request.rejectionReason}
+                            </p>
+                          )}
+                        </td>
+
+                        <td className="px-5 py-4 font-semibold text-violet-700">
+                          {toNumber(request.creditedDays).toFixed(1)} Days
+                        </td>
+
+                        <td className="px-5 py-4 font-semibold text-slate-700">
+                          {toNumber(request.remainingDays).toFixed(1)} Days
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
       </div>
     </div>
   );

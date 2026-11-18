@@ -29,6 +29,60 @@ const getTodayDate = () => {
 };
 
 // =====================================================
+// GET ATTENDANCE VIEWER ACCESS
+// HR / HEAD RECRUITER / SUPER ADMIN = COMPANY-WIDE
+// ORDINARY EMPLOYEE = OWN ATTENDANCE ONLY
+// =====================================================
+const getAttendanceViewer = async (req, companyId) => {
+  // Super Admin can view all employees in selected company.
+  if (req.user?.role === "superadmin") {
+    return {
+      success: true,
+      isCompanyWide: true,
+      employee: null,
+    };
+  }
+
+  if (req.user?.role !== "employee" || !req.user?.id) {
+    return {
+      success: false,
+      status: 403,
+      message: "You are not authorized to view attendance.",
+    };
+  }
+
+  const employee = await Employee.findOne({
+    _id: req.user.id,
+    companyId,
+    status: "active",
+  })
+    .select("name empId email departmentId roleId")
+    .populate("departmentId", "departmentName")
+    .populate("roleId", "roleName");
+
+  if (!employee) {
+    return {
+      success: false,
+      status: 404,
+      message: "Active employee not found.",
+    };
+  }
+
+  const roleName = employee.roleId?.roleName
+    ?.trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+  const isHR = ["hr", "head recruiter"].includes(roleName);
+
+  return {
+    success: true,
+    isCompanyWide: isHR,
+    employee,
+  };
+};
+
+// =====================================================
 // CHECK IN — LOGGED-IN EMPLOYEE
 // =====================================================
 export const checkIn = async (req, res) => {
@@ -212,7 +266,14 @@ export const checkOut = async (req, res) => {
 };
 
 // =====================================================
-// GET ATTENDANCE BY DATE — COMPANY
+// GET ATTENDANCE BY DATE
+// HR / HEAD RECRUITER / SUPER ADMIN = COMPANY-WIDE
+// ORDINARY EMPLOYEE = OWN ATTENDANCE ONLY
+// =====================================================
+// =====================================================
+// GET ATTENDANCE BY DATE
+// HR / HEAD RECRUITER / SUPER ADMIN = COMPANY-WIDE
+// ORDINARY EMPLOYEE = OWN ATTENDANCE ONLY
 // =====================================================
 export const getAttendanceByDate = async (req, res) => {
   try {
@@ -226,52 +287,81 @@ export const getAttendanceByDate = async (req, res) => {
       });
     }
 
-    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const isValidDate = (value) => {
+      if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return false;
+      }
+
+      const parsedDate = new Date(`${value}T00:00:00.000Z`);
+
+      return (
+        !Number.isNaN(parsedDate.getTime()) &&
+        parsedDate.toISOString().slice(0, 10) === value
+      );
+    };
+
+    if (!isValidDate(date)) {
       return res.status(400).json({
         success: false,
-        message: "Please provide date in YYYY-MM-DD format.",
+        message: "Please provide a valid date in YYYY-MM-DD format.",
       });
     }
 
-    const parsedDate = new Date(`${date}T00:00:00.000Z`);
+    const viewer = await getAttendanceViewer(req, companyId);
 
-    if (
-      Number.isNaN(parsedDate.getTime()) ||
-      parsedDate.toISOString().slice(0, 10) !== date
-    ) {
-      return res.status(400).json({
+    if (!viewer.success) {
+      return res.status(viewer.status).json({
         success: false,
-        message: "Invalid attendance date.",
+        message: viewer.message,
       });
     }
 
-    const employees = await Employee.find({
-      companyId,
-      status: "active",
-    })
-      .select("name empId email departmentId roleId")
-      .populate("departmentId", "departmentName")
-      .populate("roleId", "roleName")
-      .sort({ name: 1 });
+    // STEP 1: Get employees according to viewer permission.
+    let employees = [];
+
+    if (viewer.isCompanyWide) {
+      employees = await Employee.find({
+        companyId,
+        status: "active",
+      })
+        .select("name empId email departmentId roleId")
+        .populate("departmentId", "departmentName")
+        .populate("roleId", "roleName")
+        .sort({ name: 1 });
+    } else {
+      employees = [viewer.employee];
+    }
+
+    // STEP 2: Get attendance records.
+    const employeeIds = employees.map((employee) => employee._id);
 
     const attendanceRecords = await Attendance.find({
       companyId,
       attendanceDate: date,
+      employeeId: {
+        $in: employeeIds,
+      },
     });
 
-    const attendanceMap = new Map(
-      attendanceRecords.map((record) => [
-        String(record.employeeId),
-        record,
-      ])
-    );
+    // STEP 3: Create attendance map.
+    const attendanceMap = new Map();
 
+    attendanceRecords.forEach((attendance) => {
+      attendanceMap.set(
+        String(attendance.employeeId),
+        attendance
+      );
+    });
+
+    // STEP 4: Create final records.
     const records = employees.map((employee) => {
-      const attendance = attendanceMap.get(String(employee._id));
+      const attendance = attendanceMap.get(
+        String(employee._id)
+      ) || null;
 
       return {
         employee,
-        attendance: attendance || null,
+        attendance,
         checkIn: attendance?.checkIn || null,
         checkOut: attendance?.checkOut || null,
         status: !attendance
@@ -284,6 +374,7 @@ export const getAttendanceByDate = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+      isCompanyWide: viewer.isCompanyWide,
       date,
       totalEmployees: employees.length,
       checkedIn: records.filter((item) => item.checkIn).length,
@@ -292,6 +383,8 @@ export const getAttendanceByDate = async (req, res) => {
       records,
     });
   } catch (error) {
+    console.error("Get Attendance By Date Error:", error);
+
     return res.status(500).json({
       success: false,
       message: error.message || "Failed to fetch attendance.",
@@ -367,8 +460,10 @@ export const getMyAttendance = async (req, res) => {
 
 
 // =====================================================
-// GET ATTENDANCE BY DATE RANGE — COMPANY
+// GET ATTENDANCE BY DATE RANGE
 // startDate and endDate are inclusive
+// HR / HEAD RECRUITER / SUPER ADMIN = COMPANY-WIDE
+// ORDINARY EMPLOYEE = OWN ATTENDANCE ONLY
 // =====================================================
 export const getAttendanceByDateRange = async (req, res) => {
   try {
@@ -382,23 +477,24 @@ export const getAttendanceByDateRange = async (req, res) => {
       });
     }
 
-    const isValidDate = (date) => {
-      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const isValidDate = (value) => {
+      if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
         return false;
       }
 
-      const parsedDate = new Date(`${date}T00:00:00.000Z`);
+      const parsedDate = new Date(`${value}T00:00:00.000Z`);
 
       return (
         !Number.isNaN(parsedDate.getTime()) &&
-        parsedDate.toISOString().slice(0, 10) === date
+        parsedDate.toISOString().slice(0, 10) === value
       );
     };
 
     if (!isValidDate(startDate) || !isValidDate(endDate)) {
       return res.status(400).json({
         success: false,
-        message: "Please provide valid startDate and endDate in YYYY-MM-DD format.",
+        message:
+          "Please provide valid startDate and endDate in YYYY-MM-DD format.",
       });
     }
 
@@ -409,37 +505,65 @@ export const getAttendanceByDateRange = async (req, res) => {
       });
     }
 
-    const employees = await Employee.find({
-      companyId,
-      status: "active",
-    })
-      .select("name empId email departmentId roleId")
-      .populate("departmentId", "departmentName")
-      .populate("roleId", "roleName")
-      .sort({ name: 1 });
+    const viewer = await getAttendanceViewer(req, companyId);
 
+    if (!viewer.success) {
+      return res.status(viewer.status).json({
+        success: false,
+        message: viewer.message,
+      });
+    }
+
+    // STEP 1: Get employees according to viewer permission.
+    let employees = [];
+
+    if (viewer.isCompanyWide) {
+      employees = await Employee.find({
+        companyId,
+        status: "active",
+      })
+        .select("name empId email departmentId roleId")
+        .populate("departmentId", "departmentName")
+        .populate("roleId", "roleName")
+        .sort({ name: 1 });
+    } else {
+      employees = [viewer.employee];
+    }
+
+    // STEP 2: Get employee IDs.
+    const employeeIds = employees.map((employee) => employee._id);
+
+    // STEP 3: Get attendance records for selected date range.
     const attendanceRecords = await Attendance.find({
       companyId,
+      employeeId: {
+        $in: employeeIds,
+      },
       attendanceDate: {
         $gte: startDate,
         $lte: endDate,
       },
-    }).sort({ attendanceDate: 1 });
+    }).sort({
+      attendanceDate: 1,
+    });
 
+    // STEP 4: Group attendance records by employee.
     const attendanceMap = new Map();
 
-    attendanceRecords.forEach((record) => {
-      const employeeKey = String(record.employeeId);
+    attendanceRecords.forEach((attendance) => {
+      const employeeKey = String(attendance.employeeId);
 
       if (!attendanceMap.has(employeeKey)) {
         attendanceMap.set(employeeKey, []);
       }
 
-      attendanceMap.get(employeeKey).push(record);
+      attendanceMap.get(employeeKey).push(attendance);
     });
 
+    // STEP 5: Create final records.
     const records = employees.map((employee) => {
-      const attendance = attendanceMap.get(String(employee._id)) || [];
+      const attendance =
+        attendanceMap.get(String(employee._id)) || [];
 
       return {
         employee,
@@ -456,6 +580,7 @@ export const getAttendanceByDateRange = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+      isCompanyWide: viewer.isCompanyWide,
       startDate,
       endDate,
       totalEmployees: employees.length,
@@ -463,17 +588,22 @@ export const getAttendanceByDateRange = async (req, res) => {
       records,
     });
   } catch (error) {
+    console.error("Get Attendance By Date Range Error:", error);
+
     return res.status(500).json({
       success: false,
-      message: error.message || "Failed to fetch attendance by date range.",
+      message:
+        error.message || "Failed to fetch attendance by date range.",
     });
   }
 };
 
 
 // =====================================================
-// GET ATTENDANCE BY MONTH — COMPANY
+// GET ATTENDANCE BY MONTH
 // month: 1-12, year: YYYY
+// HR / HEAD RECRUITER / SUPER ADMIN = COMPANY-WIDE
+// ORDINARY EMPLOYEE = OWN ATTENDANCE ONLY
 // =====================================================
 export const getAttendanceByMonth = async (req, res) => {
   try {
@@ -506,45 +636,78 @@ export const getAttendanceByMonth = async (req, res) => {
       });
     }
 
-    const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-01`;
+    // STEP 1: Calculate month date range.
+    const monthString = String(selectedMonth).padStart(2, "0");
+
+    const startDate = `${selectedYear}-${monthString}-01`;
 
     const lastDay = new Date(
       Date.UTC(selectedYear, selectedMonth, 0)
     ).getUTCDate();
 
-    const endDate = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    const endDate =
+      `${selectedYear}-${monthString}-${String(lastDay).padStart(2, "0")}`;
 
-    const employees = await Employee.find({
-      companyId,
-      status: "active",
-    })
-      .select("name empId email departmentId roleId")
-      .populate("departmentId", "departmentName")
-      .populate("roleId", "roleName")
-      .sort({ name: 1 });
+    // STEP 2: Check viewer permission.
+    const viewer = await getAttendanceViewer(req, companyId);
 
+    if (!viewer.success) {
+      return res.status(viewer.status).json({
+        success: false,
+        message: viewer.message,
+      });
+    }
+
+    // STEP 3: Get employees according to viewer permission.
+    let employees = [];
+
+    if (viewer.isCompanyWide) {
+      employees = await Employee.find({
+        companyId,
+        status: "active",
+      })
+        .select("name empId email departmentId roleId")
+        .populate("departmentId", "departmentName")
+        .populate("roleId", "roleName")
+        .sort({ name: 1 });
+    } else {
+      employees = [viewer.employee];
+    }
+
+    // STEP 4: Get employee IDs.
+    const employeeIds = employees.map((employee) => employee._id);
+
+    // STEP 5: Get monthly attendance records.
     const attendanceRecords = await Attendance.find({
       companyId,
+      employeeId: {
+        $in: employeeIds,
+      },
       attendanceDate: {
         $gte: startDate,
         $lte: endDate,
       },
-    }).sort({ attendanceDate: 1 });
+    }).sort({
+      attendanceDate: 1,
+    });
 
+    // STEP 6: Group attendance records by employee.
     const attendanceMap = new Map();
 
-    attendanceRecords.forEach((record) => {
-      const employeeKey = String(record.employeeId);
+    attendanceRecords.forEach((attendance) => {
+      const employeeKey = String(attendance.employeeId);
 
       if (!attendanceMap.has(employeeKey)) {
         attendanceMap.set(employeeKey, []);
       }
 
-      attendanceMap.get(employeeKey).push(record);
+      attendanceMap.get(employeeKey).push(attendance);
     });
 
+    // STEP 7: Create final records.
     const records = employees.map((employee) => {
-      const attendance = attendanceMap.get(String(employee._id)) || [];
+      const attendance =
+        attendanceMap.get(String(employee._id)) || [];
 
       return {
         employee,
@@ -561,6 +724,7 @@ export const getAttendanceByMonth = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+      isCompanyWide: viewer.isCompanyWide,
       month: selectedMonth,
       year: selectedYear,
       startDate,
@@ -571,9 +735,12 @@ export const getAttendanceByMonth = async (req, res) => {
       records,
     });
   } catch (error) {
+    console.error("Get Attendance By Month Error:", error);
+
     return res.status(500).json({
       success: false,
-      message: error.message || "Failed to fetch monthly attendance.",
+      message:
+        error.message || "Failed to fetch monthly attendance.",
     });
   }
 };
