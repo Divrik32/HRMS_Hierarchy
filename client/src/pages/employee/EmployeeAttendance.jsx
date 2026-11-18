@@ -21,6 +21,7 @@ import {
   Pencil,
   X,
   Save,
+  Download,
 } from "lucide-react";
 
 import { toast } from "react-toastify";
@@ -192,6 +193,42 @@ const getDisplayStatus = (attendance) => {
   if (attendance.checkOut) return "Checked Out";
   if (attendance.checkIn) return "Checked In";
   return "Not Checked In";
+};
+
+// =========================================
+// EXCEL EXPORT HELPERS
+// =========================================
+
+const escapeHTML = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const downloadExcelFile = (html, filename) => {
+  const blob = new Blob(
+    ["\ufeff", html],
+    {
+      type: "application/vnd.ms-excel;charset=utf-8;",
+    }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = filename;
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  // Allow the browser to start downloading before releasing the URL.
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 1000);
 };
 
 // =========================================
@@ -713,15 +750,12 @@ const EmployeeAttendance = () => {
       const leaveMap = {};
 
       requests.forEach((request) => {
-        // Only Approved leave requests should be highlighted.
         if (request?.status !== "Approved") return;
 
         const employeeId = getEmployeeMongoId(request.employeeId);
 
         if (!employeeId) return;
 
-        // Preferred source: exact daily breakdown.
-        // This supports both Full Day and Half Day.
         if (
           Array.isArray(request.dailyBreakdown) &&
           request.dailyBreakdown.length > 0
@@ -732,14 +766,13 @@ const EmployeeAttendance = () => {
             if (!dateKey) return;
 
             leaveMap[`${employeeId}_${dateKey}`] =
-              day.dayType || (Number(day.days) === 0.5 ? "Half Day" : "Full Day");
+              day.dayType ||
+              (Number(day.days) === 0.5 ? "Half Day" : "Full Day");
           });
 
           return;
         }
 
-        // Fallback for requests without dailyBreakdown.
-        // Use the request's startDate and endDate.
         const dates = getDateKeysBetween(
           getAttendanceDateKey(request.startDate),
           getAttendanceDateKey(request.endDate)
@@ -976,15 +1009,12 @@ const EmployeeAttendance = () => {
       const hrViewer = await loadViewerProfile();
       const companyWide = await loadAttendanceData();
 
-      // HR and ordinary employees both have their own attendance.
-      // Super Admin only has company attendance.
       if (!companyWide || hrViewer) {
         await loadMyAttendance();
       } else {
         setMyAttendance(null);
       }
 
-      // Only HR / Head Recruiter can call this employee endpoint.
       if (hrViewer && companyWide) {
         await loadApprovedLeaves();
       } else {
@@ -1279,17 +1309,14 @@ const EmployeeAttendance = () => {
   };
 
   const getMatrixCellClasses = (employee, dateKey) => {
-    // Sunday has priority over holiday/leave.
     if (isSunday(dateKey)) {
       return "bg-rose-50 text-rose-700";
     }
 
-    // Company holiday has priority over employee leave.
     if (isCompanyHoliday(dateKey)) {
       return "bg-amber-50 text-amber-800";
     }
 
-    // Only this employee's approved leave is green.
     const leaveType = getApprovedLeaveType(employee, dateKey);
 
     if (leaveType) {
@@ -1297,6 +1324,321 @@ const EmployeeAttendance = () => {
     }
 
     return "bg-white";
+  };
+
+  // =========================================
+  // EXPORT ATTENDANCE TO EXCEL
+  // DATE RANGE + MONTHLY ONLY
+  // =========================================
+
+  const handleExportAttendance = () => {
+    if (!["range", "monthly"].includes(attendanceView)) {
+      toast.info("Excel export is available for Date Range and Monthly views.");
+      return;
+    }
+
+    if (attendanceView === "range" && (!startDate || !endDate || startDate > endDate)) {
+      toast.error("Please select a valid date range.");
+      return;
+    }
+
+    if (
+      attendanceView === "monthly" &&
+      (
+        !selectedMonth ||
+        !selectedYear ||
+        Number(selectedYear) < 1000 ||
+        Number(selectedYear) > currentMonth.year
+      )
+    ) {
+      toast.error("Please select a valid month and year.");
+      return;
+    }
+
+    // Date Range: export every selected date.
+    // Monthly: export every calendar date of the selected month.
+    const exportDates =
+      attendanceView === "range"
+        ? getDateKeysBetween(startDate, endDate)
+        : getMonthDateKeys(selectedMonth, selectedYear);
+
+    if (exportDates.length === 0) {
+      toast.error("No dates available to export.");
+      return;
+    }
+
+    if (!companyAttendanceGroups.length) {
+      toast.error("No attendance data available to export.");
+      return;
+    }
+
+    const headerDateCells = exportDates
+      .map((dateKey) => {
+        let background = "#e2e8f0";
+        let color = "#334155";
+        let dayLabel = getWeekdayLabel(dateKey).toUpperCase();
+
+        if (isSunday(dateKey)) {
+          background = "#fecaca";
+          color = "#991b1b";
+          dayLabel = "SUNDAY";
+        } else if (isCompanyHoliday(dateKey)) {
+          background = "#fde68a";
+          color = "#92400e";
+          dayLabel = "HOLIDAY";
+        }
+
+        return `
+          <th style="
+            background-color:${background};
+            color:${color};
+            border:1px solid #cbd5e1;
+            padding:8px;
+            min-width:115px;
+            text-align:center;
+            vertical-align:middle;
+          ">
+            <strong>${escapeHTML(formatDate(dateKey))}</strong>
+            <br/>
+            <span style="font-size:10px;">${escapeHTML(dayLabel)}</span>
+          </th>
+        `;
+      })
+      .join("");
+
+    const employeeRows = companyAttendanceGroups
+      .map((item) => {
+        const employee = item.employee;
+
+        if (!employee) return "";
+
+        const attendanceByDate = new Map(
+          (item.attendance || []).map((attendance) => [
+            getAttendanceDateKey(attendance.attendanceDate),
+            attendance,
+          ])
+        );
+
+        const dailyCells = exportDates
+          .map((dateKey) => {
+            const attendance = attendanceByDate.get(dateKey) || null;
+
+            const leaveType = getApprovedLeaveType(employee, dateKey);
+
+            let background = "#ffffff";
+            let color = "#334155";
+            let label = "";
+
+            // Same priority as the attendance matrix:
+            // Sunday > Company Holiday > Approved Leave > Normal day.
+
+            if (isSunday(dateKey)) {
+              background = "#fee2e2";
+              color = "#991b1b";
+              label = "SUNDAY";
+            } else if (isCompanyHoliday(dateKey)) {
+              background = "#fef3c7";
+              color = "#92400e";
+              label = "COMPANY HOLIDAY";
+            } else if (leaveType) {
+              background = "#d1fae5";
+              color = "#065f46";
+              label = `APPROVED LEAVE${String(leaveType).toLowerCase().includes("half") ? " - HALF DAY" : ""}`;
+            }
+
+            const checkIn = attendance?.checkIn
+              ? formatTime(attendance.checkIn)
+              : "—";
+
+            const checkOut = attendance?.checkOut
+              ? formatTime(attendance.checkOut)
+              : "—";
+
+            return `
+              <td style="
+                background-color:${background};
+                color:${color};
+                border:1px solid #cbd5e1;
+                padding:8px;
+                text-align:center;
+                vertical-align:middle;
+                min-width:115px;
+              ">
+                ${
+                  label
+                    ? `<div style="font-weight:bold;font-size:10px;margin-bottom:5px;">${escapeHTML(label)}</div>`
+                    : ""
+                }
+
+                <div style="font-size:11px;">
+                  <strong>IN:</strong> ${escapeHTML(checkIn)}
+                </div>
+
+                <div style="font-size:11px;margin-top:3px;">
+                  <strong>OUT:</strong> ${escapeHTML(checkOut)}
+                </div>
+              </td>
+            `;
+          })
+          .join("");
+
+        const department =
+          employee?.departmentId?.departmentName ||
+          employee?.department?.departmentName ||
+          "—";
+
+        return `
+          <tr>
+            <td style="
+              border:1px solid #cbd5e1;
+              padding:8px;
+              font-weight:bold;
+              min-width:160px;
+              background-color:#ffffff;
+            ">
+              ${escapeHTML(getEmployeeName(employee))}
+            </td>
+
+            <td style="
+              border:1px solid #cbd5e1;
+              padding:8px;
+              text-align:center;
+              background-color:#ffffff;
+            ">
+              ${escapeHTML(getEmployeeId(employee))}
+            </td>
+
+            <td style="
+              border:1px solid #cbd5e1;
+              padding:8px;
+              background-color:#ffffff;
+            ">
+              ${escapeHTML(department)}
+            </td>
+
+            ${dailyCells}
+          </tr>
+        `;
+      })
+      .filter(Boolean)
+      .join("");
+
+    if (!employeeRows) {
+      toast.error("No employee records available to export.");
+      return;
+    }
+
+    const reportTitle =
+      attendanceView === "monthly"
+        ? `Attendance Report - ${getMonthLabel(`${selectedYear}-${String(selectedMonth).padStart(2, "0")}-01`)}`
+        : `Attendance Report - ${formatDate(startDate)} to ${formatDate(endDate)}`;
+
+    const html = `
+      <html>
+        <head>
+          <meta charset="UTF-8" />
+          <style>
+            table {
+              border-collapse: collapse;
+              font-family: Arial, sans-serif;
+              font-size: 11px;
+            }
+
+            th, td {
+              mso-number-format: "\\@";
+            }
+          </style>
+        </head>
+
+        <body>
+          <table>
+            <thead>
+              <tr>
+                <th
+                  colspan="${3 + exportDates.length}"
+                  style="
+                    background-color:#1e40af;
+                    color:#ffffff;
+                    font-size:16px;
+                    padding:12px;
+                    text-align:center;
+                    border:1px solid #1e40af;
+                  "
+                >
+                  ${escapeHTML(reportTitle)}
+                </th>
+              </tr>
+
+              <tr>
+                <th style="
+                  background-color:#dbeafe;
+                  border:1px solid #cbd5e1;
+                  padding:8px;
+                ">
+                  Employee Name
+                </th>
+
+                <th style="
+                  background-color:#dbeafe;
+                  border:1px solid #cbd5e1;
+                  padding:8px;
+                ">
+                  Employee ID
+                </th>
+
+                <th style="
+                  background-color:#dbeafe;
+                  border:1px solid #cbd5e1;
+                  padding:8px;
+                ">
+                  Department
+                </th>
+
+                ${headerDateCells}
+              </tr>
+            </thead>
+
+            <tbody>
+              ${employeeRows}
+            </tbody>
+          </table>
+
+          <br/>
+
+          <table>
+            <tr>
+              <td style="background-color:#fee2e2;border:1px solid #cbd5e1;padding:7px;">
+                Sunday
+              </td>
+
+              <td style="background-color:#fef3c7;border:1px solid #cbd5e1;padding:7px;">
+                Company Holiday
+              </td>
+
+              <td style="background-color:#d1fae5;border:1px solid #cbd5e1;padding:7px;">
+                Approved Leave
+              </td>
+
+              <td style="background-color:#ffffff;border:1px solid #cbd5e1;padding:7px;">
+                Working Day
+              </td>
+            </tr>
+          </table>
+        </body>
+      </html>
+    `;
+
+    const filename =
+      attendanceView === "monthly"
+        ? `Attendance_${selectedYear}_${String(selectedMonth).padStart(2, "0")}.xls`
+        : `Attendance_${startDate}_to_${endDate}.xls`;
+
+    try {
+      downloadExcelFile(html, filename);
+      toast.success("Attendance Excel file downloaded successfully.");
+    } catch (error) {
+      toast.error("Unable to export attendance.");
+    }
   };
 
   // =========================================
@@ -1711,6 +2053,27 @@ const EmployeeAttendance = () => {
                     className="w-full rounded-lg border border-slate-300 bg-white py-3 pl-10 pr-4 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   />
                 </div>
+              </div>
+            )}
+
+            {/* EXCEL EXPORT BUTTON */}
+
+            {(attendanceView === "range" ||
+              attendanceView === "monthly") && (
+              <div className="flex flex-col gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-slate-500">
+                  Export attendance with Sunday, holiday and approved leave colors.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={handleExportAttendance}
+                  disabled={loading || companyAttendanceGroups.length === 0}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Download size={17} />
+                  Export Excel
+                </button>
               </div>
             )}
           </div>

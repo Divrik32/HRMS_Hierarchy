@@ -1,10 +1,10 @@
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import {
   CalendarDays,
   RefreshCw,
   Users,
-  Clock3,
   CheckCircle2,
   LoaderCircle,
   History,
@@ -13,8 +13,9 @@ import {
   UserRound,
   Building2,
   X,
+  Download,
 } from "lucide-react";
-
+import { useParams } from "react-router-dom";
 import api from "../../api/axios";
 
 // =========================================
@@ -24,6 +25,7 @@ import api from "../../api/axios";
 const getTodayDate = () => {
   const now = new Date();
   const offset = now.getTimezoneOffset();
+
   return new Date(now.getTime() - offset * 60000)
     .toISOString()
     .slice(0, 10);
@@ -65,7 +67,11 @@ const getDateKeysBetween = (startDate, endDate) => {
 };
 
 const getMonthDateKeys = (month, year) => {
-  const totalDays = new Date(Number(year), Number(month), 0).getDate();
+  const totalDays = new Date(
+    Number(year),
+    Number(month),
+    0
+  ).getDate();
 
   return Array.from(
     { length: totalDays },
@@ -97,15 +103,26 @@ const isSunday = (dateKey) =>
 const getAttendanceDateKey = (date) => {
   if (!date) return "";
 
-  if (typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  if (
+    typeof date === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(date)
+  ) {
     return date;
   }
 
-  return new Date(date).toISOString().slice(0, 10);
+  const parsed = new Date(date);
+
+  if (Number.isNaN(parsed.getTime())) return "";
+
+  return parsed.toISOString().slice(0, 10);
 };
 
 const getEmployeeSearchText = (employee) =>
-  [employee?.name, employee?.empId, employee?.email]
+  [
+    employee?.name,
+    employee?.empId,
+    employee?.email,
+  ]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
@@ -143,6 +160,78 @@ const getStatusDot = (status) => {
 };
 
 // =========================================
+// EMPLOYEE / COMPANY HELPERS
+// =========================================
+
+const getEmployeeId = (employee) => {
+  if (!employee) return "";
+
+  const id =
+    employee._id ||
+    employee.id ||
+    employee.employeeId?._id ||
+    employee.employee?._id ||
+    employee.employeeId ||
+    employee.employee;
+
+  return typeof id === "object"
+    ? String(id?._id || "")
+    : String(id || "");
+};
+
+const getCompanyId = (employee) => {
+  if (!employee) return "";
+
+  const company =
+    employee.companyId || employee.company;
+
+  if (typeof company === "object") {
+    return String(company?._id || "");
+  }
+
+  return String(company || "");
+};
+
+const getHolidayKey = (employee, dateKey) =>
+  `${getCompanyId(employee)}_${dateKey}`;
+
+const getLeaveKey = (employee, dateKey) =>
+  `${getEmployeeId(employee)}_${dateKey}`;
+
+// =========================================
+// EXCEL HELPERS
+// =========================================
+
+const escapeHTML = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+const downloadExcelFile = (filename, html) => {
+  const blob = new Blob(
+    ["\ufeff", html],
+    {
+      type: "application/vnd.ms-excel;charset=utf-8;",
+    }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = filename;
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+// =========================================
 // AVATAR HELPERS
 // =========================================
 
@@ -160,12 +249,20 @@ const AVATAR_COLORS = [
 const getInitials = (name) => {
   if (!name) return "";
 
-  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  const parts = String(name)
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
 
   if (parts.length === 0) return "";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
 
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+
+  return (
+    parts[0][0] + parts[parts.length - 1][0]
+  ).toUpperCase();
 };
 
 const getAvatarColor = (name) => {
@@ -181,8 +278,11 @@ const getAvatarColor = (name) => {
 
 const Avatar = ({ name, size = "md" }) => {
   const initials = getInitials(name);
+
   const sizeClasses =
-    size === "sm" ? "h-8 w-8 text-xs" : "h-10 w-10 text-sm";
+    size === "sm"
+      ? "h-8 w-8 text-xs"
+      : "h-10 w-10 text-sm";
 
   return (
     <div
@@ -197,7 +297,6 @@ const Avatar = ({ name, size = "md" }) => {
 
 // =========================================
 // SCROLL STYLES
-// Top horizontal scrollbar + right vertical scrollbar
 // =========================================
 
 const SCROLLBAR_CSS = `
@@ -231,13 +330,13 @@ const SCROLLBAR_CSS = `
 `;
 
 // =========================================
-// DUAL SCROLL TABLE WRAPPER
-// - Horizontal scrollbar on TOP (synced)
-// - Vertical scrollbar on the RIGHT
-// - Bottom horizontal scrollbar hidden
+// DUAL SCROLL TABLE
 // =========================================
 
-const DualScrollTable = ({ children, maxHeight = "68vh" }) => {
+const DualScrollTable = ({
+  children,
+  maxHeight = "68vh",
+}) => {
   const topRef = useRef(null);
   const mainRef = useRef(null);
   const contentRef = useRef(null);
@@ -257,17 +356,22 @@ const DualScrollTable = ({ children, maxHeight = "68vh" }) => {
       setContentWidth(content.offsetWidth);
       setScrollbarWidth(main.offsetWidth - main.clientWidth);
       setScrollbarHeight(main.offsetHeight - main.clientHeight);
-      setOverflowing(content.offsetWidth > main.clientWidth + 1);
+      setOverflowing(
+        content.offsetWidth > main.clientWidth + 1
+      );
     };
 
     measure();
 
     if (typeof ResizeObserver === "undefined") {
       window.addEventListener("resize", measure);
-      return () => window.removeEventListener("resize", measure);
+
+      return () =>
+        window.removeEventListener("resize", measure);
     }
 
     const observer = new ResizeObserver(measure);
+
     observer.observe(content);
     observer.observe(main);
 
@@ -296,7 +400,6 @@ const DualScrollTable = ({ children, maxHeight = "68vh" }) => {
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       <style>{SCROLLBAR_CSS}</style>
 
-      {/* Top horizontal scrollbar */}
       <div
         ref={topRef}
         onScroll={handleTopScroll}
@@ -310,7 +413,6 @@ const DualScrollTable = ({ children, maxHeight = "68vh" }) => {
         <div style={{ width: contentWidth, height: 1 }} />
       </div>
 
-      {/* Wrapper clips the bottom horizontal scrollbar (all browsers) */}
       <div className="overflow-hidden">
         <div
           ref={mainRef}
@@ -331,7 +433,7 @@ const DualScrollTable = ({ children, maxHeight = "68vh" }) => {
 };
 
 // =========================================
-// SMALL UI PIECES
+// SMALL UI COMPONENTS
 // =========================================
 
 const TimePill = ({ value, type }) => {
@@ -361,16 +463,19 @@ const StatusBadge = ({ status, label }) => (
       status
     )}`}
   >
-    <span className={`h-1.5 w-1.5 rounded-full ${getStatusDot(status)}`} />
+    <span
+      className={`h-1.5 w-1.5 rounded-full ${getStatusDot(status)}`}
+    />
     {label}
   </span>
 );
 
 // =========================================
-// COMPANY ATTENDANCE CHECKER PAGE
+// COMPANY ATTENDANCE CHECKER
 // =========================================
 
 const CompanyAttendanceChecker = () => {
+  const { companyId } = useParams();
   const today = getTodayDate();
   const currentDate = new Date(`${today}T00:00:00`);
   const currentMonth = currentDate.getMonth() + 1;
@@ -385,15 +490,22 @@ const CompanyAttendanceChecker = () => {
   const [selectedMonth, setSelectedMonth] = useState(
     String(currentMonth).padStart(2, "0")
   );
-  const [selectedYear, setSelectedYear] = useState(String(currentYear));
+
+  const [selectedYear, setSelectedYear] = useState(
+    String(currentYear)
+  );
 
   const [employeeSearch, setEmployeeSearch] = useState("");
 
   const [attendance, setAttendance] = useState([]);
   const [attendanceGroups, setAttendanceGroups] = useState([]);
 
+  const [companyHolidayDates, setCompanyHolidayDates] = useState({});
+  const [approvedLeaveDates, setApprovedLeaveDates] = useState({});
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [employeeHistory, setEmployeeHistory] = useState([]);
@@ -401,7 +513,6 @@ const CompanyAttendanceChecker = () => {
 
   // =========================================
   // LOAD ATTENDANCE
-  // SINGLE DATE / DATE RANGE / MONTHLY
   // =========================================
 
   const loadAttendance = useCallback(
@@ -435,32 +546,44 @@ const CompanyAttendanceChecker = () => {
         let response;
 
         if (attendanceView === "single") {
-          response = await api.get("/attendance/super-admin/company", {
-            params: { date: selectedDate },
-          });
+          response = await api.get(
+            "/attendance/super-admin/company",
+            {
+              params: { date: selectedDate },
+            }
+          );
         } else if (attendanceView === "range") {
-          response = await api.get("/attendance/super-admin/date-range", {
-            params: { startDate, endDate },
-          });
+          response = await api.get(
+            "/attendance/super-admin/date-range",
+            {
+              params: { startDate, endDate },
+            }
+          );
         } else {
-          response = await api.get("/attendance/super-admin/monthly", {
-            params: {
-              month: Number(selectedMonth),
-              year: Number(selectedYear),
-            },
-          });
+          response = await api.get(
+            "/attendance/super-admin/monthly",
+            {
+              params: {
+                month: Number(selectedMonth),
+                year: Number(selectedYear),
+              },
+            }
+          );
         }
 
         const records =
-          response.data?.attendance || response.data?.records || [];
+          response.data?.attendance ||
+          response.data?.records ||
+          [];
 
         if (attendanceView === "single") {
           setAttendance(records);
           setAttendanceGroups([]);
+
+          await loadCompanyHolidays();
         } else {
           setAttendanceGroups(records);
 
-          // Flatten employee-wise attendance for summary calculation.
           const flattened = records.flatMap((item) =>
             (item.attendance || []).map((record) => ({
               ...record,
@@ -469,10 +592,13 @@ const CompanyAttendanceChecker = () => {
           );
 
           setAttendance(flattened);
+
+          await loadCompanyHolidays();
         }
       } catch (err) {
         setAttendance([]);
         setAttendanceGroups([]);
+        setCompanyHolidayDates({});
 
         toast.error(
           err.response?.data?.message ||
@@ -494,9 +620,116 @@ const CompanyAttendanceChecker = () => {
     ]
   );
 
+  // =========================================
+  // LOAD COMPANY HOLIDAYS
+  // =========================================
+
+const loadCompanyHolidays = useCallback(async () => {
+  if (!companyId) {
+    console.error("Company ID not found in route params.");
+    setCompanyHolidayDates({});
+    return;
+  }
+
+  try {
+    const response = await api.get(
+      `/holidays/company/${companyId}`
+    );
+
+    const holidays = response.data?.holidays || [];
+    const holidayMap = {};
+
+    holidays.forEach((holiday) => {
+      const dateKey = getAttendanceDateKey(holiday.date);
+
+      if (dateKey) {
+        holidayMap[`${companyId}_${dateKey}`] =
+          holiday.holidayName ||
+          holiday.name ||
+          "Holiday";
+      }
+    });
+
+    setCompanyHolidayDates(holidayMap);
+  } catch (error) {
+    console.error("Failed to load company holidays:", error);
+    setCompanyHolidayDates({});
+  }
+}, [companyId]);
+
+  // =========================================
+  // LOAD APPROVED LEAVES
+  // =========================================
+
+  const loadApprovedLeaves = useCallback(async () => {
+    try {
+      const response = await api.get(
+        "/leaves/super-admin/all-employee-leaves"
+      );
+
+      const requests = response.data?.requests || [];
+      const leaveMap = {};
+
+      requests
+        .filter(
+          (request) =>
+            request.status?.toLowerCase() === "approved"
+        )
+        .forEach((request) => {
+          const employeeId =
+            typeof request.employeeId === "object"
+              ? request.employeeId?._id
+              : request.employeeId;
+
+          if (!employeeId) return;
+
+          const employeeMongoId = String(employeeId);
+
+          if (
+            Array.isArray(request.dailyBreakdown) &&
+            request.dailyBreakdown.length > 0
+          ) {
+            request.dailyBreakdown.forEach((day) => {
+              const dateKey = getAttendanceDateKey(day.date);
+
+              if (dateKey) {
+                leaveMap[
+                  `${employeeMongoId}_${dateKey}`
+                ] = day.dayType || "Leave";
+              }
+            });
+          } else {
+            const dates = getDateKeysBetween(
+              getAttendanceDateKey(request.startDate),
+              getAttendanceDateKey(request.endDate)
+            );
+
+            dates.forEach((dateKey) => {
+              leaveMap[
+                `${employeeMongoId}_${dateKey}`
+              ] = "Leave";
+            });
+          }
+        });
+
+      setApprovedLeaveDates(leaveMap);
+    } catch (error) {
+      console.error("Failed to load approved leaves:", error);
+      setApprovedLeaveDates({});
+    }
+  }, []);
+
+  // =========================================
+  // INITIAL / FILTER LOAD
+  // =========================================
+
   useEffect(() => {
     loadAttendance();
   }, [loadAttendance]);
+
+  useEffect(() => {
+    loadApprovedLeaves();
+  }, [loadApprovedLeaves]);
 
   // =========================================
   // EMPLOYEE HISTORY
@@ -504,7 +737,9 @@ const CompanyAttendanceChecker = () => {
 
   const loadEmployeeHistory = async (employee) => {
     const employeeId =
-      employee?._id || employee?.id || employee?.employee?._id;
+      employee?._id ||
+      employee?.id ||
+      employee?.employee?._id;
 
     if (!employeeId) {
       toast.error("Employee ID not found.");
@@ -524,7 +759,9 @@ const CompanyAttendanceChecker = () => {
       );
 
       setEmployeeHistory(
-        response.data?.attendance || response.data?.records || []
+        response.data?.attendance ||
+          response.data?.records ||
+          []
       );
     } catch (err) {
       toast.error(
@@ -551,11 +788,20 @@ const CompanyAttendanceChecker = () => {
     }
 
     if (attendanceView === "monthly") {
-      return getMonthDateKeys(selectedMonth, selectedYear);
+      return getMonthDateKeys(
+        selectedMonth,
+        selectedYear
+      );
     }
 
     return [];
-  }, [attendanceView, startDate, endDate, selectedMonth, selectedYear]);
+  }, [
+    attendanceView,
+    startDate,
+    endDate,
+    selectedMonth,
+    selectedYear,
+  ]);
 
   const filteredAttendance = useMemo(() => {
     const searchText = employeeSearch.trim().toLowerCase();
@@ -564,18 +810,30 @@ const CompanyAttendanceChecker = () => {
       if (!searchText) return attendance;
 
       return attendance.filter((record) => {
-        const employee = record.employee || record.employeeId || {};
+        const employee =
+          record.employee ||
+          record.employeeId ||
+          {};
 
-        return getEmployeeSearchText(employee).includes(searchText);
+        return getEmployeeSearchText(employee).includes(
+          searchText
+        );
       });
     }
 
     if (!searchText) return attendanceGroups;
 
     return attendanceGroups.filter((item) =>
-      getEmployeeSearchText(item.employee).includes(searchText)
+      getEmployeeSearchText(item.employee).includes(
+        searchText
+      )
     );
-  }, [attendance, attendanceGroups, attendanceView, employeeSearch]);
+  }, [
+    attendance,
+    attendanceGroups,
+    attendanceView,
+    employeeSearch,
+  ]);
 
   const monthGroups = useMemo(() => {
     const groups = [];
@@ -599,7 +857,9 @@ const CompanyAttendanceChecker = () => {
 
   const checkedInCount =
     attendanceView === "single"
-      ? attendance.filter((item) => Boolean(item.checkIn)).length
+      ? attendance.filter((item) =>
+          Boolean(item.checkIn)
+        ).length
       : attendanceGroups.reduce(
           (total, item) =>
             total +
@@ -611,7 +871,9 @@ const CompanyAttendanceChecker = () => {
 
   const checkedOutCount =
     attendanceView === "single"
-      ? attendance.filter((item) => Boolean(item.checkOut)).length
+      ? attendance.filter((item) =>
+          Boolean(item.checkOut)
+        ).length
       : attendanceGroups.reduce(
           (total, item) =>
             total +
@@ -625,12 +887,249 @@ const CompanyAttendanceChecker = () => {
     record.employee || record.employeeId || {};
 
   // =========================================
+  // HOLIDAY / LEAVE CELL HELPERS
+  // =========================================
+
+const getCellInfo = (employee, dateKey) => {
+  const holidayName =
+    companyHolidayDates[`${companyId}_${dateKey}`];
+
+  const leaveType =
+    approvedLeaveDates[getLeaveKey(employee, dateKey)];
+
+  return {
+    isHoliday: Boolean(holidayName),
+    isLeave: Boolean(leaveType),
+    holidayName,
+    leaveType,
+    isSunday: isSunday(dateKey),
+  };
+};
+
+  const getCellBackground = (info) => {
+    if (info.isLeave) {
+      return "bg-emerald-50";
+    }
+
+    if (info.isHoliday) {
+      return "bg-amber-50";
+    }
+
+    if (info.isSunday) {
+      return "bg-rose-50/40";
+    }
+
+    return "bg-white";
+  };
+
+  // =========================================
+  // EXPORT EXCEL
+  // DATE RANGE / MONTHLY
+  // =========================================
+
+  const handleExportAttendance = () => {
+    if (attendanceView === "single") {
+      toast.info(
+        "Excel export is available for Date Range and Monthly attendance."
+      );
+      return;
+    }
+
+    if (!filteredAttendance.length || !matrixDates.length) {
+      toast.error("No attendance data available to export.");
+      return;
+    }
+
+    setExporting(true);
+
+    try {
+      const headerDates = matrixDates
+        .map((dateKey) => {
+          const day = getDayNumber(dateKey);
+          const weekday = getWeekdayShort(dateKey);
+
+          return `
+            <th style="
+              background:#e2e8f0;
+              color:#334155;
+              border:1px solid #cbd5e1;
+              padding:8px;
+              text-align:center;
+              white-space:nowrap;
+            ">
+              ${escapeHTML(day)}<br/>
+              ${escapeHTML(weekday)}
+            </th>
+          `;
+        })
+        .join("");
+
+      const rows = filteredAttendance
+        .map((item) => {
+          const employee = item.employee || {};
+
+          const attendanceByDate = new Map(
+            (item.attendance || []).map((record) => [
+              getAttendanceDateKey(record.attendanceDate),
+              record,
+            ])
+          );
+
+          const cells = matrixDates
+            .map((dateKey) => {
+              const record = attendanceByDate.get(dateKey);
+              const info = getCellInfo(employee, dateKey);
+
+              let background = "#ffffff";
+
+              if (info.isLeave) {
+                background = "#dcfce7";
+              } else if (info.isHoliday) {
+                background = "#fef3c7";
+              } else if (info.isSunday) {
+                background = "#fff1f2";
+              }
+
+              const checkIn = record?.checkIn
+                ? formatTime(record.checkIn)
+                : "--";
+
+              const checkOut = record?.checkOut
+                ? formatTime(record.checkOut)
+                : "--";
+
+              const marker = info.isLeave
+                ? "Approved Leave"
+                : info.isHoliday
+                  ? info.holidayName || "Holiday"
+                  : info.isSunday
+                    ? "Sunday"
+                    : "";
+
+              return `
+                <td style="
+                  border:1px solid #cbd5e1;
+                  padding:7px;
+                  text-align:center;
+                  background:${background};
+                  white-space:nowrap;
+                ">
+                  <div style="color:#1d4ed8;font-weight:bold;">
+                    IN: ${escapeHTML(checkIn)}
+                  </div>
+                  <div style="color:#047857;font-weight:bold;">
+                    OUT: ${escapeHTML(checkOut)}
+                  </div>
+                  ${
+                    marker
+                      ? `<div style="font-size:10px;margin-top:4px;color:#475569;">${escapeHTML(
+                          marker
+                        )}</div>`
+                      : ""
+                  }
+                </td>
+              `;
+            })
+            .join("");
+
+          return `
+            <tr>
+              <td style="
+                border:1px solid #cbd5e1;
+                padding:8px;
+                font-weight:bold;
+                white-space:nowrap;
+              ">
+                ${escapeHTML(employee.name || "Unknown employee")}
+              </td>
+              <td style="
+                border:1px solid #cbd5e1;
+                padding:8px;
+                white-space:nowrap;
+              ">
+                ${escapeHTML(employee.empId || "--")}
+              </td>
+              <td style="
+                border:1px solid #cbd5e1;
+                padding:8px;
+                white-space:nowrap;
+              ">
+                ${escapeHTML(
+                  employee.departmentId?.departmentName ||
+                    employee.department?.departmentName ||
+                    "--"
+                )}
+              </td>
+              ${cells}
+            </tr>
+          `;
+        })
+        .join("");
+
+      const html = `
+        <html>
+          <head>
+            <meta charset="UTF-8" />
+          </head>
+          <body>
+            <table style="border-collapse:collapse;">
+              <thead>
+                <tr>
+                  <th colspan="${3 + matrixDates.length}"
+                    style="
+                      background:#1e40af;
+                      color:#ffffff;
+                      font-size:16px;
+                      padding:12px;
+                      text-align:center;
+                    ">
+                    Company Attendance Report
+                  </th>
+                </tr>
+                <tr>
+                  <th style="background:#e2e8f0;border:1px solid #cbd5e1;padding:8px;">
+                    Employee
+                  </th>
+                  <th style="background:#e2e8f0;border:1px solid #cbd5e1;padding:8px;">
+                    Employee ID
+                  </th>
+                  <th style="background:#e2e8f0;border:1px solid #cbd5e1;padding:8px;">
+                    Department
+                  </th>
+                  ${headerDates}
+                </tr>
+              </thead>
+              <tbody>
+                ${rows}
+              </tbody>
+            </table>
+          </body>
+        </html>
+      `;
+
+      const filename =
+        attendanceView === "monthly"
+          ? `Attendance_${selectedYear}_${selectedMonth}.xls`
+          : `Attendance_${startDate}_to_${endDate}.xls`;
+
+      downloadExcelFile(filename, html);
+
+      toast.success("Attendance Excel exported successfully.");
+    } catch (error) {
+      console.error("Attendance export failed:", error);
+      toast.error("Failed to export attendance.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // =========================================
   // UI
   // =========================================
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
-      {/* Header */}
+      {/* HEADER */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div className="flex items-center gap-3">
           <div className="rounded-xl bg-blue-50 p-3 text-blue-600">
@@ -641,6 +1140,7 @@ const CompanyAttendanceChecker = () => {
             <h1 className="text-2xl font-bold text-slate-800">
               Attendance Checker
             </h1>
+
             <p className="mt-1 text-sm text-slate-500">
               View company employee attendance by date.
             </p>
@@ -661,12 +1161,8 @@ const CompanyAttendanceChecker = () => {
         </button>
       </div>
 
-      {/* =========================================
-          COMPANY ATTENDANCE
-      ========================================= */}
-
+      {/* COMPANY ATTENDANCE */}
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        {/* Section Header */}
         <div className="space-y-5 border-b border-slate-200 p-5">
           <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
             <div>
@@ -679,17 +1175,21 @@ const CompanyAttendanceChecker = () => {
                   ? `Attendance records for ${formatDate(selectedDate)}`
                   : attendanceView === "range"
                     ? `Attendance from ${formatDate(startDate)} to ${formatDate(endDate)}`
-                    : `Attendance for ${getMonthLabel(`${selectedYear}-${selectedMonth}-01`)}`}
+                    : `Attendance for ${getMonthLabel(
+                        `${selectedYear}-${selectedMonth}-01`
+                      )}`}
               </p>
             </div>
 
             <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600">
               {filteredAttendance.length}{" "}
-              {attendanceView === "single" ? "records" : "employees"}
+              {attendanceView === "single"
+                ? "records"
+                : "employees"}
             </span>
           </div>
 
-          {/* Attendance Tabs */}
+          {/* TABS */}
           <div className="grid grid-cols-1 gap-2 rounded-xl bg-slate-100 p-1 sm:grid-cols-3">
             {[
               { value: "single", label: "Single Date" },
@@ -711,7 +1211,7 @@ const CompanyAttendanceChecker = () => {
             ))}
           </div>
 
-          {/* Date Selection */}
+          {/* SINGLE DATE */}
           {attendanceView === "single" && (
             <div className="max-w-xs">
               <label
@@ -726,12 +1226,15 @@ const CompanyAttendanceChecker = () => {
                 type="date"
                 value={selectedDate}
                 max={today}
-                onChange={(event) => setSelectedDate(event.target.value)}
+                onChange={(event) =>
+                  setSelectedDate(event.target.value)
+                }
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
             </div>
           )}
 
+          {/* DATE RANGE */}
           {attendanceView === "range" && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
@@ -747,7 +1250,9 @@ const CompanyAttendanceChecker = () => {
                   type="date"
                   value={startDate}
                   max={today}
-                  onChange={(event) => setStartDate(event.target.value)}
+                  onChange={(event) =>
+                    setStartDate(event.target.value)
+                  }
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               </div>
@@ -766,13 +1271,16 @@ const CompanyAttendanceChecker = () => {
                   value={endDate}
                   min={startDate}
                   max={today}
-                  onChange={(event) => setEndDate(event.target.value)}
+                  onChange={(event) =>
+                    setEndDate(event.target.value)
+                  }
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               </div>
             </div>
           )}
 
+          {/* MONTHLY */}
           {attendanceView === "monthly" && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
@@ -786,7 +1294,9 @@ const CompanyAttendanceChecker = () => {
                 <select
                   id="attendance-month"
                   value={selectedMonth}
-                  onChange={(event) => setSelectedMonth(event.target.value)}
+                  onChange={(event) =>
+                    setSelectedMonth(event.target.value)
+                  }
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
                 >
                   {[
@@ -827,14 +1337,16 @@ const CompanyAttendanceChecker = () => {
                   min="1000"
                   max={currentYear}
                   value={selectedYear}
-                  onChange={(event) => setSelectedYear(event.target.value)}
+                  onChange={(event) =>
+                    setSelectedYear(event.target.value)
+                  }
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
                 />
               </div>
             </div>
           )}
 
-          {/* Employee Search */}
+          {/* EMPLOYEE SEARCH */}
           <div>
             <label
               htmlFor="attendance-search"
@@ -853,15 +1365,44 @@ const CompanyAttendanceChecker = () => {
                 id="attendance-search"
                 type="text"
                 value={employeeSearch}
-                onChange={(event) => setEmployeeSearch(event.target.value)}
+                onChange={(event) =>
+                  setEmployeeSearch(event.target.value)
+                }
                 placeholder="Search by employee name, ID or email..."
                 className="w-full rounded-lg border border-slate-300 bg-white py-3 pl-10 pr-4 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
             </div>
           </div>
+
+          {/* EXCEL EXPORT */}
+          {attendanceView !== "single" && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleExportAttendance}
+                disabled={
+                  loading ||
+                  exporting ||
+                  filteredAttendance.length === 0
+                }
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {exporting ? (
+                  <LoaderCircle
+                    size={17}
+                    className="animate-spin"
+                  />
+                ) : (
+                  <Download size={17} />
+                )}
+
+                {exporting ? "Exporting..." : "Export Excel"}
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Summary */}
+        {/* SUMMARY */}
         <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-3">
           <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <div className="rounded-lg bg-white p-2.5 text-slate-600 shadow-sm">
@@ -874,6 +1415,7 @@ const CompanyAttendanceChecker = () => {
                   ? "Total Attendance Records"
                   : "Total Employees"}
               </p>
+
               <p className="mt-0.5 text-2xl font-bold text-slate-800">
                 {attendanceView === "single"
                   ? attendance.length
@@ -891,6 +1433,7 @@ const CompanyAttendanceChecker = () => {
               <p className="text-xs font-medium text-blue-700">
                 Checked In
               </p>
+
               <p className="mt-0.5 text-2xl font-bold text-blue-700">
                 {checkedInCount}
               </p>
@@ -906,6 +1449,7 @@ const CompanyAttendanceChecker = () => {
               <p className="text-xs font-medium text-emerald-700">
                 Checked Out
               </p>
+
               <p className="mt-0.5 text-2xl font-bold text-emerald-700">
                 {checkedOutCount}
               </p>
@@ -913,16 +1457,42 @@ const CompanyAttendanceChecker = () => {
           </div>
         </div>
 
-        {/* Attendance Table / Matrix */}
+        {/* LEGEND */}
+        {attendanceView !== "single" && (
+          <div className="flex flex-wrap items-center gap-4 px-5 pb-4 text-xs font-medium text-slate-600">
+            <span className="inline-flex items-center gap-2">
+              <span className="h-3 w-3 rounded-sm border border-amber-200 bg-amber-100" />
+              Company Holiday
+            </span>
+
+            <span className="inline-flex items-center gap-2">
+              <span className="h-3 w-3 rounded-sm border border-emerald-200 bg-emerald-100" />
+              Approved Leave
+            </span>
+
+            <span className="inline-flex items-center gap-2">
+              <span className="h-3 w-3 rounded-sm border border-rose-200 bg-rose-100" />
+              Sunday
+            </span>
+          </div>
+        )}
+
+        {/* ATTENDANCE TABLE */}
         <div className="px-5 pb-5">
           {loading ? (
             <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 p-10 text-sm text-slate-500">
-              <LoaderCircle size={18} className="animate-spin" />
+              <LoaderCircle
+                size={18}
+                className="animate-spin"
+              />
               Loading attendance...
             </div>
           ) : filteredAttendance.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-10 text-center">
-              <CalendarDays size={32} className="mx-auto text-slate-300" />
+              <CalendarDays
+                size={32}
+                className="mx-auto text-slate-300"
+              />
 
               <p className="mt-3 font-medium text-slate-700">
                 {employeeSearch
@@ -937,9 +1507,6 @@ const CompanyAttendanceChecker = () => {
               </p>
             </div>
           ) : attendanceView === "single" ? (
-            /* =====================================
-               SINGLE DATE TABLE
-            ===================================== */
             <DualScrollTable maxHeight="68vh">
               <table className="w-full min-w-[950px] border-separate border-spacing-0 text-left text-sm">
                 <thead>
@@ -956,7 +1523,9 @@ const CompanyAttendanceChecker = () => {
                       <th
                         key={heading}
                         className={`sticky top-0 border-b border-slate-200 bg-slate-50 px-5 py-3.5 text-xs font-semibold tracking-wide text-slate-500 ${
-                          index === 0 ? "left-0 z-30" : "z-20"
+                          index === 0
+                            ? "left-0 z-30"
+                            : "z-20"
                         }`}
                       >
                         {heading}
@@ -968,15 +1537,22 @@ const CompanyAttendanceChecker = () => {
                 <tbody>
                   {filteredAttendance.map((record, index) => {
                     const employee = employeeDetails(record);
+
                     const statusText =
                       record.status ||
-                      (record.checkIn ? "Present" : "Not recorded");
+                      (record.checkIn
+                        ? "Present"
+                        : "Not recorded");
+
                     const departmentName =
                       employee.departmentId?.departmentName ||
                       employee.department?.departmentName;
 
                     return (
-                      <tr key={record._id || index} className="group">
+                      <tr
+                        key={record._id || index}
+                        className="group"
+                      >
                         <td className="sticky left-0 z-10 border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
                           <div className="flex items-center gap-3">
                             <Avatar name={employee.name} />
@@ -1013,11 +1589,17 @@ const CompanyAttendanceChecker = () => {
                         </td>
 
                         <td className="border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
-                          <TimePill value={record.checkIn} type="in" />
+                          <TimePill
+                            value={record.checkIn}
+                            type="in"
+                          />
                         </td>
 
                         <td className="border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
-                          <TimePill value={record.checkOut} type="out" />
+                          <TimePill
+                            value={record.checkOut}
+                            type="out"
+                          />
                         </td>
 
                         <td className="border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
@@ -1052,13 +1634,10 @@ const CompanyAttendanceChecker = () => {
               </table>
             </DualScrollTable>
           ) : (
-            /* =====================================
-               DATE RANGE / MONTHLY MATRIX
-            ===================================== */
             <DualScrollTable maxHeight="72vh">
               <table className="border-separate border-spacing-0 text-center text-xs">
                 <thead>
-                  {/* Month Header */}
+                  {/* MONTH HEADER */}
                   <tr>
                     <th
                       rowSpan={2}
@@ -1081,7 +1660,7 @@ const CompanyAttendanceChecker = () => {
                     ))}
                   </tr>
 
-                  {/* Day Header */}
+                  {/* DAY HEADER */}
                   <tr>
                     {matrixDates.map((dateKey) => {
                       const sunday = isSunday(dateKey);
@@ -1100,7 +1679,9 @@ const CompanyAttendanceChecker = () => {
                           <div className="flex flex-col items-center gap-1">
                             <span
                               className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${
-                                isCurrentDay ? "bg-blue-600 text-white" : ""
+                                isCurrentDay
+                                  ? "bg-blue-600 text-white"
+                                  : ""
                               }`}
                             >
                               {getDayNumber(dateKey)}
@@ -1122,17 +1703,25 @@ const CompanyAttendanceChecker = () => {
 
                     const attendanceByDate = new Map(
                       (item.attendance || []).map((record) => [
-                        getAttendanceDateKey(record.attendanceDate),
+                        getAttendanceDateKey(
+                          record.attendanceDate
+                        ),
                         record,
                       ])
                     );
 
                     return (
-                      <tr key={employee._id || index} className="group">
-                        {/* Fixed Employee Column */}
+                      <tr
+                        key={employee._id || index}
+                        className="group"
+                      >
+                        {/* EMPLOYEE COLUMN */}
                         <td className="sticky left-0 z-10 border-b border-r border-slate-200 bg-white px-4 py-3 text-left group-hover:bg-blue-50">
                           <div className="flex min-w-[190px] items-center gap-3">
-                            <Avatar name={employee.name} size="sm" />
+                            <Avatar
+                              name={employee.name}
+                              size="sm"
+                            />
 
                             <div className="min-w-0">
                               <p className="truncate text-sm font-semibold text-slate-800">
@@ -1160,39 +1749,79 @@ const CompanyAttendanceChecker = () => {
                           </div>
                         </td>
 
-                        {/* Daily Attendance Cells */}
+                        {/* DAILY ATTENDANCE CELLS */}
                         {matrixDates.map((dateKey) => {
-                          const record = attendanceByDate.get(dateKey);
-                          const sunday = isSunday(dateKey);
+                          const record =
+                            attendanceByDate.get(dateKey);
+
+                          const info = getCellInfo(
+                            employee,
+                            dateKey
+                          );
+
+                          const background =
+                            getCellBackground(info);
 
                           return (
                             <td
                               key={dateKey}
-                              className={`min-w-[108px] border-b border-r border-slate-100 px-2 py-2.5 group-hover:bg-blue-50/50 ${
-                                sunday ? "bg-rose-50/40" : "bg-white"
-                              }`}
+                              title={
+                                info.isLeave
+                                  ? "Approved Leave"
+                                  : info.isHoliday
+                                    ? info.holidayName || "Holiday"
+                                    : info.isSunday
+                                      ? "Sunday"
+                                      : ""
+                              }
+                              className={`min-w-[108px] border-b border-r border-slate-100 px-2 py-2.5 ${background} group-hover:brightness-[0.98]`}
                             >
-                              {record ? (
-                                <div className="mx-auto w-[92px] space-y-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 shadow-sm">
-                                  <p className="flex items-center justify-between gap-1 whitespace-nowrap font-semibold tabular-nums text-blue-700">
-                                    <LogIn size={11} />
-                                    {formatTime(record.checkIn)}
-                                  </p>
+                              <div className="mx-auto w-[92px] space-y-1">
+                                {record ? (
+                                  <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 shadow-sm">
+                                    <p className="flex items-center justify-between gap-1 whitespace-nowrap font-semibold tabular-nums text-blue-700">
+                                      <LogIn size={11} />
+                                      {formatTime(record.checkIn)}
+                                    </p>
 
-                                  <p
-                                    className={`flex items-center justify-between gap-1 whitespace-nowrap font-semibold tabular-nums ${
-                                      record.checkOut
-                                        ? "text-emerald-700"
-                                        : "text-slate-400"
-                                    }`}
-                                  >
-                                    <LogOut size={11} />
-                                    {formatTime(record.checkOut)}
-                                  </p>
-                                </div>
-                              ) : (
-                                <span className="text-slate-300">—</span>
-                              )}
+                                    <p
+                                      className={`flex items-center justify-between gap-1 whitespace-nowrap font-semibold tabular-nums ${
+                                        record.checkOut
+                                          ? "text-emerald-700"
+                                          : "text-slate-400"
+                                      }`}
+                                    >
+                                      <LogOut size={11} />
+                                      {formatTime(record.checkOut)}
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400">
+                                    —
+                                  </span>
+                                )}
+
+                                {info.isLeave && (
+                                  <span className="block rounded bg-emerald-100 px-1 py-0.5 text-[9px] font-bold text-emerald-800">
+                                    LEAVE
+                                  </span>
+                                )}
+
+                                {!info.isLeave &&
+                                  info.isHoliday && (
+                                    <span className="block rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-800">
+                                      HOLIDAY
+                                    </span>
+                                  )}
+
+                                {!info.isLeave &&
+                                  !info.isHoliday &&
+                                  info.isSunday && (
+                                    <span className="block rounded bg-rose-100 px-1 py-0.5 text-[9px] font-bold text-rose-700">
+                                      SUNDAY
+                                    </span>
+                                  )}
+                              </div>
                             </td>
                           );
                         })}
@@ -1205,13 +1834,15 @@ const CompanyAttendanceChecker = () => {
           )}
         </div>
 
-        {/* Footer */}
+        {/* FOOTER */}
         <div className="border-t border-slate-200 bg-slate-50 px-5 py-3 text-xs text-slate-500">
           Showing{" "}
           <span className="font-semibold text-slate-700">
             {filteredAttendance.length}
           </span>{" "}
-          {attendanceView === "single" ? "attendance records" : "employees"}
+          {attendanceView === "single"
+            ? "attendance records"
+            : "employees"}
           {attendanceView !== "single" &&
             ` across ${matrixDates.length} days`}
           {employeeSearch && " matching your search"}.
@@ -1233,6 +1864,7 @@ const CompanyAttendanceChecker = () => {
                   <h2 className="text-lg font-bold text-slate-800">
                     Attendance History
                   </h2>
+
                   <p className="mt-0.5 text-sm text-slate-500">
                     {selectedEmployee.name || "Employee"}{" "}
                     {selectedEmployee.empId
@@ -1254,7 +1886,10 @@ const CompanyAttendanceChecker = () => {
             <div className="p-5">
               {historyLoading ? (
                 <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500">
-                  <LoaderCircle size={18} className="animate-spin" />
+                  <LoaderCircle
+                    size={18}
+                    className="animate-spin"
+                  />
                   Loading history...
                 </div>
               ) : employeeHistory.length === 0 ? (
@@ -1266,22 +1901,28 @@ const CompanyAttendanceChecker = () => {
                   <table className="w-full min-w-[520px] border-separate border-spacing-0 text-left text-sm">
                     <thead>
                       <tr>
-                        {["Date", "Check In", "Check Out", "Status"].map(
-                          (heading) => (
-                            <th
-                              key={heading}
-                              className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-5 py-3.5 text-xs font-semibold tracking-wide text-slate-500"
-                            >
-                              {heading}
-                            </th>
-                          )
-                        )}
+                        {[
+                          "Date",
+                          "Check In",
+                          "Check Out",
+                          "Status",
+                        ].map((heading) => (
+                          <th
+                            key={heading}
+                            className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-5 py-3.5 text-xs font-semibold tracking-wide text-slate-500"
+                          >
+                            {heading}
+                          </th>
+                        ))}
                       </tr>
                     </thead>
 
                     <tbody>
                       {employeeHistory.map((record, index) => (
-                        <tr key={record._id || index} className="group">
+                        <tr
+                          key={record._id || index}
+                          className="group"
+                        >
                           <td className="border-b border-slate-100 bg-white px-5 py-3.5 text-slate-600 group-hover:bg-blue-50/60">
                             <span className="inline-flex items-center gap-2">
                               <CalendarDays
@@ -1289,17 +1930,24 @@ const CompanyAttendanceChecker = () => {
                                 className="text-slate-400"
                               />
                               {formatDate(
-                                record.attendanceDate || record.date
+                                record.attendanceDate ||
+                                  record.date
                               )}
                             </span>
                           </td>
 
                           <td className="border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
-                            <TimePill value={record.checkIn} type="in" />
+                            <TimePill
+                              value={record.checkIn}
+                              type="in"
+                            />
                           </td>
 
                           <td className="border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">
-                            <TimePill value={record.checkOut} type="out" />
+                            <TimePill
+                              value={record.checkOut}
+                              type="out"
+                            />
                           </td>
 
                           <td className="border-b border-slate-100 bg-white px-5 py-3.5 group-hover:bg-blue-50/60">

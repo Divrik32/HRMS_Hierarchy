@@ -111,7 +111,7 @@ const CompanySidebar = ({ open }) => {
           Timesheets
         </Link>
 
-        <Link to={`/company/${companyId}/attendance`} className={linkClass}>
+        {/* <Link to={`/company/${companyId}/attendance`} className={linkClass}>
           <CalendarCheck size={20} />
           Attendance Checker
         </Link>
@@ -121,7 +121,7 @@ const CompanySidebar = ({ open }) => {
 >
   <UserX size={20} />
   Absent Management
-</Link>
+</Link> */}
 
         <Link to={`/company/${companyId}/holidays`} className={linkClass}>
           <CalendarDays size={20} />

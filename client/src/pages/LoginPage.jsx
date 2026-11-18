@@ -413,15 +413,10 @@ const LoginPage = () => {
             {/* Heading */}
             <div className="mb-8">
               <h2 className="text-4xl font-bold tracking-tight">Sign in</h2>
-              <p className="mt-4 text-sm text-slate-300">
-                Need a Super Administrator account?{" "}
-                <Link
-                  to="/register-super-admin"
-                  className="font-medium text-white underline underline-offset-4 transition hover:text-cyan-300"
-                >
-                  Create now
-                </Link>
-              </p>
+<p className="mt-4 text-sm leading-relaxed text-slate-300">
+  Sign in using your registered account credentials to
+  securely access your workspace.
+</p>
             </div>
 
             {/* Login Form */}
