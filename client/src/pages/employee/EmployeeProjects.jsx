@@ -1001,7 +1001,7 @@ const isITVicePresident =
           </div>
 
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
-            Project Management
+            My Projects
           </h1>
 
           <p className="mt-1 text-sm text-slate-500">
@@ -1023,7 +1023,7 @@ const isITVicePresident =
             Refresh
           </button>
 
-{isITVicePresident && (
+{/* {isITVicePresident && (
   <button
     type="button"
     onClick={openCreateProject}
@@ -1032,7 +1032,7 @@ const isITVicePresident =
     <Plus size={17} />
     Create Project
   </button>
-)}
+)} */}
         </div>
       </div>
 
