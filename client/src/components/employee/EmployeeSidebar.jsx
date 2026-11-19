@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { NavLink, useParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import {
   LayoutDashboard,
@@ -14,18 +14,86 @@ import {
   CalendarPlus,
   FilePlus2,
   CheckCircle2,
-  UserX,
-  Clock,
+  Ticket,
+  ChevronRight,
+  LogOut,
 } from "lucide-react";
 
 import api from "../../api/axios";
 
-const EmployeeSidebar = ({ open, employee }) => {
+// =========================================
+// COLOR TOKENS (WCAG AA contrast on navy)
+// Rail bg      #0b1f3a
+// Flyout bg    #10294d
+// Main text    slate-100 / white      (~15:1)
+// Muted text   slate-300              (~10:1)
+// Accent       teal-300 on navy       (~10:1)
+// =========================================
+
+const focusRing =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1f3a]";
+
+const isPathActive = (item, pathname) =>
+  item.end
+    ? pathname === item.path
+    : pathname === item.path || pathname.startsWith(`${item.path}/`);
+
+// onLogout: pass your real logout handler from the parent.
+const EmployeeSidebar = ({ open, employee, onLogout }) => {
   const { employeeId: routeEmployeeId } = useParams();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const sidebarRef = useRef(null);
 
   const [hasChildRoles, setHasChildRoles] = useState(null);
   const [hasTimesheetApprovalAccess, setHasTimesheetApprovalAccess] =
     useState(false);
+
+  // Which main menu's flyout is open (null = none)
+  const [openGroupId, setOpenGroupId] = useState(null);
+  const [flyoutPos, setFlyoutPos] = useState({
+    top: 0,
+    left: 0,
+    bridge: 12,
+    arrowTop: 16,
+  });
+  const closeTimer = useRef(null);
+
+  const cancelClose = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => setOpenGroupId(null), 120);
+  };
+
+  // Flyout is position: fixed, so the scrolling sidebar never clips it
+  const openFlyout = (groupId, itemEl, childCount) => {
+    cancelClose();
+
+    if (itemEl && sidebarRef.current) {
+      const itemRect = itemEl.getBoundingClientRect();
+      const asideRect = sidebarRef.current.getBoundingClientRect();
+      const estimatedHeight = childCount * 44 + 16;
+      const top = Math.max(
+        8,
+        Math.min(itemRect.top, window.innerHeight - estimatedHeight - 8)
+      );
+
+      setFlyoutPos({
+        top,
+        left: itemRect.right,
+        bridge: asideRect.right - itemRect.right + 12,
+        arrowTop: Math.max(12, itemRect.top - top + 14),
+      });
+    }
+
+    setOpenGroupId(groupId);
+  };
 
   const employeeId = employee?._id || routeEmployeeId;
   const basePath = `/employee/${employeeId}`;
@@ -128,7 +196,69 @@ const EmployeeSidebar = ({ open, employee }) => {
     };
   }, [employeeId, open]);
 
+  // =========================================
+  // FLYOUT CLOSE BEHAVIOUR
+  // =========================================
+
+  // Close on route change
+  useEffect(() => {
+    setOpenGroupId(null);
+  }, [pathname]);
+
+  // Clear pending timer on unmount
+  useEffect(() => cancelClose, []);
+
+  // Close on window resize (fixed position would be stale)
+  useEffect(() => {
+    if (!openGroupId) return undefined;
+    const close = () => setOpenGroupId(null);
+    window.addEventListener("resize", close);
+    return () => window.removeEventListener("resize", close);
+  }, [openGroupId]);
+
+  // Close on outside click and Escape
+  useEffect(() => {
+    if (!openGroupId) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (
+        sidebarRef.current &&
+        !sidebarRef.current.contains(event.target)
+      ) {
+        setOpenGroupId(null);
+      }
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setOpenGroupId(null);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openGroupId]);
+
   if (!open) return null;
+
+  // =========================================
+  // LOGOUT
+  // =========================================
+
+  const handleLogout = () => {
+    if (typeof onLogout === "function") {
+      onLogout();
+      return;
+    }
+
+    // Fallback if no handler is passed: adjust keys/route to your app
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    navigate("/login");
+  };
 
   // Employee information
   const departmentName =
@@ -144,254 +274,377 @@ const EmployeeSidebar = ({ open, employee }) => {
       : "Not assigned");
 
   // =========================================
-  // NAVIGATION ITEMS
+  // NAVIGATION (main menu -> sub menu groups)
   // =========================================
 
-  const navigationItems = [
+  const rawNavigation = [
     {
+      id: "dashboard",
       label: "Dashboard",
       path: `${basePath}/dashboard`,
       icon: LayoutDashboard,
       end: true,
     },
     {
+      id: "profile",
       label: "My Profile",
       path: `${basePath}/profile`,
       icon: User,
     },
     {
-      label: "My Projects",
-      path: `${basePath}/projects`,
+      id: "projects",
+      label: "Projects",
       icon: FolderKanban,
+      children: [
+        {
+          label: "My Projects",
+          path: `${basePath}/projects`,
+          icon: FolderKanban,
+        },
+        ...(isITVicePresident
+          ? [
+              {
+                label: "Project Management",
+                path: `${basePath}/project-management`,
+                icon: FolderKanban,
+              },
+            ]
+          : []),
+        {
+          label: "Role & Project Access",
+          path: `${basePath}/access`,
+          icon: ShieldCheck,
+        },
+        {
+          label: "Modules Assigned",
+          path: `${basePath}/modules-assigned`,
+          icon: Layers3,
+        },
+      ],
     },
-
-    ...(isITVicePresident
-      ? [
-          {
-            label: "Project Management",
-            path: `${basePath}/project-management`,
-            icon: FolderKanban,
-          },
-        ]
-      : []),
-
     {
-      label: "Role & Project Access",
-      path: `${basePath}/access`,
-      icon: ShieldCheck,
-    },
-    {
-      label: "Modules Assigned",
-      path: `${basePath}/modules-assigned`,
-      icon: Layers3,
-    },
-    {
-      label: "My Timesheet",
-      path: `${basePath}/timesheet`,
+      id: "timesheet",
+      label: "Timesheet",
       icon: ClipboardList,
+      children: [
+        {
+          label: "My Timesheet",
+          path: `${basePath}/timesheet`,
+          icon: ClipboardList,
+        },
+        // Show only when employee has approval access
+        ...(hasTimesheetApprovalAccess
+          ? [
+              {
+                label: "Timesheet to Approve",
+                path: `${basePath}/timesheet-approvals`,
+                icon: CheckCircle2,
+              },
+            ]
+          : []),
+      ],
     },
-
-    // Show only when employee has child/grandchild roles
-    ...(hasTimesheetApprovalAccess
-      ? [
-          {
-            label: "Timesheet to Approve",
-            path: `${basePath}/timesheet-approvals`,
-            icon: CheckCircle2,
-          },
-        ]
-      : []),
-
     {
-      label: "My Attendance",
-      path: `${basePath}/attendance`,
+      id: "attendance",
+      label: "Attendance & Holidays",
       icon: CalendarDays,
+      children: [
+        {
+          label: "My Attendance",
+          path: `${basePath}/attendance`,
+          icon: CalendarDays,
+        },
+        {
+          label: "See My Holidays",
+          path: `${basePath}/holidays`,
+          icon: CalendarDays,
+        },
+      ],
     },
     {
-      label: "See My Holidays",
-      path: `${basePath}/holidays`,
-      icon: CalendarDays,
+      id: "leaves",
+      label: "Leaves",
+      icon: CalendarPlus,
+      children: [
+        {
+          label: "My Leaves",
+          path: `${basePath}/leaves`,
+          icon: CalendarDays,
+          end: true,
+        },
+        {
+          label: "Apply Leave",
+          path: `${basePath}/leaves/apply`,
+          icon: FilePlus2,
+          end: true,
+        },
+        // Leave Approvals
+        ...(hasChildRoles === true || isHR
+          ? [
+              {
+                label: "Leave Approvals",
+                path: `${basePath}/leave-approvals`,
+                icon: CheckCircle2,
+              },
+            ]
+          : []),
+      ],
     },
-
-    // Leave Management
-{
-  label: "My Leaves",
-  path: `${basePath}/leaves`,
-  icon: CalendarDays,
-  end: true,
-},
-{
-  label: "Apply Leave",
-  path: `${basePath}/leaves/apply`,
-  icon: FilePlus2,
-  end: true,
-},
-
-    // Leave Approvals
-    ...(hasChildRoles === true || isHR
-      ? [
-          {
-            label: "Leave Approvals",
-            path: `${basePath}/leave-approvals`,
-            icon: CheckCircle2,
-          },
-        ]
-      : []),
-
-    // ...(isHR
-    //   ? [
-    //       {
-    //         label: "Absent Management",
-    //         path: `${basePath}/absent`,
-    //         icon: UserX,
-    //       },
-    //     ]
-    //   : []),
-
-    // ...(isHR
-    //   ? [
-    //       {
-    //         label: "Attendance Management",
-    //         path: `${basePath}/attendance-management`,
-    //         icon: Clock,
-    //       },
-    //     ]
-    //   : []),
-
-    // Comp-Off
-    // {
-    //   label: "My Comp-Off",
-    //   path: `${basePath}/comp-off`,
-    //   icon: CalendarPlus,
-    // },
 
     // Tickets - HR Only
     ...(isHR
       ? [
           {
+            id: "tickets",
             label: "Tickets",
             path: `${basePath}/tickets`,
-            icon: ClipboardList,
+            icon: Ticket,
           },
         ]
       : []),
   ];
 
-  // Only HR can apply Comp-Off for selected employees
-  // if (isHR) {
-  //   navigationItems.push(
-  //     {
-  //       label: "Apply Comp-Off",
-  //       path: `${basePath}/comp-off-apply`,
-  //       icon: FilePlus2,
-  //     },
-  //     {
-  //       label: "Comp-Off Approvals",
-  //       path: `${basePath}/comp-off-approvals`,
-  //       icon: CheckCircle2,
-  //     }
-  //   );
-  // }
+  // Groups with only one visible child become a direct link,
+  // groups with no visible children are hidden.
+  const navigation = rawNavigation
+    .filter((item) => !item.children || item.children.length > 0)
+    .map((item) =>
+      item.children && item.children.length === 1
+        ? {
+            ...item,
+            path: item.children[0].path,
+            end: item.children[0].end,
+            children: undefined,
+          }
+        : item
+    );
+
+  const railItemBase =
+    "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors";
+
+  const activeStyle =
+    "bg-teal-300/15 text-teal-200 ring-1 ring-inset ring-teal-300/40";
+  const idleStyle =
+    "text-slate-100 hover:bg-white/10 hover:text-white";
 
   return (
-    <aside className="flex min-h-[calc(100vh-64px)] w-72 shrink-0 flex-col border-r border-slate-200 bg-white p-4">
-
+    <aside
+      ref={sidebarRef}
+      onScroll={() => setOpenGroupId(null)}
+      className="sticky top-16 z-40 flex h-[calc(100vh-64px)] w-64 shrink-0 flex-col self-start overflow-y-auto overflow-x-hidden bg-[#0b1f3a] p-4 [scrollbar-color:#64748b_transparent] [scrollbar-width:thin]"
+    >
       {/* Workspace Header */}
-      <div className="mb-8 px-2">
+      <div className="mb-5 px-1">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
-            <BriefcaseBusiness size={22} />
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-300 text-[#0b1f3a]">
+            <BriefcaseBusiness size={22} aria-hidden="true" />
           </div>
 
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-bold text-slate-800">
+            <h2 className="truncate text-base font-bold text-white">
               Employee Workspace
             </h2>
 
-            <p className="text-xs text-slate-500">
-              Personal Dashboard
-            </p>
+            <p className="text-xs text-slate-300">Personal Dashboard</p>
           </div>
         </div>
       </div>
 
-      {/* Navigation */}
-      <div className="mb-3 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+      <div className="mb-2 border-t border-white/15 px-3 pt-4 text-xs font-semibold text-slate-300">
         Workspace
       </div>
 
-      <nav className="space-y-1.5">
-        {navigationItems.map((item) => {
+      {/* Main menu */}
+      <nav aria-label="Main menu" className="space-y-1">
+        {navigation.map((item) => {
           const Icon = item.icon;
 
-          return (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              end={item.end}
-              className={({ isActive }) =>
-                [
-                  "flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-100"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
-                ].join(" ")
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <Icon
-                    size={20}
-                    className={
-                      isActive
-                        ? "text-blue-600"
-                        : "text-slate-400"
-                    }
-                  />
+          // ---------- Direct link ----------
+          if (!item.children) {
+            return (
+              <NavLink
+                key={item.id}
+                to={item.path}
+                end={item.end}
+                onClick={() => setOpenGroupId(null)}
+                className={({ isActive }) =>
+                  [
+                    railItemBase,
+                    focusRing,
+                    isActive ? activeStyle : idleStyle,
+                  ].join(" ")
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <Icon
+                      size={20}
+                      aria-hidden="true"
+                      className={
+                        isActive ? "text-teal-300" : "text-slate-300"
+                      }
+                    />
+                    <span className="flex-1">{item.label}</span>
+                  </>
+                )}
+              </NavLink>
+            );
+          }
 
-                  <span>{item.label}</span>
-                </>
+          // ---------- Group (click opens small flyout) ----------
+          const isOpen = openGroupId === item.id;
+          const ownsRoute = item.children.some((child) =>
+            isPathActive(child, pathname)
+          );
+
+          return (
+            <div
+              key={item.id}
+              onMouseEnter={(e) =>
+                openFlyout(
+                  item.id,
+                  e.currentTarget.firstElementChild,
+                  item.children.length
+                )
+              }
+              onMouseLeave={scheduleClose}
+            >
+              <button
+                type="button"
+                onClick={(e) =>
+                  openFlyout(
+                    item.id,
+                    e.currentTarget,
+                    item.children.length
+                  )
+                }
+                aria-expanded={isOpen}
+                aria-haspopup="true"
+                aria-controls={`flyout-${item.id}`}
+                className={[
+                  railItemBase,
+                  focusRing,
+                  ownsRoute
+                    ? activeStyle
+                    : isOpen
+                    ? "bg-white/10 text-white"
+                    : idleStyle,
+                ].join(" ")}
+              >
+                <Icon
+                  size={20}
+                  aria-hidden="true"
+                  className={
+                    ownsRoute ? "text-teal-300" : "text-slate-300"
+                  }
+                />
+                <span className="flex-1">{item.label}</span>
+                <ChevronRight
+                  size={16}
+                  aria-hidden="true"
+                  className={isOpen ? "text-white" : "text-slate-300"}
+                />
+              </button>
+
+              {/* Small floating card: opens on hover (or click / keyboard) */}
+              {isOpen && (
+                <div
+                  id={`flyout-${item.id}`}
+                  style={{
+                    position: "fixed",
+                    top: flyoutPos.top,
+                    left: flyoutPos.left,
+                    paddingLeft: flyoutPos.bridge,
+                  }}
+                  className="z-50 w-auto"
+                >
+                  <div className="relative w-60 rounded-xl border border-white/15 bg-[#10294d] p-2 shadow-xl shadow-black/30">
+                    {/* pointer arrow toward the hovered item */}
+                    <span
+                      aria-hidden="true"
+                      style={{ top: flyoutPos.arrowTop }}
+                      className="absolute -left-1.5 h-3 w-3 rotate-45 border-b border-l border-white/15 bg-[#10294d]"
+                    />
+
+                    <nav
+                      aria-label={`${item.label} submenu`}
+                      className="relative space-y-1"
+                    >
+                      {item.children.map((child) => {
+                        const ChildIcon = child.icon;
+
+                        return (
+                          <NavLink
+                            key={child.path}
+                            to={child.path}
+                            end={child.end}
+                            onClick={() => setOpenGroupId(null)}
+                            className={({ isActive }) =>
+                              [
+                                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300",
+                                isActive ? activeStyle : idleStyle,
+                              ].join(" ")
+                            }
+                          >
+                            {({ isActive }) => (
+                              <>
+                                <ChildIcon
+                                  size={18}
+                                  aria-hidden="true"
+                                  className={
+                                    isActive
+                                      ? "text-teal-300"
+                                      : "text-slate-300"
+                                  }
+                                />
+                                <span>{child.label}</span>
+                              </>
+                            )}
+                          </NavLink>
+                        );
+                      })}
+                    </nav>
+                  </div>
+                </div>
               )}
-            </NavLink>
+            </div>
           );
         })}
       </nav>
 
-      {/* Employee Summary */}
-      <div className="mt-auto pt-8">
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-
-          <div className="mb-4 flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-blue-600 shadow-sm">
-              <User size={17} />
+      {/* Employee Summary + Logout (bottom) */}
+      <div className="mt-auto space-y-3 pt-6">
+        <div className="rounded-xl border border-white/15 bg-white/5 p-3">
+          <div className="mb-3 flex items-center gap-2">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-300 text-[#0b1f3a]">
+              <User size={17} aria-hidden="true" />
             </div>
 
             <div>
-              <h3 className="text-sm font-semibold text-slate-800">
+              <h3 className="text-sm font-semibold text-white">
                 Employee Summary
               </h3>
 
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-300">
                 Your work information
               </p>
             </div>
           </div>
 
-          <div className="space-y-4">
-
+          <div className="space-y-3">
             {/* Department */}
             <div className="flex items-start gap-2.5">
               <Building2
                 size={16}
-                className="mt-0.5 shrink-0 text-slate-400"
+                aria-hidden="true"
+                className="mt-0.5 shrink-0 text-slate-300"
               />
 
               <div className="min-w-0">
-                <p className="text-xs text-slate-500">
-                  Department
-                </p>
+                <p className="text-xs text-slate-300">Department</p>
 
-                <p className="break-words text-sm font-medium text-slate-700">
+                <p className="break-words text-sm font-medium text-white">
                   {departmentName}
                 </p>
               </div>
@@ -401,33 +654,42 @@ const EmployeeSidebar = ({ open, employee }) => {
             <div className="flex items-start gap-2.5">
               <BriefcaseBusiness
                 size={16}
-                className="mt-0.5 shrink-0 text-slate-400"
+                aria-hidden="true"
+                className="mt-0.5 shrink-0 text-slate-300"
               />
 
               <div className="min-w-0">
-                <p className="text-xs text-slate-500">
-                  Role
-                </p>
+                <p className="text-xs text-slate-300">Role</p>
 
-                <p className="break-words text-sm font-medium text-slate-700">
+                <p className="break-words text-sm font-medium text-white">
                   {roleName || "Not assigned"}
                 </p>
               </div>
             </div>
 
             {/* Company */}
-            <div className="border-t border-slate-200 pt-3">
-              <p className="text-xs text-slate-500">
-                Company
-              </p>
+            <div className="border-t border-white/15 pt-2.5">
+              <p className="text-xs text-slate-300">Company</p>
 
-              <p className="mt-1 break-words text-sm font-medium text-slate-700">
+              <p className="mt-0.5 break-words text-sm font-medium text-white">
                 {companyName}
               </p>
             </div>
-
           </div>
         </div>
+
+        {/* Logout */}
+        <button
+          type="button"
+          onClick={handleLogout}
+          className={[
+            "flex w-full items-center justify-between rounded-lg border border-white/20 px-3 py-2.5 text-sm font-semibold text-slate-100 transition-colors hover:bg-red-400/15 hover:text-red-200",
+            focusRing,
+          ].join(" ")}
+        >
+          <span>Log out</span>
+          <LogOut size={18} aria-hidden="true" />
+        </button>
       </div>
     </aside>
   );
