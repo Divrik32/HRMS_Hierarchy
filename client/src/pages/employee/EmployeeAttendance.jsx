@@ -1044,25 +1044,34 @@ const EmployeeAttendance = () => {
   // EMPLOYEE CHECK IN
   // =========================================
 
-  const handleCheckIn = async () => {
-    setActionLoading("check-in");
+// =========================================
+// EMPLOYEE CHECK IN
+// =========================================
 
-    try {
-      const response = await api.post("/attendance/check-in");
+const handleCheckIn = async () => {
+  setActionLoading("check-in");
 
-      toast.success(
-        response.data?.message || "Checked in successfully."
-      );
+  try {
+    const response = await api.post("/attendance/check-in");
 
-      await loadAttendance();
-    } catch (error) {
-      toast.error(
-        error.response?.data?.message || "Unable to check in."
-      );
-    } finally {
-      setActionLoading("");
-    }
-  };
+    toast.success(
+      response.data?.message || "Checked in successfully."
+    );
+
+    await loadAttendance();
+
+    // Sync Employee Dashboard
+    window.dispatchEvent(
+      new Event("employee-attendance-updated")
+    );
+  } catch (error) {
+    toast.error(
+      error.response?.data?.message || "Unable to check in."
+    );
+  } finally {
+    setActionLoading("");
+  }
+};
 
   // =========================================
   // EMPLOYEE CHECK OUT
@@ -1094,15 +1103,20 @@ const EmployeeAttendance = () => {
 
                 try {
                   const response = await api.patch(
-                    "/attendance/check-out"
-                  );
+  "/attendance/check-out"
+);
 
-                  toast.success(
-                    response.data?.message ||
-                      "Checked out successfully."
-                  );
+toast.success(
+  response.data?.message ||
+    "Checked out successfully."
+);
 
-                  await loadAttendance();
+await loadAttendance();
+
+// Sync Employee Dashboard
+window.dispatchEvent(
+  new Event("employee-attendance-updated")
+);
                 } catch (error) {
                   toast.error(
                     error.response?.data?.message ||

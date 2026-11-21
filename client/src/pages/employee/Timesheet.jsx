@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import gsap from "gsap";
 import {
-  CalendarDays,
   Clock3,
   Plus,
   RefreshCw,
@@ -11,7 +12,6 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  Pause,
   RotateCcw,
   Pencil,
   Check,
@@ -20,21 +20,25 @@ import {
 import api from "../../api/axios";
 import { toast } from "react-toastify";
 
-const initialForm = {
+/* =========================================================
+   Helpers
+   ========================================================= */
+const blankInline = {
   taskType: "Project",
   projectId: "",
-  moduleId: "",
+  task: "Development",
   description: "",
   estimatedTime: "",
 };
+
+const IST = "Asia/Kolkata";
 
 const formatDateTime = (value) => {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-
   return date.toLocaleString("en-IN", {
-    timeZone: "Asia/Kolkata",
+    timeZone: IST,
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -48,9 +52,8 @@ const formatTime = (value) => {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-
   return date.toLocaleTimeString("en-IN", {
-    timeZone: "Asia/Kolkata",
+    timeZone: IST,
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
@@ -61,28 +64,115 @@ const formatMinutes = (value) => {
   if (value == null) return "—";
   const minutes = Number(value);
   if (!Number.isFinite(minutes)) return "—";
-
   const hours = Math.floor(minutes / 60);
   const remaining = minutes % 60;
-
   return hours ? `${hours}h ${remaining}m` : `${remaining}m`;
 };
 
 const getStatusClass = (status) => {
-  if (status === "Approved") return "bg-emerald-50 text-emerald-700";
-  if (status === "Rejected") return "bg-red-50 text-red-700";
-  return "bg-amber-50 text-amber-700";
+  if (status === "Approved") return "bg-emerald-100 text-emerald-800 ring-emerald-300";
+  if (status === "Rejected") return "bg-rose-100 text-rose-800 ring-rose-300";
+  return "bg-amber-100 text-amber-800 ring-amber-300";
 };
 
 const getTaskStatusClass = (status) => {
-  if (status === "Completed") return "bg-emerald-50 text-emerald-700";
-  if (status === "In Progress") return "bg-blue-50 text-blue-700";
-  if (status === "On Break") return "bg-orange-50 text-orange-700";
-  return "bg-slate-100 text-slate-600";
+  if (status === "Completed") return "bg-emerald-100 text-emerald-800 ring-emerald-300";
+  if (status === "In Progress") return "bg-sky-100 text-sky-800 ring-sky-300";
+  if (status === "On Break") return "bg-orange-100 text-orange-800 ring-orange-300";
+  return "bg-slate-100 text-slate-700 ring-slate-300";
 };
 
+const getApprovalRowClass = (item) => {
+  const status = item.approvalStatus || "Pending";
+  const isUpdatedPending = Number(item.resubmissionCount || 0) > 0;
+
+  if (status === "Approved") {
+    return "bg-green-50 hover:bg-green-100";
+  }
+
+  if (status === "Rejected") {
+    return "bg-red-50 hover:bg-red-100";
+  }
+
+  if (status === "Pending" && isUpdatedPending) {
+    return "bg-purple-50 hover:bg-purple-100";
+  }
+
+  return "bg-yellow-50 hover:bg-yellow-100";
+};
+
+const getAccent = () => "";
+
+/* Gold star burst fired from an element (used by the Save button) */
+const burstGlitter = (el) => {
+  if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const r = el.getBoundingClientRect();
+  const cx = r.left + r.width / 2;
+  const cy = r.top + r.height / 2;
+  const colors = ["#fde68a", "#fbbf24", "#ffffff", "#fcd34d", "#34d399"];
+  const star =
+    "polygon(50% 0%,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)";
+
+  // expanding ring
+  const ring = document.createElement("span");
+  Object.assign(ring.style, {
+    position: "fixed", left: `${cx}px`, top: `${cy}px`, width: "20px", height: "20px",
+    marginLeft: "-10px", marginTop: "-10px", borderRadius: "9999px",
+    border: "2px solid #fde68a", pointerEvents: "none", zIndex: 9999,
+  });
+  document.body.appendChild(ring);
+  gsap.fromTo(ring, { scale: 0.4, opacity: 0.9 }, {
+    scale: 6, opacity: 0, duration: 0.7, ease: "power2.out", onComplete: () => ring.remove(),
+  });
+
+  // stars
+  for (let i = 0; i < 30; i++) {
+    const s = document.createElement("span");
+    const size = 7 + Math.random() * 11;
+    Object.assign(s.style, {
+      position: "fixed", left: `${cx - size / 2}px`, top: `${cy - size / 2}px`,
+      width: `${size}px`, height: `${size}px`, background: colors[i % colors.length],
+      clipPath: star, pointerEvents: "none", zIndex: 9999,
+      filter: "drop-shadow(0 0 4px rgba(253,230,138,0.9))",
+    });
+    document.body.appendChild(s);
+
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 60 + Math.random() * 110;
+    gsap.fromTo(
+      s,
+      { x: 0, y: 0, scale: 0, rotation: 0, opacity: 1 },
+      {
+        x: Math.cos(angle) * dist,
+        y: Math.sin(angle) * dist + 24,
+        scale: 1,
+        rotation: Math.random() * 400 - 200,
+        opacity: 0,
+        duration: 0.9 + Math.random() * 0.7,
+        ease: "power3.out",
+        onComplete: () => s.remove(),
+      }
+    );
+  }
+};
+
+const headings = [
+  "Date", "Task Type", "Project", "Task / Module", "Description", "Estimated",
+  "Start", "Break", "End", "Working Time", "Idle Time", "Efficiency",
+  "Task Status", "Approval", "Audited By", "Rejection Reason",
+];
+
+const filters = ["All", "Pending", "Updated Pending", "Approved", "Rejected"];
+
+const inputCls =
+  "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200";
+
+/* =========================================================
+   Page
+   ========================================================= */
 export default function Timesheet() {
-  const [employee, setEmployee] = useState(null);
+  const reduce = useReducedMotion();
+
   const [timesheets, setTimesheets] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -91,153 +181,91 @@ export default function Timesheet() {
   const [error, setError] = useState("");
 
   const [showInlineRow, setShowInlineRow] = useState(false);
-const [inlineForm, setInlineForm] = useState({
-  taskType: "Project",
-  projectId: "",
-  task: "Development",
-  description: "",
-  estimatedTime: "",
-});
+  const [inlineForm, setInlineForm] = useState(blankInline);
+  const [inlineDateTime, setInlineDateTime] = useState("");
 
-const [inlineDateTime, setInlineDateTime] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [editingEstimatedId, setEditingEstimatedId] = useState("");
-  const [editingEstimatedValue, setEditingEstimatedValue] = useState("");
-  const [savingEstimated, setSavingEstimated] = useState(false);
-  const [editingIdleId, setEditingIdleId] = useState("");
-  const [editingIdleValue, setEditingIdleValue] = useState("");
-  const [savingIdle, setSavingIdle] = useState(false);
 
-  // Live date/time display. Backend will save the actual submit timestamp.
-  const [liveTime, setLiveTime] = useState(new Date());
-
-  useEffect(() => {
-    const timer = setInterval(() => setLiveTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  // one inline editor at a time: { id, field, value }
+  const [editing, setEditing] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
-
     try {
-      const [profileRes, timesheetRes, projectRes] = await Promise.all([
+      const [, timesheetRes, projectRes] = await Promise.all([
         api.get("/employees/profile/me"),
         api.get("/timesheets"),
         api.get("/timesheets/projects"),
       ]);
-
-      setEmployee(profileRes.data?.employee || null);
       setTimesheets(timesheetRes.data?.timesheets || []);
       setProjects(projectRes.data?.projects || []);
     } catch (err) {
-      const message =
-        err.response?.data?.message ||
-        err.message ||
-        "Failed to load timesheet data.";
-
-      setError(message);
+      setError(
+        err.response?.data?.message || err.message || "Failed to load timesheet data."
+      );
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const handleInlineSave = async () => {
-  try {
-    if (!inlineForm.taskType) {
-      toast.error("Please select task type.");
-      return;
-    }
-
-    if (!inlineForm.projectId) {
-      toast.error("Please select a project.");
-      return;
-    }
-
-    if (!inlineForm.task) {
-      toast.error("Please select a task.");
-      return;
-    }
-
-    if (!inlineForm.description.trim()) {
-      toast.error("Please enter description.");
-      return;
-    }
-
-    if (
-      inlineForm.estimatedTime === "" ||
-      Number(inlineForm.estimatedTime) < 0 ||
-      !Number.isFinite(Number(inlineForm.estimatedTime))
-    ) {
-      toast.error("Please enter a valid estimated time.");
-      return;
-    }
-
-    setSaving(true);
-
-    const payload = {
-      taskType: inlineForm.taskType,
-      projectId: inlineForm.projectId,
-      task: inlineForm.task,
-      description: inlineForm.description.trim(),
-      estimatedTime: Number(inlineForm.estimatedTime),
-
-      // Defaults from Timesheet Model
-      startTime: null,
-      endTime: null,
-      breakTime: null,
-      totalCompletionTime: null,
-      efficiency: null,
-      idleTime: 0,
-      taskStatus: "Not Started",
-      approvalStatus: "Pending",
-    };
-
-    await api.post("/timesheets", payload);
-
-    toast.success("Timesheet created successfully.");
-
-    setShowInlineRow(false);
-
-    setInlineForm({
-      taskType: "Project",
-      projectId: "",
-      task: "Development",
-      description: "",
-      estimatedTime: "",
-    });
-
-    await loadData();
-  } catch (error) {
-    toast.error(
-      error?.response?.data?.message ||
-        "Failed to create timesheet."
-    );
-  } finally {
-    setSaving(false);
-  }
-};
-
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  const companyName =
-    typeof employee?.companyId === "object"
-      ? employee.companyId?.companyName
-      : employee?.companyName;
+  /* ---------- create ---------- */
+  const openInlineRow = () => {
+    setInlineDateTime(new Date().toLocaleString("en-IN", { timeZone: IST }));
+    setInlineForm(blankInline);
+    setShowInlineRow(true);
+  };
 
-  const departmentName =
-    typeof employee?.departmentId === "object"
-      ? employee.departmentId?.departmentName
-      : "";
+  const handleInlineSave = async (btn) => {
+    try {
+      if (!inlineForm.taskType) return toast.error("Please select task type.");
+      if (!inlineForm.projectId) return toast.error("Please select a project.");
+      if (!inlineForm.task) return toast.error("Please select a task.");
+      if (!inlineForm.description.trim()) return toast.error("Please enter description.");
+      if (
+        inlineForm.estimatedTime === "" ||
+        Number(inlineForm.estimatedTime) < 0 ||
+        !Number.isFinite(Number(inlineForm.estimatedTime))
+      )
+        return toast.error("Please enter a valid estimated time.");
 
-  const roleName =
-    typeof employee?.roleId === "object"
-      ? employee.roleId?.roleName
-      : "";
+      burstGlitter(btn);
+      setSaving(true);
 
+      await api.post("/timesheets", {
+        taskType: inlineForm.taskType,
+        projectId: inlineForm.projectId,
+        task: inlineForm.task,
+        description: inlineForm.description.trim(),
+        estimatedTime: Number(inlineForm.estimatedTime),
+        startTime: null,
+        endTime: null,
+        breakTime: null,
+        totalCompletionTime: null,
+        efficiency: null,
+        idleTime: 0,
+        taskStatus: "Not Started",
+        approvalStatus: "Pending",
+      });
+
+      toast.success("Timesheet created successfully.");
+      setShowInlineRow(false);
+      setInlineForm(blankInline);
+      await loadData();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to create timesheet.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /* ---------- start / break / resume / end ---------- */
   const handleTaskAction = async (item, action) => {
     const endpoints = {
       start: `/timesheets/${item._id}/start`,
@@ -245,7 +273,6 @@ const [inlineDateTime, setInlineDateTime] = useState("");
       break: `/timesheets/${item._id}/break/start`,
       resume: `/timesheets/${item._id}/break/resume`,
     };
-
     const messages = {
       start: "Task started.",
       end: "Task completed.",
@@ -254,728 +281,587 @@ const [inlineDateTime, setInlineDateTime] = useState("");
     };
 
     setActionId(`${item._id}-${action}`);
-
     try {
       await api.patch(endpoints[action]);
       toast.success(messages[action]);
       await loadData();
     } catch (err) {
-      toast.error(
-        err.response?.data?.message || "Unable to update task status."
-      );
+      toast.error(err.response?.data?.message || "Unable to update task status.");
     } finally {
       setActionId("");
     }
   };
 
-  // =========================================
-// OPEN ESTIMATED TIME EDIT
-// =========================================
-
-const handleEditEstimated = (item) => {
-  setEditingEstimatedId(item._id);
-  setEditingEstimatedValue(String(item.estimatedTime ?? ""));
-};
-
-
-// =========================================
-// SAVE ESTIMATED TIME
-// =========================================
-
-const handleSaveEstimated = async (item) => {
-  const minutes = Number(editingEstimatedValue);
-
-  if (
-    !editingEstimatedValue.trim() ||
-    !Number.isInteger(minutes) ||
-    minutes <= 0
-  ) {
-    toast.error("Estimated time must be a positive whole number.");
-    return;
-  }
-
-  setSavingEstimated(true);
-
-  try {
-    await api.patch(`/timesheets/${item._id}/edit`, {
-      field: "estimatedTime",
-      value: minutes,
+  /* ---------- edit estimated / idle ---------- */
+  const startEdit = (item, field) =>
+    setEditing({
+      id: item._id,
+      field,
+      value: String(field === "estimatedTime" ? item.estimatedTime ?? "" : item.idleTime ?? 0),
     });
 
-    toast.success("Estimated time updated successfully.");
+  const saveEdit = async (item) => {
+    const { field, value } = editing;
+    const minutes = Number(value);
+    const isEstimated = field === "estimatedTime";
 
-    setEditingEstimatedId("");
-    setEditingEstimatedValue("");
+    if (
+      !value.trim() ||
+      !Number.isInteger(minutes) ||
+      (isEstimated ? minutes <= 0 : minutes < 0)
+    ) {
+      toast.error(
+        isEstimated
+          ? "Estimated time must be a positive whole number."
+          : "Idle time must be a non-negative whole number."
+      );
+      return;
+    }
 
-    await loadData();
+    setSavingEdit(true);
+    try {
+      await api.patch(`/timesheets/${item._id}/edit`, { field, value: minutes });
+      toast.success(
+        isEstimated ? "Estimated time updated successfully." : "Idle time updated successfully."
+      );
+      setEditing(null);
+      await loadData();
+    } catch (err) {
+      toast.error(
+        err.response?.data?.message ||
+          (isEstimated ? "Failed to update estimated time." : "Failed to update idle time.")
+      );
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
-  } catch (err) {
-    toast.error(
-      err.response?.data?.message ||
-      "Failed to update estimated time."
-    );
-  } finally {
-    setSavingEstimated(false);
-  }
-};
-
-// =========================================
-// OPEN IDLE TIME EDIT
-// =========================================
-
-const handleEditIdle = (item) => {
-  setEditingIdleId(item._id);
-  setEditingIdleValue(String(item.idleTime ?? 0));
-};
-
-// =========================================
-// SAVE IDLE TIME
-// =========================================
-
-const handleSaveIdle = async (item) => {
-  const minutes = Number(editingIdleValue);
-
-  if (
-    !editingIdleValue.trim() ||
-    !Number.isInteger(minutes) ||
-    minutes < 0
-  ) {
-    toast.error("Idle time must be a non-negative whole number.");
-    return;
-  }
-
-  setSavingIdle(true);
-
-  try {
-    await api.patch(`/timesheets/${item._id}/edit`, {
-      field: "idleTime",
-      value: minutes,
-    });
-
-    toast.success("Idle time updated successfully.");
-
-    setEditingIdleId("");
-    setEditingIdleValue("");
-
-    await loadData();
-  } catch (err) {
-    toast.error(
-      err.response?.data?.message ||
-        "Failed to update idle time."
-    );
-  } finally {
-    setSavingIdle(false);
-  }
-};
-
+  /* ---------- derived ---------- */
   const filteredTimesheets = useMemo(() => {
     const term = search.trim().toLowerCase();
-
     return timesheets.filter((item) => {
       const status = item.approvalStatus || "Pending";
-
+      const isUpdatedPending = status === "Pending" && Number(item.resubmissionCount || 0) > 0;
       const matchesStatus =
-        statusFilter === "All" || status === statusFilter;
+        statusFilter === "All" ||
+        (statusFilter === "Updated Pending" ? isUpdatedPending : status === statusFilter);
 
       const projectName =
-        typeof item.projectId === "object"
-          ? item.projectId?.projectName || ""
-          : "";
+        typeof item.projectId === "object" ? item.projectId?.projectName || "" : "";
 
       const matchesSearch =
         !term ||
-        [
-          item.task,
-          item.description,
-          projectName,
-          item.taskType,
-          item.remarks?.reason,
-        ].some((value) =>
-          String(value || "").toLowerCase().includes(term)
+        [item.task, item.description, projectName, item.taskType, item.remarks?.reason].some(
+          (v) => String(v || "").toLowerCase().includes(term)
         );
 
       return matchesStatus && matchesSearch;
     });
   }, [timesheets, search, statusFilter]);
-  
 
   const stats = useMemo(
     () => ({
       total: timesheets.length,
-      pending: timesheets.filter(
-        (item) => (item.approvalStatus || "Pending") === "Pending"
-      ).length,
-      approved: timesheets.filter(
-        (item) => item.approvalStatus === "Approved"
-      ).length,
-      rejected: timesheets.filter(
-        (item) => item.approvalStatus === "Rejected"
-      ).length,
+      pending: timesheets.filter((i) => (i.approvalStatus || "Pending") === "Pending").length,
+      approved: timesheets.filter((i) => i.approvalStatus === "Approved").length,
+      rejected: timesheets.filter((i) => i.approvalStatus === "Rejected").length,
     }),
     [timesheets]
   );
 
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <RefreshCw className="mr-2 animate-spin" />
+      <div className="flex min-h-[60vh] items-center justify-center gap-3 text-slate-600">
+        <RefreshCw className="animate-spin text-sky-600" />
         Loading your timesheets...
       </div>
     );
   }
 
+  const setInline = (key) => (e) =>
+    setInlineForm((prev) => ({ ...prev, [key]: e.target.value }));
+
   return (
-    <div className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div>
-            <p className="text-sm font-medium text-blue-600">
-              Employee Workspace
-            </p>
-            <h1 className="mt-1 text-2xl font-bold text-slate-900">
-              My Timesheets
-            </h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Create tasks and track your working time.
-            </p>
-          </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-white to-sky-50 p-4 sm:p-6 lg:p-8">
+      <style>{`
+        @keyframes tsShimmer { 0% { transform: translateX(-130%) skewX(-20deg); } 100% { transform: translateX(260%) skewX(-20deg); } }
+        @keyframes tsGoldFlow { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+        @media (prefers-reduced-motion: reduce) { .ts-anim { animation: none !important; } }
+      `}</style>
 
-          <div className="flex gap-2">
-            <button
-              onClick={loadData}
-              className="inline-flex items-center gap-2 rounded-xl border bg-white px-4 py-3 text-sm font-semibold"
-            >
-              <RefreshCw size={16} /> Refresh
-            </button>
-            <button
-  type="button"
-  onClick={() => {
-    setInlineDateTime(new Date().toLocaleString("en-IN", {
-      timeZone: "Asia/Kolkata",
-    }));
-
-    setInlineForm({
-      taskType: "Project",
-      projectId: "",
-      task: "Development",
-      description: "",
-      estimatedTime: "",
-    });
-
-    setShowInlineRow(true);
-  }}
-  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
->
-  <Plus size={16} />
-  New Timesheet
-</button>
-          </div>
-        </div>
-
-        {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-
-        <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
-          <div className="flex flex-col justify-between gap-3 border-b p-5 sm:flex-row sm:items-center">
+      <motion.div
+        className="mx-auto max-w-7xl space-y-6"
+        initial={reduce ? false : { opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
+      >
+        {/* ================= HERO ================= */}
+        <header className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0b2f45] via-[#14506f] to-[#348aaf] p-6 text-white shadow-[0_20px_50px_-15px_rgba(11,47,69,0.6)] sm:p-8">
+          <div className="relative flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
             <div>
-              <h2 className="font-bold text-slate-900">My Timesheet Records</h2>
-              <p className="text-sm text-slate-500">
-                {filteredTimesheets.length} record(s)
+              <p className="inline-flex items-center gap-2 text-sm font-medium text-amber-200">
+                Employee Workspace
+              </p>
+              <h1 className="mt-2 font-serif text-3xl font-bold tracking-tight sm:text-4xl">
+                My Timesheets
+              </h1>
+              <p className="mt-2 max-w-md text-sm text-sky-100">
+                Create tasks and track your working time.
               </p>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <div className="relative">
-                <Search
-                  size={16}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search timesheets..."
-                  className="w-full rounded-xl border py-2.5 pl-9 pr-3 text-sm sm:w-56"
-                />
-              </div>
+            <div className="flex flex-col items-start gap-4 lg:items-end">
+              <div className="flex gap-3">
+                <motion.button
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.96 }}
+                  onClick={loadData}
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/40 bg-[#0b2f45]/60 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur transition hover:bg-[#0b2f45]"
+                >
+                  <RefreshCw size={16} /> Refresh
+                </motion.button>
 
-              <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value)}
-                className="rounded-xl border px-3 py-2.5 text-sm"
-              >
-                <option value="All">All statuses</option>
-                <option value="Pending">Pending</option>
-                <option value="Approved">Approved</option>
-                <option value="Rejected">Rejected</option>
-              </select>
+                <motion.button
+                  type="button"
+                  whileHover={{ y: -2, scale: 1.03 }}
+                  whileTap={{ scale: 0.96 }}
+                  onClick={openInlineRow}
+                  className="relative inline-flex items-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400 px-5 py-2.5 text-sm font-bold text-[#0b2f45] shadow-[0_8px_24px_-6px_rgba(251,191,36,0.8)]"
+                >
+                  <span className="ts-anim pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-white/60 blur-md [animation:tsShimmer_2.8s_ease-in-out_infinite]" />
+                  <Plus size={16} className="relative" />
+                  <span className="relative">New Timesheet</span>
+                </motion.button>
+              </div>
             </div>
           </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1700px] text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+          <div
+            className="ts-anim absolute inset-x-0 bottom-0 h-1 bg-[length:200%_100%] [animation:tsGoldFlow_4s_linear_infinite]"
+            style={{
+              backgroundImage:
+                "linear-gradient(90deg,#b45309,#fde68a,#f59e0b,#fef3c7,#b45309)",
+            }}
+          />
+        </header>
+
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800"
+            >
+              {error}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ================= TABLE ================= */}
+        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_20px_50px_-20px_rgba(15,42,67,0.35)]">
+          <div className="flex flex-col justify-between gap-4 border-b border-slate-200 bg-gradient-to-r from-white to-sky-50/60 p-5 lg:flex-row lg:items-center">
+            <div>
+              <h2 className="font-serif text-xl font-bold text-[#0b2f45]">My Timesheet Records</h2>
+              <p className="text-sm text-slate-600">{filteredTimesheets.length} record(s)</p>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search timesheets..."
+                  className={`${inputCls} w-full pl-9 sm:w-60`}
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 rounded-xl bg-slate-100 p-1">
+                {filters.map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => setStatusFilter(status)}
+                    className={`relative rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                      statusFilter === status ? "text-white" : "text-slate-700 hover:text-[#0b2f45]"
+                    }`}
+                  >
+                    {statusFilter === status && (
+                      <motion.span
+                        layoutId="filterPill"
+                        transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                        className="absolute inset-0 rounded-lg bg-gradient-to-r from-[#0b2f45] to-[#14506f] shadow-md"
+                      />
+                    )}
+                    <span className="relative">{status}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[2400px] text-left text-sm text-slate-800">
+              <thead className="bg-gradient-to-r from-[#0b2f45] to-[#14506f] text-xs uppercase tracking-wide text-white">
+                <tr>
+                  {headings.map((h) => (
+                    <th key={h} className="whitespace-nowrap px-4 py-4 font-semibold">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-200">
+                {filteredTimesheets.length === 0 && !showInlineRow && (
                   <tr>
-                    {[
-                      "Date",
-                      "Task Type",
-                      "Project",
-                      "Task / Module",
-                      "Description",
-                      "Estimated",
-                      "Start",
-                      "Break",
-                      "End",
-                      "Working Time",
-                      "Idle Time",
-                      "Efficiency",
-                      "Task Status",
-                      "Approval",
-                      "Audited By",
-                      "Rejection Reason",
-                    ].map((heading) => (
-                      <th key={heading} className="whitespace-nowrap px-4 py-4">
-                        {heading}
-                      </th>
-                    ))}
+                    <td colSpan={16} className="py-20 text-center text-slate-600">
+                      No timesheets found.
+                    </td>
                   </tr>
-                </thead>
+                )}
 
-                <tbody className="divide-y divide-slate-100">
-                  {filteredTimesheets.length === 0 && !showInlineRow && (
-  <tr>
-    <td
-      colSpan={16}
-      className="py-16 text-center text-slate-500"
-    >
-      No timesheets found.
-    </td>
-  </tr>
-)}
-                  {filteredTimesheets.map((item) => {
+                <AnimatePresence initial={false}>
+                  {showInlineRow && (
+                    <motion.tr
+                      key="inline-row"
+                      initial={{ opacity: 0, y: -12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -12 }}
+                      transition={{ duration: 0.3 }}
+                      className="bg-gradient-to-r from-sky-50 to-amber-50"
+                    >
+                      <td className="whitespace-nowrap px-4 py-3 shadow-[inset_4px_0_0_0_#f59e0b]">
+                        <div className="text-sm font-semibold text-slate-800">{inlineDateTime}</div>
+                        <div className="text-xs font-medium text-sky-700">New Entry</div>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <select value={inlineForm.taskType} onChange={setInline("taskType")} className={`${inputCls} w-full min-w-[160px]`}>
+                          <option value="Project">Project</option>
+                          <option value="Learning">Learning</option>
+                          <option value="Training">Training</option>
+                        </select>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <select value={inlineForm.projectId} onChange={setInline("projectId")} className={`${inputCls} w-full min-w-[260px]`}>
+                          <option value="">Select Project</option>
+                          {projects.map((p) => (
+                            <option key={p._id} value={p._id}>
+                              {p.projectName || p.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <select value={inlineForm.task} onChange={setInline("task")} className={`${inputCls} w-full min-w-[180px]`}>
+                          {["Testing", "Development", "Learning", "Graphics", "Management", "Meeting"].map((t) => (
+                            <option key={t} value={t}>{t}</option>
+                          ))}
+                        </select>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <input
+                          type="text"
+                          value={inlineForm.description}
+                          onChange={setInline("description")}
+                          placeholder="Enter description"
+                          className={`${inputCls} w-full min-w-[300px]`}
+                        />
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <input
+                          type="number"
+                          min="0"
+                          value={inlineForm.estimatedTime}
+                          onChange={setInline("estimatedTime")}
+                          placeholder="Minutes"
+                          className={`${inputCls} w-full min-w-[120px]`}
+                        />
+                      </td>
+
+                      <td colSpan={10} className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <motion.button
+                            type="button"
+                            whileHover={{ y: -1 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={(e) => handleInlineSave(e.currentTarget)}
+                            disabled={saving}
+                            className="relative inline-flex items-center gap-1.5 overflow-hidden rounded-lg bg-gradient-to-r from-emerald-700 to-emerald-500 px-5 py-2 text-sm font-semibold text-white shadow-[0_6px_18px_-6px_rgba(16,185,129,0.9)] disabled:opacity-60"
+                          >
+                            <span className="ts-anim pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-white/40 blur-md [animation:tsShimmer_2.4s_ease-in-out_infinite]" />
+                            {saving ? <RefreshCw size={15} className="relative animate-spin" /> : <Check size={15} className="relative" />}
+                            <span className="relative">{saving ? "Saving..." : "Save"}</span>
+                          </motion.button>
+
+                          <motion.button
+                            type="button"
+                            whileHover={{ y: -1 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => setShowInlineRow(false)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                          >
+                            <X size={15} /> Cancel
+                          </motion.button>
+                        </div>
+                      </td>
+                    </motion.tr>
+                  )}
+
+                  {filteredTimesheets.map((item, index) => {
                     const locked = item.approvalStatus === "Approved";
-                    const project =
-                      typeof item.projectId === "object"
-                        ? item.projectId?.projectName
-                        : "—";
-
+                    const project = typeof item.projectId === "object" ? item.projectId?.projectName : "—";
                     const activeBreak =
-                      item.taskStatus === "On Break" &&
-                      item.breakTime &&
-                      !item.breakTime.endTime;
-
-                    const isBusy = (action) =>
-                      actionId === `${item._id}-${action}`;
+                      item.taskStatus === "On Break" && item.breakTime && !item.breakTime.endTime;
+                    const isBusy = (action) => actionId === `${item._id}-${action}`;
+                    const isEditing = (field) =>
+                      editing?.id === item._id && editing?.field === field;
 
                     return (
-                      <tr key={item._id} className="align-top hover:bg-slate-50">
-                        <td className="whitespace-nowrap px-4 py-4">
+                      <motion.tr
+                        key={item._id}
+                        layout="position"
+                        initial={reduce ? false : { opacity: 0, x: -16 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.35, delay: Math.min(index, 12) * 0.04 }}
+                        className={`align-top transition-colors ${getApprovalRowClass(item)}`}
+                      >
+                        <td className={`whitespace-nowrap px-4 py-4 font-medium ${getAccent(item)}`}>
                           {formatDateTime(item.date)}
                         </td>
                         <td className="px-4 py-4">{item.taskType}</td>
                         <td className="px-4 py-4">{project || "—"}</td>
-                        <td className="px-4 py-4 font-medium text-slate-800">
-                          {item.task || "—"}
+                        <td className="px-4 py-4 font-semibold text-[#0b2f45]">{item.task || "—"}</td>
+                        <td className="max-w-80 whitespace-normal px-4 py-4">{item.description || "—"}</td>
+
+                        <td className="whitespace-nowrap px-4 py-4">
+                          <EditableMinutes
+                            editing={isEditing("estimatedTime")}
+                            value={editing?.value ?? ""}
+                            onChange={(v) => setEditing((p) => ({ ...p, value: v }))}
+                            display={formatMinutes(item.estimatedTime)}
+                            min="1"
+                            saving={savingEdit}
+                            canEdit={!locked}
+                            label="estimated time"
+                            onEdit={() => startEdit(item, "estimatedTime")}
+                            onSave={() => saveEdit(item)}
+                            onCancel={() => setEditing(null)}
+                          />
                         </td>
-                        <td className="max-w-56 whitespace-normal px-4 py-4">
-                          {item.description || "—"}
-                        </td>
-<td className="whitespace-nowrap px-4 py-4">
-  {editingEstimatedId === item._id ? (
-    <div className="flex items-center gap-2">
-      <input
-        type="number"
-        min="1"
-        step="1"
-        value={editingEstimatedValue}
-        onChange={(event) =>
-          setEditingEstimatedValue(event.target.value)
-        }
-        disabled={savingEstimated}
-        autoFocus
-        className="w-20 rounded-lg border border-blue-300 px-2 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-      />
-
-      <button
-        type="button"
-        onClick={() => handleSaveEstimated(item)}
-        disabled={savingEstimated}
-        title="Save estimated time"
-        className="rounded-lg bg-emerald-50 p-1.5 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
-      >
-        {savingEstimated ? (
-          <RefreshCw size={15} className="animate-spin" />
-        ) : (
-          <Check size={16} />
-        )}
-      </button>
-
-      <button
-        type="button"
-        onClick={() => {
-          setEditingEstimatedId("");
-          setEditingEstimatedValue("");
-        }}
-        disabled={savingEstimated}
-        title="Cancel editing"
-        className="rounded-lg bg-red-50 p-1.5 text-red-600 hover:bg-red-100"
-      >
-        <X size={16} />
-      </button>
-    </div>
-  ) : (
-    <div className="flex items-center gap-2">
-      <span className="font-medium text-slate-700">
-        {formatMinutes(item.estimatedTime)}
-      </span>
-
-      {!locked && (
-  <button
-    type="button"
-    onClick={() => handleEditEstimated(item)}
-    title="Edit estimated time"
-    className="rounded-md p-1.5 text-slate-400 transition hover:bg-blue-50 hover:text-blue-600"
-  >
-    <Pencil size={14} />
-  </button>
-)}
-    </div>
-  )}
-</td>
 
                         <td className="whitespace-nowrap px-4 py-4">
                           <div>{formatTime(item.startTime)}</div>
-                          {!locked &&
-                            item.taskStatus === "Not Started" &&
-                            !item.startTime && (
-                              <ActionButton
-                                label="Start"
-                                icon={<Play size={13} />}
-                                busy={isBusy("start")}
-                                onClick={() => handleTaskAction(item, "start")}
-                              />
-                            )}
+                          {!locked && item.taskStatus === "Not Started" && !item.startTime && (
+                            <ActionButton label="Start" icon={<Play size={13} />} tone="emerald" busy={isBusy("start")} onClick={() => handleTaskAction(item, "start")} />
+                          )}
                         </td>
 
                         <td className="whitespace-nowrap px-4 py-4">
-                          {item.breakTime?.startTime
-                            ? formatTime(item.breakTime.startTime)
-                            : "—"}
-
-                          {!locked &&
-                            item.taskStatus === "In Progress" &&
-                            !item.breakTime && (
-                              <ActionButton
-                                label="Break"
-                                icon={<Coffee size={13} />}
-                                busy={isBusy("break")}
-                                onClick={() => handleTaskAction(item, "break")}
-                              />
-                            )}
-
+                          {item.breakTime?.startTime ? formatTime(item.breakTime.startTime) : "—"}
+                          {!locked && item.taskStatus === "In Progress" && !item.breakTime && (
+                            <ActionButton label="Break" icon={<Coffee size={13} />} tone="amber" busy={isBusy("break")} onClick={() => handleTaskAction(item, "break")} />
+                          )}
                           {!locked && activeBreak && (
-                            <ActionButton
-                              label="Resume"
-                              icon={<RotateCcw size={13} />}
-                              busy={isBusy("resume")}
-                              onClick={() => handleTaskAction(item, "resume")}
-                            />
+                            <ActionButton label="Resume" icon={<RotateCcw size={13} />} tone="sky" busy={isBusy("resume")} onClick={() => handleTaskAction(item, "resume")} />
                           )}
                         </td>
 
                         <td className="whitespace-nowrap px-4 py-4">
                           <div>{formatTime(item.endTime)}</div>
-                          {!locked &&
-                            item.taskStatus === "In Progress" &&
-                            !item.endTime && (
-                              <ActionButton
-                                label="End"
-                                icon={<Square size={13} />}
-                                busy={isBusy("end")}
-                                onClick={() => handleTaskAction(item, "end")}
-                              />
-                            )}
+                          {!locked && item.taskStatus === "In Progress" && !item.endTime && (
+                            <ActionButton label="End" icon={<Square size={13} />} tone="rose" busy={isBusy("end")} onClick={() => handleTaskAction(item, "end")} />
+                          )}
+                        </td>
+
+                        <td className="whitespace-nowrap px-4 py-4 font-medium">
+                          {formatMinutes(item.totalCompletionTime)}
                         </td>
 
                         <td className="whitespace-nowrap px-4 py-4">
-                          {formatMinutes(item.totalCompletionTime)}
+                          <EditableMinutes
+                            editing={isEditing("idleTime")}
+                            value={editing?.value ?? ""}
+                            onChange={(v) => setEditing((p) => ({ ...p, value: v }))}
+                            display={formatMinutes(item.idleTime)}
+                            min="0"
+                            saving={savingEdit}
+                            canEdit={!locked}
+                            label="idle time"
+                            onEdit={() => startEdit(item, "idleTime")}
+                            onSave={() => saveEdit(item)}
+                            onCancel={() => setEditing(null)}
+                          />
                         </td>
-<td className="whitespace-nowrap px-4 py-4">
-  {editingIdleId === item._id ? (
-    <div className="flex items-center gap-2">
-      <input
-        type="number"
-        min="0"
-        step="1"
-        value={editingIdleValue}
-        onChange={(event) =>
-          setEditingIdleValue(event.target.value)
-        }
-        disabled={savingIdle}
-        autoFocus
-        className="w-20 rounded-lg border border-blue-300 px-2 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-      />
 
-      <button
-        type="button"
-        onClick={() => handleSaveIdle(item)}
-        disabled={savingIdle}
-        title="Save idle time"
-        className="rounded-lg bg-emerald-50 p-1.5 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
-      >
-        {savingIdle ? (
-          <RefreshCw size={15} className="animate-spin" />
-        ) : (
-          <Check size={16} />
-        )}
-      </button>
-
-      <button
-        type="button"
-        onClick={() => {
-          setEditingIdleId("");
-          setEditingIdleValue("");
-        }}
-        disabled={savingIdle}
-        title="Cancel editing"
-        className="rounded-lg bg-red-50 p-1.5 text-red-600 hover:bg-red-100 disabled:opacity-50"
-      >
-        <X size={16} />
-      </button>
-    </div>
-  ) : (
-    <div className="flex items-center gap-2">
-      <span className="font-medium text-slate-700">
-        {formatMinutes(item.idleTime)}
-      </span>
-
-      {!locked && (
-  <button
-    type="button"
-    onClick={() => handleEditIdle(item)}
-    title="Edit idle time"
-    className="rounded-md p-1.5 text-slate-400 transition hover:bg-blue-50 hover:text-blue-600"
-  >
-    <Pencil size={14} />
-  </button>
-)}
-    </div>
-  )}
-</td>
-                        <td className="px-4 py-4">
+                        <td className="px-4 py-4 font-semibold">
                           {item.efficiency == null ? "—" : `${item.efficiency}%`}
                         </td>
+
                         <td className="px-4 py-4">
-                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getTaskStatusClass(item.taskStatus)}`}>
+                          <Chip className={getTaskStatusClass(item.taskStatus)}>
                             {item.taskStatus || "Not Started"}
-                          </span>
+                          </Chip>
                         </td>
                         <td className="px-4 py-4">
-                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusClass(item.approvalStatus)}`}>
+                          <Chip className={getStatusClass(item.approvalStatus)}>
                             {item.approvalStatus || "Pending"}
-                          </span>
+                          </Chip>
                         </td>
-                        <td className="px-4 py-4">
-                          {item.auditedBy?.name || "—"}
-                        </td>
-                        <td className="max-w-48 whitespace-normal px-4 py-4 text-red-600">
+                        <td className="px-4 py-4">{item.auditedBy?.name || "—"}</td>
+                        <td className="max-w-64 whitespace-normal px-4 py-4 font-medium text-rose-700">
                           {item.rejectionReason || "—"}
                         </td>
-                      </tr>
+                      </motion.tr>
                     );
                   })}
-                  {showInlineRow && (
-  <tr className="bg-blue-50/50">
-    {/* DATE & TIME */}
-    <td className="border-b px-4 py-3 whitespace-nowrap">
-      <div className="text-sm font-medium text-slate-800">
-        {inlineDateTime}
+                </AnimatePresence>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </motion.div>
+    </div>
+  );
+}
+
+/* =========================================================
+   Small components
+   ========================================================= */
+
+// GSAP count-up
+function CountUp({ value }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const obj = { v: 0 };
+    const tween = gsap.to(obj, {
+      v: value,
+      duration: 1.2,
+      ease: "power2.out",
+      onUpdate: () => {
+        if (ref.current) ref.current.textContent = Math.round(obj.v);
+      },
+    });
+    return () => tween.kill();
+  }, [value]);
+  return <span ref={ref}>0</span>;
+}
+
+function StatCard({ label, value, icon, tone, delay }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay, duration: 0.5 }}
+      whileHover={{ y: -4 }}
+      className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_10px_30px_-12px_rgba(15,42,67,0.3)]"
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-slate-600">{label}</span>
+        <span className={`rounded-lg p-2 ${tone}`}>{icon}</span>
       </div>
-      <div className="text-xs text-blue-600">
-        New Entry
-      </div>
-    </td>
+      <p className="mt-3 font-serif text-3xl font-bold text-[#0b2f45]">
+        <CountUp value={value} />
+      </p>
+      <span className="absolute inset-x-0 bottom-0 h-0.5 bg-gradient-to-r from-transparent via-amber-400 to-transparent" />
+    </motion.div>
+  );
+}
 
-    {/* TASK TYPE */}
-    <td className="border-b px-4 py-3">
-      <select
-        value={inlineForm.taskType}
-        onChange={(e) =>
-          setInlineForm((prev) => ({
-            ...prev,
-            taskType: e.target.value,
-          }))
-        }
-        className="w-full rounded-lg border px-2 py-2 text-sm"
-      >
-        <option value="Project">Project</option>
-        <option value="Learning">Learning</option>
-        <option value="Training">Training</option>
-      </select>
-    </td>
+function Chip({ className, children }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${className}`}
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+      {children}
+    </span>
+  );
+}
 
-    {/* PROJECT */}
-    <td className="border-b px-4 py-3">
-      <select
-        value={inlineForm.projectId}
-        onChange={(e) =>
-          setInlineForm((prev) => ({
-            ...prev,
-            projectId: e.target.value,
-          }))
-        }
-        className="w-full min-w-[150px] rounded-lg border px-2 py-2 text-sm"
-      >
-        <option value="">Select Project</option>
-
-        {projects.map((project) => (
-          <option key={project._id} value={project._id}>
-            {project.projectName || project.name}
-          </option>
-        ))}
-      </select>
-    </td>
-
-    {/* TASK */}
-    <td className="border-b px-4 py-3">
-      <select
-        value={inlineForm.task}
-        onChange={(e) =>
-          setInlineForm((prev) => ({
-            ...prev,
-            task: e.target.value,
-          }))
-        }
-        className="w-full min-w-[130px] rounded-lg border px-2 py-2 text-sm"
-      >
-        <option value="Testing">Testing</option>
-        <option value="Development">Development</option>
-        <option value="Learning">Learning</option>
-        <option value="Graphics">Graphics</option>
-        <option value="Management">Management</option>
-        <option value="Meeting">Meeting</option>
-      </select>
-    </td>
-
-    {/* DESCRIPTION */}
-    <td className="border-b px-4 py-3">
-      <input
-        type="text"
-        value={inlineForm.description}
-        onChange={(e) =>
-          setInlineForm((prev) => ({
-            ...prev,
-            description: e.target.value,
-          }))
-        }
-        placeholder="Enter description"
-        className="w-full min-w-[200px] rounded-lg border px-3 py-2 text-sm"
-      />
-    </td>
-
-    {/* ESTIMATED TIME */}
-    <td className="border-b px-4 py-3">
-      <input
-        type="number"
-        min="0"
-        value={inlineForm.estimatedTime}
-        onChange={(e) =>
-          setInlineForm((prev) => ({
-            ...prev,
-            estimatedTime: e.target.value,
-          }))
-        }
-        placeholder="Minutes"
-        className="w-24 rounded-lg border px-2 py-2 text-sm"
-      />
-    </td>
-
-    {/* REMAINING COLUMNS */}
-    <td colSpan={10} className="border-b px-4 py-3">
+function EditableMinutes({
+  editing, value, onChange, display, min, saving, canEdit, label, onEdit, onSave, onCancel,
+}) {
+  if (editing) {
+    return (
       <div className="flex items-center gap-2">
-<button
-  type="button"
-  onClick={handleInlineSave}
-  disabled={saving}
-  className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm text-white hover:bg-green-700 disabled:opacity-50"
->
-  {saving ? (
-    <RefreshCw size={15} className="animate-spin" />
-  ) : (
-    <Check size={15} />
-  )}
+        <input
+          type="number"
+          min={min}
+          step="1"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={saving}
+          autoFocus
+          className={`${inputCls} w-20 !px-2 !py-1.5`}
+        />
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          type="button"
+          onClick={onSave}
+          disabled={saving}
+          title={`Save ${label}`}
+          className="rounded-lg bg-emerald-100 p-1.5 text-emerald-700 hover:bg-emerald-200 disabled:opacity-50"
+        >
+          {saving ? <RefreshCw size={15} className="animate-spin" /> : <Check size={16} />}
+        </motion.button>
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          type="button"
+          onClick={onCancel}
+          disabled={saving}
+          title="Cancel editing"
+          className="rounded-lg bg-rose-100 p-1.5 text-rose-700 hover:bg-rose-200 disabled:opacity-50"
+        >
+          <X size={16} />
+        </motion.button>
+      </div>
+    );
+  }
 
-  {saving ? "Saving..." : "Save"}
-</button>
-
+  return (
+    <div className="flex items-center gap-2">
+      <span className="font-semibold text-slate-800">{display}</span>
+      {canEdit && (
         <button
           type="button"
-          onClick={() => setShowInlineRow(false)}
-          className="inline-flex items-center gap-1 rounded-lg border bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+          onClick={onEdit}
+          title={`Edit ${label}`}
+          className="rounded-md p-1.5 text-slate-500 transition hover:bg-sky-100 hover:text-sky-700"
         >
-          <X size={15} />
-          Cancel
+          <Pencil size={14} />
         </button>
-      </div>
-    </td>
-  </tr>
-)}
-                </tbody>
-              </table>
-            </div>
-        </section>
-      </div>
+      )}
     </div>
   );
 }
 
-function Info({ label, value }) {
-  return (
-    <div className="rounded-xl bg-slate-50 p-3">
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-1 break-words text-sm font-semibold text-slate-800">
-        {value || "—"}
-      </p>
-    </div>
-  );
-}
+const toneMap = {
+  emerald: "bg-emerald-600 text-white hover:bg-emerald-700",
+  amber: "bg-amber-500 text-[#0b2f45] hover:bg-amber-400",
+  sky: "bg-sky-700 text-white hover:bg-sky-800",
+  rose: "bg-rose-600 text-white hover:bg-rose-700",
+};
 
-function Stat({ label, value, icon }) {
+function ActionButton({ label, icon, busy, onClick, tone = "sky" }) {
   return (
-    <div className="rounded-2xl border bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between text-slate-500">
-        <span className="text-sm">{label}</span>
-        {icon}
-      </div>
-      <p className="mt-3 text-2xl font-bold text-slate-900">{value}</p>
-    </div>
-  );
-}
-
-function FormField({ label, required, children }) {
-  return (
-    <div className="min-w-0">
-      <label className="mb-1.5 block text-sm font-medium text-slate-700">
-        {label}
-        {required && <span className="ml-1 text-red-500">*</span>}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function ActionButton({ label, icon, busy, onClick }) {
-  return (
-    <button
+    <motion.button
       type="button"
+      whileHover={{ y: -1 }}
+      whileTap={{ scale: 0.94 }}
       onClick={onClick}
       disabled={busy}
-      className="mt-2 inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+      className={`mt-2 inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-sm disabled:opacity-60 ${toneMap[tone]}`}
     >
       {busy ? <RefreshCw size={13} className="animate-spin" /> : icon}
       {busy ? "Saving" : label}
-    </button>
+    </motion.button>
   );
 }

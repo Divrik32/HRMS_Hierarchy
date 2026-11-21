@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import api from "../../api/axios";
+import { toast } from "react-toastify";
 
 /* ---------- Employee Profile API ---------- */
 
@@ -63,64 +64,280 @@ const Stat = ({ value, label }) => (
     <div className="text-xs text-slate-500 mt-1">{label}</div>
   </div>
 );
+const getCheckInTimestamp = (attendance) => {
+  if (!attendance?.checkIn) return null;
 
+  const checkIn = String(attendance.checkIn).trim();
+
+  // Full ISO date-time
+  if (/^\d{4}-\d{2}-\d{2}T/.test(checkIn)) {
+    const timestamp = new Date(checkIn).getTime();
+    return Number.isNaN(timestamp) ? null : timestamp;
+  }
+
+  const attendanceDate =
+    attendance.attendanceDate ||
+    attendance.date ||
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+
+  const timestamp = new Date(
+    `${String(attendanceDate).slice(0, 10)}T${checkIn}+05:30`
+  ).getTime();
+
+  return Number.isNaN(timestamp) ? null : timestamp;
+};
 /* ---------- Header ---------- */
 
+
 const Header = () => {
-  const [running, setRunning] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  const [attendance, setAttendance] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const [employee, setEmployee] = useState(null);
-  const [profileLoading, setProfileLoading] = useState(true);
 
-  // Fetch logged-in employee profile
+  const fetchAttendance = async () => {
+    try {
+      const response = await api.get("/attendance/my-attendance");
+      const result = response.data;
+
+      const records = Array.isArray(result.attendance)
+        ? result.attendance
+        : Array.isArray(result.records)
+        ? result.records
+        : result.attendance
+        ? [result.attendance]
+        : [];
+
+      const today = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date());
+
+      const todayRecord = records.find((record) => {
+        const date = record.attendanceDate || record.date;
+        return date && String(date).slice(0, 10) === today;
+      });
+
+      setAttendance(todayRecord || null);
+    } catch (error) {
+      console.error(
+        "Attendance Fetch Error:",
+        error.response?.data || error.message
+      );
+    }
+  };
+
   useEffect(() => {
     let active = true;
 
     const fetchEmployeeProfile = async () => {
-  try {
-    const response = await api.get(EMPLOYEE_PROFILE_URL);
+      try {
+        const response = await api.get(EMPLOYEE_PROFILE_URL);
 
-    const result = response.data;
+        if (!response.data.success) {
+          throw new Error(
+            response.data.message || "Unable to load employee profile."
+          );
+        }
 
-    if (!result.success) {
-      throw new Error(
-        result.message || "Unable to load employee profile."
-      );
-    }
-
-    if (active) {
-      setEmployee(result.employee);
-    }
-  } catch (error) {
-    console.error(
-      "Employee Profile Error:",
-      error.response?.data || error.message
-    );
-  } finally {
-    if (active) {
-      setProfileLoading(false);
-    }
-  }
-};
+        if (active) {
+          setEmployee(response.data.employee);
+        }
+      } catch (error) {
+        console.error(
+          "Employee Profile Error:",
+          error.response?.data || error.message
+        );
+      } finally {
+        if (active) setProfileLoading(false);
+      }
+    };
 
     fetchEmployeeProfile();
+    fetchAttendance();
+
+    // EmployeeAttendance থেকে attendance change হলে refresh
+    const handleAttendanceUpdate = () => {
+      fetchAttendance();
+    };
+
+    window.addEventListener(
+      "employee-attendance-updated",
+      handleAttendanceUpdate
+    );
 
     return () => {
       active = false;
+      window.removeEventListener(
+        "employee-attendance-updated",
+        handleAttendanceUpdate
+      );
     };
   }, []);
 
-  // Timer
-  useEffect(() => {
-    if (!running) return;
+  const isCheckedIn = Boolean(attendance?.checkIn);
+  const isCheckedOut = Boolean(attendance?.checkOut);
+  const running = isCheckedIn && !isCheckedOut;
 
-    const t = setInterval(() => {
-      setSeconds((s) => s + 1);
-    }, 1000);
+useEffect(() => {
+  if (!attendance?.checkIn) {
+    setSeconds(0);
+    return;
+  }
 
-    return () => clearInterval(t);
-  }, [running]);
+  const checkInTime = getCheckInTimestamp(attendance);
+
+  if (!checkInTime) {
+    setSeconds(0);
+    return;
+  }
+
+  // Check Out হলে Check Out time, নাহলে বর্তমান সময়
+  const endTime = attendance.checkOut
+    ? new Date(attendance.checkOut).getTime()
+    : Date.now();
+
+  if (Number.isNaN(endTime)) {
+    setSeconds(0);
+    return;
+  }
+
+  const elapsed = Math.max(
+    0,
+    Math.floor((endTime - checkInTime) / 1000)
+  );
+
+  setSeconds(elapsed);
+
+  // Check Out হয়ে গেলে timer আর চলবে না
+  if (attendance.checkOut) return;
+
+  const interval = setInterval(() => {
+    setSeconds(
+      Math.max(0, Math.floor((Date.now() - checkInTime) / 1000))
+    );
+  }, 1000);
+
+  return () => clearInterval(interval);
+}, [
+  attendance?.checkIn,
+  attendance?.checkOut,
+  attendance?.attendanceDate,
+  attendance?.date,
+]);
+
+  const notifyAttendanceUpdate = () => {
+    window.dispatchEvent(new Event("employee-attendance-updated"));
+  };
+
+  const handleStartDay = async () => {
+    if (actionLoading || running || isCheckedOut) return;
+
+    try {
+      setActionLoading(true);
+
+      const response = await api.post("/attendance/check-in");
+
+      if (!response.data.success) {
+        throw new Error(
+          response.data.message || "Unable to check in."
+        );
+      }
+
+      toast.success(response.data.message || "Check-in successful.");
+
+      await fetchAttendance();
+      notifyAttendanceUpdate();
+    } catch (error) {
+      toast.error(
+        error.response?.data?.message ||
+        error.message ||
+        "Check-in failed."
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleEndDay = () => {
+    if (actionLoading || !running) return;
+
+    toast.info(
+      <div>
+        <p className="font-semibold text-sm">
+          Are you sure you want to end your day?
+        </p>
+
+        <p className="text-xs mt-1">
+          This will check you out for today.
+        </p>
+
+        <div className="flex justify-end gap-2 mt-3">
+          <button
+            type="button"
+            onClick={() => toast.dismiss()}
+            className="rounded-md border px-3 py-1.5 text-xs font-semibold"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            disabled={actionLoading}
+            onClick={async () => {
+              toast.dismiss();
+
+              try {
+                setActionLoading(true);
+
+                const response = await api.patch(
+                  "/attendance/check-out"
+                );
+
+                if (!response.data.success) {
+                  throw new Error(
+                    response.data.message || "Unable to check out."
+                  );
+                }
+
+                toast.success(
+                  response.data.message || "Check-out successful."
+                );
+
+                await fetchAttendance();
+                notifyAttendanceUpdate();
+              } catch (error) {
+                toast.error(
+                  error.response?.data?.message ||
+                  error.message ||
+                  "Check-out failed."
+                );
+              } finally {
+                setActionLoading(false);
+              }
+            }}
+            className="rounded-md bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white"
+          >
+            OK
+          </button>
+        </div>
+      </div>,
+      {
+        autoClose: false,
+        closeOnClick: false,
+        draggable: false,
+      }
+    );
+  };
 
   const pad = (n) => String(n).padStart(2, "0");
 
@@ -128,22 +345,19 @@ const Header = () => {
     Math.floor((seconds % 3600) / 60)
   )}:${pad(seconds % 60)}`;
 
-  // Employee information
   const employeeName = employee?.name || "Employee";
+  const profilePic = employee?.profilePic?.trim();
+  const API_ORIGIN = new URL(API_BASE_URL).origin;
 
-const profilePic = employee?.profilePic?.trim();
-
-const API_ORIGIN = new URL(API_BASE_URL).origin;
-
-const profilePicUrl = profilePic
-  ? profilePic.startsWith("http")
-    ? profilePic
-    : profilePic.startsWith("/uploads/")
-    ? `${API_ORIGIN}${profilePic}`
-    : profilePic.startsWith("uploads/")
-    ? `${API_ORIGIN}/${profilePic}`
-    : `${API_ORIGIN}/uploads/${profilePic.replace(/^\/+/, "")}`
-  : null;
+  const profilePicUrl = profilePic
+    ? profilePic.startsWith("http")
+      ? profilePic
+      : profilePic.startsWith("/uploads/")
+      ? `${API_ORIGIN}${profilePic}`
+      : profilePic.startsWith("uploads/")
+      ? `${API_ORIGIN}/${profilePic}`
+      : `${API_ORIGIN}/uploads/${profilePic.replace(/^\/+/, "")}`
+    : null;
 
   const initials = employeeName
     .split(" ")
@@ -154,137 +368,100 @@ const profilePicUrl = profilePic
     .slice(0, 2);
 
   const employeeRole = employee?.roleId?.roleName || "—";
-
   const employeeId = employee?.empId || "—";
-
   const department = employee?.departmentId?.departmentName || "—";
-
   const joiningDate = employee?.joiningDate || "—";
-
   const reportsTo = employee?.reportsTo || "—";
 
   return (
     <div className="rounded-2xl bg-[#348aaf] text-white px-6 py-5 flex flex-wrap items-center justify-between gap-4">
-
-      {/* Employee Profile */}
-
       <div className="flex items-center gap-4 min-w-0">
-
-        {/* Avatar */}
-
         <div className="w-14 h-14 shrink-0 rounded-full p-[3px] border-2 border-orange-500 flex items-center justify-center overflow-hidden">
-  {profileLoading ? (
-    <div className="w-full h-full rounded-full bg-[#4f2ff5] flex items-center justify-center font-bold text-white">
-      ...
-    </div>
-  ) : profilePicUrl ? (
-    <img
-      src={profilePicUrl}
-      alt={employeeName}
-      className="w-full h-full rounded-full object-cover"
-      onError={(e) => {
-        e.currentTarget.style.display = "none";
-        e.currentTarget.nextElementSibling.style.display = "flex";
-      }}
-    />
-  ) : null}
+          {profileLoading ? (
+            <div className="w-full h-full rounded-full bg-[#4f2ff5] flex items-center justify-center font-bold">
+              ...
+            </div>
+          ) : profilePicUrl ? (
+            <img
+              src={profilePicUrl}
+              alt={employeeName}
+              className="w-full h-full rounded-full object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+                e.currentTarget.nextElementSibling.style.display = "flex";
+              }}
+            />
+          ) : null}
 
-  <div
-    className={`w-full h-full rounded-full bg-[#4f2ff5] items-center justify-center font-bold text-white ${
-      profileLoading || !profilePicUrl ? "flex" : "hidden"
-    }`}
-  >
-    {profileLoading ? "..." : initials}
-  </div>
-</div>
-
-        {/* Employee Details */}
+          <div
+            className={`w-full h-full rounded-full bg-[#4f2ff5] items-center justify-center font-bold ${
+              profileLoading || !profilePicUrl ? "flex" : "hidden"
+            }`}
+          >
+            {profileLoading ? "..." : initials}
+          </div>
+        </div>
 
         <div className="min-w-0">
-
           <h1 className="text-2xl font-bold leading-tight">
             {profileLoading ? "Loading..." : employeeName}
           </h1>
 
-          <p className="text-sm text-white mt-0.5">
+          <p className="text-sm mt-0.5">
             {profileLoading
               ? "Loading employee profile..."
               : `${employeeRole} · ${employeeId} · ${department}`}
           </p>
 
-          {/* Employee Tags */}
-
           {!profileLoading && (
             <div className="flex flex-wrap gap-2 mt-2">
-
-              {/* Joining Date */}
-
-              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#0b2f45] text-white">
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#0b2f45]">
                 Joined {joiningDate}
               </span>
 
-              {/* Parent Role Employees */}
-
-              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#0b2f45] text-white">
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#0b2f45]">
                 Reports to {reportsTo}
               </span>
-
             </div>
           )}
         </div>
       </div>
 
-      {/* Timer */}
-
       <div className="text-right">
-
         <div className="text-4xl font-bold tracking-wider tabular-nums">
           {time}
         </div>
 
         <p className="text-[11px] text-yellow-200 mt-1">
-          {running ? "Running" : "Not started"} · Friday, 20 Nov 2026
+          {running
+            ? "Running"
+            : isCheckedOut
+            ? "Day completed"
+            : "Not started"}
         </p>
 
         <div className="flex gap-3 justify-end mt-3">
-
-          {/* Start Day */}
-
           <button
-            onClick={() => setRunning(true)}
-            disabled={running}
-            className="px-5 py-2 rounded-lg bg-[#02e8ab] text-slate-900 text-sm font-semibold
-                       border-b-2 border-[#017a56] shadow-[0_2px_4px_rgba(0,0,0,0.25)]
-                       transition-all duration-150
-                       hover:-translate-y-px hover:brightness-120
-                       active:translate-y-px active:border-b-[1px] active:shadow-none
-                       disabled:bg-[#00d38a]/50 disabled:text-slate-900/60 disabled:border-transparent
-                       disabled:shadow-none disabled:translate-y-0 disabled:cursor-not-allowed"
+            onClick={handleStartDay}
+            disabled={running || isCheckedOut || actionLoading || profileLoading}
+            className="px-5 py-2 rounded-lg bg-[#02e8ab] text-slate-900 text-sm font-semibold border-b-2 border-[#017a56] shadow-[0_2px_4px_rgba(0,0,0,0.25)] transition-all duration-150 hover:-translate-y-px hover:brightness-120 active:translate-y-px disabled:bg-[#00d38a]/50 disabled:text-slate-900/60 disabled:border-transparent disabled:shadow-none disabled:cursor-not-allowed"
           >
-            Start day
+            {actionLoading && !running ? "Please wait..." : "Start day"}
           </button>
 
-          {/* End Day */}
-
           <button
-            onClick={() => setRunning(false)}
-            disabled={!running}
-            className="px-5 py-2 rounded-lg bg-[#f70254] text-slate-300 text-sm font-semibold
-                       border-b-2 border-[#7a0148] shadow-[0_2px_4px_rgba(0,0,0,0.25)]
-                       transition-all duration-150
-                       enabled:bg-[#f70254] enabled:border-[#7d2340] enabled:text-white
-                       enabled:hover:-translate-y-px enabled:hover:brightness-120
-                       enabled:active:translate-y-[3px] enabled:active:border-b-[1px] enabled:active:shadow-[0_1px_2px_rgba(0,0,0,0.35)]
-                       disabled:shadow-none disabled:cursor-not-allowed"
+            onClick={handleEndDay}
+            disabled={!running || actionLoading}
+            className="px-5 py-2 rounded-lg bg-[#f70254] text-white text-sm font-semibold border-b-2 border-[#7d2340] shadow-[0_2px_4px_rgba(0,0,0,0.25)] transition-all duration-150 enabled:hover:-translate-y-px enabled:hover:brightness-120 disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed"
           >
             End day
           </button>
-
         </div>
       </div>
     </div>
   );
 };
+
 
 /* ---------- Attendance API ---------- */
 

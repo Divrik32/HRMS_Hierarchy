@@ -1,14 +1,6 @@
 import { useState, useEffect } from "react";
-
-/* ---------- Data ---------- */
-const employee = {
-  name: "Ananya Sharma",
-  initials: "AS",
-  role: "Senior Product Designer",
-  empId: "EMP-20418",
-  dept: "Design Studio",
-  tags: ["Delhi office", "Joined Mar 2022", "Reports to R. Mehta"],
-};
+import { useParams } from "react-router-dom";
+import api from "../../api/axios";
 
 // day label, hours (decimal)
 const daily = [
@@ -65,47 +57,180 @@ const Stat = ({ value, label }) => (
 
 /* ---------- Header ---------- */
 const Header = () => {
+  const { companyId } = useParams();
+
   const [running, setRunning] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  const [company, setCompany] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [logoError, setLogoError] = useState(false);
 
+  // Fetch Company Details
+  useEffect(() => {
+    const fetchCompany = async () => {
+      if (!companyId) {
+        setProfileLoading(false);
+        console.error("Company ID not found in route params.");
+        return;
+      }
+
+      try {
+        const response = await api.get(`/companies/${companyId}`);
+
+        if (response.data?.success) {
+          setCompany(response.data.company);
+        }
+      } catch (error) {
+        console.error(
+          "Company Details Fetch Error:",
+          error.response?.data || error.message
+        );
+      } finally {
+        setProfileLoading(false);
+      }
+    };
+
+    fetchCompany();
+  }, [companyId]);
+
+  // Timer
   useEffect(() => {
     if (!running) return;
-    const t = setInterval(() => setSeconds((s) => s + 1), 1000);
-    return () => clearInterval(t);
+
+    const interval = setInterval(() => {
+      setSeconds((previous) => previous + 1);
+    }, 1000);
+
+    return () => clearInterval(interval);
   }, [running]);
 
   const pad = (n) => String(n).padStart(2, "0");
-  const time = `${pad(Math.floor(seconds / 3600))}:${pad(Math.floor((seconds % 3600) / 60))}:${pad(seconds % 60)}`;
+
+  const time = `${pad(Math.floor(seconds / 3600))}:${pad(
+    Math.floor((seconds % 3600) / 60)
+  )}:${pad(seconds % 60)}`;
+
+  // Company Initials
+  const initials = company?.companyName
+    ? company.companyName
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((word) => word[0])
+        .join("")
+        .toUpperCase()
+    : "CO";
+
+  // Format Created Date
+  const formatCreatedAt = (date) => {
+    if (!date) return "Joined N/A";
+
+    const parsedDate = new Date(date);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      return "Joined N/A";
+    }
+
+    return `Joined ${parsedDate.toLocaleDateString("en-IN", {
+      month: "long",
+      year: "numeric",
+    })}`;
+  };
+
+  // Company Logo URL
+  const getLogoUrl = (logo) => {
+    if (!logo) return "";
+
+    if (/^https?:\/\//i.test(logo)) {
+      return logo;
+    }
+
+    const apiBase = api.defaults.baseURL || window.location.origin;
+    const apiRoot = apiBase.replace(/\/api\/?$/, "");
+    const origin = new URL(apiRoot, window.location.origin).origin;
+
+    return new URL(logo.replace(/^\/+/, ""), `${origin}/`).href;
+  };
+
+  const logoUrl = getLogoUrl(company?.logo);
+
+  useEffect(() => {
+    setLogoError(false);
+  }, [company?.logo]);
 
   return (
     <div className="rounded-2xl bg-[#348aaf] text-white px-6 py-5 flex flex-wrap items-center justify-between gap-4">
-      <div className="flex items-center gap-4">
-        {/* Avatar with thin orange ring */}
-        <div className="w-14 h-14 rounded-full p-[3px] border-2 border-orange-500 flex items-center justify-center">
-          <div className="w-full h-full rounded-full bg-[#4f2ff5] flex items-center justify-center font-bold text-white">
-            {employee.initials}
-          </div>
+      <div className="flex items-center gap-4 min-w-0">
+
+        {/* Company Logo */}
+        <div className="w-14 h-14 rounded-full p-[3px] border-2 border-orange-500 flex items-center justify-center shrink-0">
+          {logoUrl && !logoError ? (
+            <img
+              src={logoUrl}
+              alt="Company Logo"
+              className="w-full h-full rounded-full object-cover bg-white"
+              onError={() => setLogoError(true)}
+            />
+          ) : (
+            <div className="w-full h-full rounded-full bg-[#4f2ff5] flex items-center justify-center font-bold text-white">
+              {initials}
+            </div>
+          )}
         </div>
-        <div>
-          <h1 className="text-2xl font-bold leading-tight">{employee.name}</h1>
-          <p className="text-sm text-white mt-0.5">
-            {employee.role} · {employee.empId} · {employee.dept}
+
+        <div className="min-w-0">
+          {/* Company Name */}
+          <h1 className="text-2xl font-bold leading-tight break-words">
+            {profileLoading
+              ? "Loading..."
+              : company?.companyName || "Company"}
+          </h1>
+
+          {/* Company Type, GSTIN, PAN, Registered Email */}
+          <p className="text-sm text-white mt-0.5 break-words">
+            {company?.companyType || "N/A"}
+            {" · GSTIN: "}
+            {company?.gstNumber || "N/A"}
+            {" · PAN: "}
+            {company?.panNumber || "N/A"}
           </p>
+
+          {/* Company Details */}
           <div className="flex flex-wrap gap-2 mt-2">
-            {employee.tags.map((t) => (
-              <span key={t} className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#0b2f45] text-white">
-                {t}
+
+            {/* Address */}
+            {company?.address && (
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#0b2f45] text-white">
+                {company.address}
               </span>
-            ))}
+            )}
+
+            {/* Joined Date */}
+            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#0b2f45] text-white">
+              {formatCreatedAt(company?.createdAt)}
+            </span>
+
+            {/* Phone */}
+            {company?.phone && (
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#0b2f45] text-white">
+                {company.phone}
+              </span>
+            )}
+
           </div>
         </div>
       </div>
 
+      {/* Timer and Buttons */}
       <div className="text-right">
-        <div className="text-4xl font-bold tracking-wider tabular-nums">{time}</div>
+        <div className="text-4xl font-bold tracking-wider tabular-nums">
+          {time}
+        </div>
+
         <p className="text-[11px] text-yellow-200 mt-1">
-          {running ? "Running" : "Not started"} · Friday, 20 Nov 2026
+          {running ? "Running" : "Not started"}
         </p>
+
         <div className="flex gap-3 justify-end mt-3">
           <button
             onClick={() => setRunning(true)}
@@ -120,6 +245,7 @@ const Header = () => {
           >
             Start day
           </button>
+
           <button
             onClick={() => setRunning(false)}
             disabled={!running}
