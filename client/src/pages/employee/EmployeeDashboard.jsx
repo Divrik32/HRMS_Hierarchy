@@ -1,14 +1,15 @@
 import { useState, useEffect } from "react";
+import api from "../../api/axios";
 
 /* ---------- Employee Profile API ---------- */
 
-const EMPLOYEE_PROFILE_URL = `${
-  (import.meta.env.VITE_API_URL || "http://localhost:5003/api")
-    .replace(/\/$/, "")
-    .endsWith("/api")
-    ? (import.meta.env.VITE_API_URL || "http://localhost:5003/api").replace(/\/$/, "")
-    : `${(import.meta.env.VITE_API_URL || "http://localhost:5003").replace(/\/$/, "")}/api`
-}/employees/profile/me`;
+const API_BASE_URL = api.defaults.baseURL.replace(/\/+$/, "");
+
+const EMPLOYEE_PROFILE_URL = "/employees/profile/me";
+
+const ATTENDANCE_REPORT_URL = "/attendance/last-18-days-working-report";
+
+const TIMESHEET_WEEKLY_STATUS_URL = "/timesheets/my-weekly-status";
 
 // day label, hours (decimal)
 const daily = [
@@ -77,34 +78,31 @@ const Header = () => {
     let active = true;
 
     const fetchEmployeeProfile = async () => {
-      try {
-        const response = await fetch(EMPLOYEE_PROFILE_URL, {
-          method: "GET",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
+  try {
+    const response = await api.get(EMPLOYEE_PROFILE_URL);
 
-        const result = await response.json();
+    const result = response.data;
 
-        if (!response.ok || result.success === false) {
-          throw new Error(
-            result.message || "Unable to load employee profile."
-          );
-        }
+    if (!result.success) {
+      throw new Error(
+        result.message || "Unable to load employee profile."
+      );
+    }
 
-        if (active) {
-          setEmployee(result.employee);
-        }
-      } catch (error) {
-        console.error("Employee Profile Error:", error);
-      } finally {
-        if (active) {
-          setProfileLoading(false);
-        }
-      }
-    };
+    if (active) {
+      setEmployee(result.employee);
+    }
+  } catch (error) {
+    console.error(
+      "Employee Profile Error:",
+      error.response?.data || error.message
+    );
+  } finally {
+    if (active) {
+      setProfileLoading(false);
+    }
+  }
+};
 
     fetchEmployeeProfile();
 
@@ -133,14 +131,18 @@ const Header = () => {
   // Employee information
   const employeeName = employee?.name || "Employee";
 
-  const profilePic = employee?.profilePic;
+const profilePic = employee?.profilePic?.trim();
+
+const API_ORIGIN = new URL(API_BASE_URL).origin;
 
 const profilePicUrl = profilePic
   ? profilePic.startsWith("http")
     ? profilePic
-    : `${new URL(EMPLOYEE_PROFILE_URL).origin}${
-        profilePic.startsWith("/") ? profilePic : `/${profilePic}`
-      }`
+    : profilePic.startsWith("/uploads/")
+    ? `${API_ORIGIN}${profilePic}`
+    : profilePic.startsWith("uploads/")
+    ? `${API_ORIGIN}/${profilePic}`
+    : `${API_ORIGIN}/uploads/${profilePic.replace(/^\/+/, "")}`
   : null;
 
   const initials = employeeName
@@ -285,14 +287,6 @@ const profilePicUrl = profilePic
 };
 
 /* ---------- Attendance API ---------- */
-// VITE_API_URL যদি http://localhost:5003/api হয়, তাহলে সরাসরি কাজ করবে।
-const ATTENDANCE_REPORT_URL = `${
-  (import.meta.env.VITE_API_URL || "http://localhost:5003/api")
-    .replace(/\/$/, "")
-    .endsWith("/api")
-    ? (import.meta.env.VITE_API_URL || "http://localhost:5003/api").replace(/\/$/, "")
-    : `${(import.meta.env.VITE_API_URL || "http://localhost:5003").replace(/\/$/, "")}/api`
-}/attendance/last-18-days-working-report`;
 
 const formatMinutes = (minutes = 0) => {
   const hours = Math.floor(minutes / 60);
@@ -318,30 +312,36 @@ const Progress = () => {
   useEffect(() => {
     let active = true;
 
-    const fetchReport = async () => {
-      try {
-        const response = await fetch(ATTENDANCE_REPORT_URL, {
-          method: "GET",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-        });
+   const fetchReport = async () => {
+  try {
+    const response = await api.get(ATTENDANCE_REPORT_URL);
 
-        const result = await response.json();
+    const result = response.data;
 
-        if (!response.ok || result.success === false) {
-          throw new Error(result.message || "Unable to load attendance report.");
-        }
+    if (!result.success) {
+      throw new Error(
+        result.message || "Unable to load attendance report."
+      );
+    }
 
-        if (active) {
-          setReport(result);
-          setError("");
-        }
-      } catch (err) {
-        if (active) setError(err.message || "Failed to load attendance report.");
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
+    if (active) {
+      setReport(result);
+      setError("");
+    }
+  } catch (err) {
+    if (active) {
+      setError(
+        err.response?.data?.message ||
+        err.message ||
+        "Failed to load attendance report."
+      );
+    }
+  } finally {
+    if (active) {
+      setLoading(false);
+    }
+  }
+};
 
     fetchReport();
 
@@ -837,30 +837,36 @@ const UnderEight = () => {
   useEffect(() => {
     let active = true;
 
-    const fetchReport = async () => {
-      try {
-        const response = await fetch(ATTENDANCE_REPORT_URL, {
-          method: "GET",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-        });
+const fetchReport = async () => {
+  try {
+    const response = await api.get(ATTENDANCE_REPORT_URL);
 
-        const result = await response.json();
+    const result = response.data;
 
-        if (!response.ok || result.success === false) {
-          throw new Error(result.message || "Unable to load attendance report.");
-        }
+    if (!result.success) {
+      throw new Error(
+        result.message || "Unable to load attendance report."
+      );
+    }
 
-        if (active) {
-          setRecords(result.records || []);
-          setError("");
-        }
-      } catch (err) {
-        if (active) setError(err.message || "Failed to load attendance report.");
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
+    if (active) {
+      setRecords(result.records || []);
+      setError("");
+    }
+  } catch (err) {
+    if (active) {
+      setError(
+        err.response?.data?.message ||
+        err.message ||
+        "Failed to load attendance report."
+      );
+    }
+  } finally {
+    if (active) {
+      setLoading(false);
+    }
+  }
+};
 
     fetchReport();
 
@@ -989,14 +995,6 @@ const shortRecords = records
 
 
 /* ---------- Timesheet status ---------- */
-
-const TIMESHEET_WEEKLY_STATUS_URL = `${
-  (import.meta.env.VITE_API_URL || "http://localhost:5003/api")
-    .replace(/\/$/, "")
-    .endsWith("/api")
-    ? (import.meta.env.VITE_API_URL || "http://localhost:5003/api").replace(/\/$/, "")
-    : `${(import.meta.env.VITE_API_URL || "http://localhost:5003").replace(/\/$/, "")}/api`
-}/timesheets/my-weekly-status`;
 
 const statusConfig = {
   Approved: {
@@ -1133,36 +1131,31 @@ const Timesheet = () => {
   const [error, setError] = useState("");
 
   const fetchWeeklyStatus = async () => {
-    try {
-      const response = await fetch(
-        TIMESHEET_WEEKLY_STATUS_URL,
-        {
-          method: "GET",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
+  try {
+    const response = await api.get(
+      TIMESHEET_WEEKLY_STATUS_URL
+    );
+
+    const result = response.data;
+
+    if (!result.success) {
+      throw new Error(
+        result.message || "Unable to load timesheet status."
       );
-
-      const result = await response.json();
-
-      if (!response.ok || result.success === false) {
-        throw new Error(
-          result.message || "Unable to load timesheet status."
-        );
-      }
-
-      setData(result);
-      setError("");
-    } catch (err) {
-      setError(
-        err.message || "Failed to load timesheet status."
-      );
-    } finally {
-      setLoading(false);
     }
-  };
+
+    setData(result);
+    setError("");
+  } catch (err) {
+    setError(
+      err.response?.data?.message ||
+      err.message ||
+      "Failed to load timesheet status."
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     fetchWeeklyStatus();
