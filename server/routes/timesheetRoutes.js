@@ -2,7 +2,6 @@ import express from "express";
 
 import {
   createTimesheet,
-  updateTimesheet,
   auditTimesheet,
   getDailyEfficiencyGraph,
   getMyTimesheets,
@@ -15,6 +14,7 @@ import {
   startBreak,
   resumeTask,
   editTimesheet,
+  getMyTimesheetWeeklyStatus,
 } from "../controllers/timesheetController.js";
 
 import employeeOrSuperAdminAuth from "../middleware/employeeOrSuperAdminAuth.js";
@@ -64,13 +64,6 @@ router.post(
   "/",
   employeeAuth,
   createTimesheet
-);
-
-// Update editable timesheet fields
-router.patch(
-  "/:id",
-  employeeOrSuperAdminAuth,
-  updateTimesheet
 );
 
 // =========================================
@@ -145,6 +138,12 @@ router.patch(
   "/:id/edit",
   employeeAuth,
   editTimesheet
+);
+
+router.get(
+  "/my-weekly-status",
+  employeeAuth,
+  getMyTimesheetWeeklyStatus
 );
 
 export default router;

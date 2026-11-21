@@ -301,25 +301,25 @@ const EmployeeSidebar = ({ open, employee, onLogout }) => {
           path: `${basePath}/projects`,
           icon: FolderKanban,
         },
-        ...(isITVicePresident
-          ? [
-              {
-                label: "Project Management",
-                path: `${basePath}/project-management`,
-                icon: FolderKanban,
-              },
-            ]
-          : []),
-        {
-          label: "Role & Project Access",
-          path: `${basePath}/access`,
-          icon: ShieldCheck,
-        },
-        {
-          label: "Modules Assigned",
-          path: `${basePath}/modules-assigned`,
-          icon: Layers3,
-        },
+        // ...(isITVicePresident
+        //   ? [
+        //       {
+        //         label: "Project Management",
+        //         path: `${basePath}/project-management`,
+        //         icon: FolderKanban,
+        //       },
+        //     ]
+        //   : []),
+        // {
+        //   label: "Role & Project Access",
+        //   path: `${basePath}/access`,
+        //   icon: ShieldCheck,
+        // },
+        // {
+        //   label: "Modules Assigned",
+        //   path: `${basePath}/modules-assigned`,
+        //   icon: Layers3,
+        // },
       ],
     },
     {

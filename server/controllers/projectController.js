@@ -1320,21 +1320,34 @@ export const getProjectRoleAccess = async (req, res) => {
 // =====================================================
 // GRANT PROJECT ACCESS TO A DIRECT CHILD ROLE
 // =====================================================
+
 export const grantProjectAccess = async (req, res) => {
   try {
     const assigner = req.user;
     const { projectId } = req.params;
-    const { employeeId } = req.body;
+
+    // Single employee এবং bulk employee—দুটোই support করবে
+    const { employeeId, employeeIds } = req.body;
+
+    const requestedIds = [
+      ...(Array.isArray(employeeIds) ? employeeIds : []),
+      ...(employeeId ? [employeeId] : []),
+    ];
+
+    const uniqueEmployeeIds = [
+      ...new Set(requestedIds.map((id) => String(id))),
+    ];
 
     if (
       !isValidId(projectId) ||
-      !isValidId(employeeId) ||
       !isValidId(assigner?.roleId) ||
-      !isValidId(assigner?.companyId)
+      !isValidId(assigner?.companyId) ||
+      uniqueEmployeeIds.length === 0 ||
+      uniqueEmployeeIds.some((id) => !isValidId(id))
     ) {
       return res.status(400).json({
         success: false,
-        message: "Valid project ID and employee ID are required",
+        message: "Valid project ID and employee IDs are required",
       });
     }
 
@@ -1349,55 +1362,72 @@ export const grantProjectAccess = async (req, res) => {
 
     const project = result.project;
 
-    const targetEmployee = await Employee.findOne({
-      _id: employeeId,
-      companyId: assigner.companyId,
-    }).select("_id roleId name");
-
-    if (!targetEmployee) {
-      return res.status(404).json({
-        success: false,
-        message: "Employee not found in your company",
-      });
-    }
-
     const branchIds = await getRoleBranchIds(
       assigner.companyId,
       assigner.roleId
     );
 
-    if (
-      !branchIds.includes(
-        String(targetEmployee.roleId)
-      ) ||
-      String(targetEmployee._id) ===
-        String(getEmployeeId(assigner))
-    ) {
+    const currentEmployeeId = String(
+      getEmployeeId(assigner)
+    );
+
+    const targetEmployees = await Employee.find({
+      _id: { $in: uniqueEmployeeIds },
+      companyId: assigner.companyId,
+    }).select("_id roleId name empId");
+
+    if (targetEmployees.length !== uniqueEmployeeIds.length) {
+      return res.status(404).json({
+        success: false,
+        message: "One or more employees were not found in your company",
+      });
+    }
+
+    const invalidEmployees = targetEmployees.filter((employee) => {
+      return (
+        !branchIds.includes(String(employee.roleId)) ||
+        String(employee._id) === currentEmployeeId
+      );
+    });
+
+    if (invalidEmployees.length > 0) {
       return res.status(403).json({
         success: false,
         message: "You can grant access only to employees under your hierarchy",
+        invalidEmployeeIds: invalidEmployees.map((employee) =>
+          String(employee._id)
+        ),
       });
     }
 
-    const alreadyHasAccess = getProjectEmployeeIds(project).includes(
-      String(employeeId)
+    const existingAccessIds = new Set(
+      getProjectEmployeeIds(project).map(String)
     );
 
-    if (alreadyHasAccess) {
+    const employeesToAdd = targetEmployees.filter(
+      (employee) =>
+        !existingAccessIds.has(String(employee._id))
+    );
+
+    if (employeesToAdd.length === 0) {
       return res.status(409).json({
         success: false,
-        message: "This employee already has project access",
+        message: "All selected employees already have project access",
       });
     }
 
-    project.employeeAccess.push(targetEmployee._id);
+    project.employeeAccess.push(
+      ...employeesToAdd.map((employee) => employee._id)
+    );
 
     await project.save();
 
     return res.status(200).json({
       success: true,
-      message: "Project access granted successfully",
-      employee: targetEmployee,
+      message: `Project access granted to ${employeesToAdd.length} employee(s) successfully`,
+      grantedCount: employeesToAdd.length,
+      skippedCount: targetEmployees.length - employeesToAdd.length,
+      employees: employeesToAdd,
       project,
     });
   } catch (error) {
@@ -1410,6 +1440,7 @@ export const grantProjectAccess = async (req, res) => {
     });
   }
 };
+
 
 
 // =====================================================
@@ -2030,9 +2061,11 @@ export const getMyAssignedModules = async (req, res) => {
 };
 
 
+
 // =====================================================
-// GET ASSIGNABLE EMPLOYEES
+// GET ALL DESCENDANT EMPLOYEES FOR PROJECT ACCESS
 // SUPER ADMIN OR AUTHORIZED EMPLOYEE
+// Returns ALL levels under logged-in employee
 // =====================================================
 
 export const getAssignableEmployees = async (req, res) => {
@@ -2064,7 +2097,8 @@ export const getAssignableEmployees = async (req, res) => {
     } else {
       if (
         !isValidId(getEmployeeId(assigner)) ||
-        !isValidId(assigner.companyId)
+        !isValidId(assigner.companyId) ||
+        !isValidId(assigner.roleId)
       ) {
         return res.status(403).json({
           success: false,
@@ -2072,7 +2106,10 @@ export const getAssignableEmployees = async (req, res) => {
         });
       }
 
-      const result = await getProjectForEmployee(projectId, assigner);
+      const result = await getProjectForEmployee(
+        projectId,
+        assigner
+      );
 
       if (result.error) {
         return res.status(result.status).json({
@@ -2091,21 +2128,47 @@ export const getAssignableEmployees = async (req, res) => {
       });
     }
 
-    const employees = await Employee.find({
-      _id: { $in: project.employeeAccess || [] },
+    let employeeFilter = {
       companyId: project.companyId,
       status: "active",
-    })
-      .select("_id name empId roleId departmentId")
-      .populate("roleId", "roleName")
+    };
+
+    if (isEmployee) {
+      // Get ALL descendant roles, including every hierarchy level.
+      const branchIds = await getRoleBranchIds(
+        assigner.companyId,
+        assigner.roleId
+      );
+
+      const currentEmployeeId = String(
+        getEmployeeId(assigner)
+      );
+
+      employeeFilter.roleId = { $in: branchIds };
+      employeeFilter._id = { $ne: currentEmployeeId };
+    }
+
+    const employees = await Employee.find(employeeFilter)
+      .select("_id name empId email roleId departmentId")
+      .populate("roleId", "roleName parentRoleId")
       .populate("departmentId", "departmentName")
       .sort({ name: 1 })
       .lean();
 
+    // Mark whether each employee already has project access.
+    const projectAccessIds = new Set(
+      getProjectEmployeeIds(project)
+    );
+
+    const assignableEmployees = employees.map((employee) => ({
+      ...employee,
+      hasAccess: projectAccessIds.has(String(employee._id)),
+    }));
+
     return res.status(200).json({
       success: true,
-      count: employees.length,
-      employees,
+      count: assignableEmployees.length,
+      employees: assignableEmployees,
     });
   } catch (error) {
     console.error("Get Assignable Employees Error:", error);
@@ -2117,6 +2180,7 @@ export const getAssignableEmployees = async (req, res) => {
     });
   }
 };
+
 
 // =====================================================
 // GET ACTIVE PROJECTS BY COMPANY

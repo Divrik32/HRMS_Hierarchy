@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 
 // =====================================================
@@ -63,53 +62,43 @@ const timesheetSchema = new mongoose.Schema(
 
     // =================================================
     // PROJECT
-    // Required only when taskType is Project
+    // Required for ALL task types
     // =================================================
 
     projectId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Project",
-      default: null,
-      required: function () {
-        return this.taskType === "Project";
-      },
+      required: true,
       index: true,
     },
 
     // =================================================
-    // TASK / PROJECT MODULE
-    // Required only when taskType is Project
+    // TASK
+    // Dropdown / Enum
     // =================================================
-
-    moduleId: {
-      type: mongoose.Schema.Types.ObjectId,
-      default: null,
-      required: function () {
-        return this.taskType === "Project";
-      },
-    },
 
     task: {
       type: String,
+      enum: [
+        "Testing",
+        "Development",
+        "Learning",
+        "Graphics",
+        "Management",
+        "Meeting",
+      ],
       required: true,
-      trim: true,
     },
 
     // =================================================
     // DESCRIPTION
-    // Mandatory for Learning and Training
+    // Mandatory for ALL task types
     // =================================================
 
     description: {
       type: String,
       trim: true,
-      default: "",
-      required: function () {
-        return (
-          this.taskType === "Learning" ||
-          this.taskType === "Training"
-        );
-      },
+      required: true,
     },
 
     // =================================================
@@ -243,6 +232,35 @@ const timesheetSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+
+    rejectionHistory: [
+  {
+    reason: {
+      type: String,
+      required: true,
+    },
+
+    rejectedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Employee",
+      default: null,
+    },
+
+    rejectedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+],
+
+// =====================================================
+// RESUBMISSION TRACKING
+// =====================================================
+
+resubmissionCount: {
+  type: Number,
+  default: 0,
+},
 
     rejectedBy: {
       type: mongoose.Schema.Types.ObjectId,

@@ -1,13 +1,17 @@
 import { useParams } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Plus, Search, RefreshCw, Pencil, Trash2, Eye, FolderKanban,
-  Building2, Users, Layers, X, Check, ChevronDown, AlertCircle,
-  UserPlus, UserMinus, RotateCcw, ShieldCheck, BriefcaseBusiness,
-  Filter, Save, Loader2, Archive, Settings2, FileText
+  Plus, Search, RefreshCw, Pencil, Trash2, FolderKanban,
+  Building2, Users, Layers, X, ChevronDown,
+  UserPlus, UserMinus, RotateCcw, BriefcaseBusiness,
+  Filter, Save, Loader2, Archive, Settings2, FileText,
 } from "lucide-react";
 import api from "../../api/axios.js";
 import { toast } from "react-toastify";
+
+// ==================================================
+// CONSTANTS
+// ==================================================
 
 const STATUSES = ["Not Assigned", "Assigned", "In Progress", "Completed"];
 
@@ -23,6 +27,54 @@ const EMPTY_PROJECT = {
   modules: [],
   status: "active",
 };
+
+// ==================================================
+// DESIGN TOKENS (soft white cards, calm green accent)
+// ==================================================
+
+const BRAND = "#2d7f6b";
+
+const MODULE_COLORS = {
+  "Not Assigned": "#cbd5e1",
+  Assigned: "#3b82f6",
+  "In Progress": "#a855f7",
+  Completed: BRAND,
+};
+
+const MODULE_PILL = {
+  "Not Assigned": "border-slate-200 bg-slate-100 text-slate-600",
+  Assigned: "border-sky-200 bg-sky-50 text-sky-700",
+  "In Progress": "border-violet-200 bg-violet-50 text-violet-700",
+  Completed: "border-[#2d7f6b]/30 bg-[#e8f3f0] text-[#2d7f6b]",
+};
+
+const AVATAR_TONES = [
+  "bg-emerald-100 text-emerald-800",
+  "bg-sky-100 text-sky-800",
+  "bg-violet-100 text-violet-800",
+  "bg-amber-100 text-amber-800",
+  "bg-rose-100 text-rose-800",
+];
+
+const cardClass = "rounded-2xl border border-slate-200 bg-white";
+
+const inputClass =
+  "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#2d7f6b] focus:ring-4 focus:ring-[#2d7f6b]/15 disabled:bg-slate-100";
+
+const labelClass = "mb-1.5 block text-sm font-medium text-slate-700";
+
+const buttonPrimary =
+  "inline-flex items-center justify-center gap-2 rounded-xl bg-[#2d7f6b] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#256a59] disabled:cursor-not-allowed disabled:opacity-50";
+
+const buttonSecondary =
+  "inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50";
+
+const iconButton =
+  "rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900";
+
+// ==================================================
+// DATA HELPERS
+// ==================================================
 
 const getError = (error) =>
   error.response?.data?.message || error.message || "Something went wrong.";
@@ -66,27 +118,281 @@ const getCompanyName = (project, companies = []) => {
 const getEmployeeRoleId = (employee) =>
   getId(employee?.roleId || employee?.role);
 
+const getEmployeeRoleName = (employee) =>
+  employee?.roleId?.roleName || employee?.roleName || "Member";
+
 const getEmployeesFromProject = (project) =>
   (project?.employeeAccess || []).filter(
     (employee) => employee && typeof employee === "object"
   );
 
 const getAssignmentEmployee = (assignment) => {
-  if (
-    assignment?.employeeId &&
-    typeof assignment.employeeId === "object"
-  ) {
+  if (assignment?.employeeId && typeof assignment.employeeId === "object") {
     return assignment.employeeId;
   }
-
   return null;
 };
+
+const toPercent = (part, total) =>
+  total ? Math.round((part / total) * 100) : 0;
+
+const getInitials = (text = "") =>
+  text
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() || "")
+    .join("") || "?";
+
+const toneFor = (text = "") =>
+  AVATAR_TONES[
+    [...text].reduce((sum, char) => sum + char.charCodeAt(0), 0) %
+      AVATAR_TONES.length
+  ];
+
+const getModuleStatusCounts = (projectList) => {
+  const counts = {};
+  STATUSES.forEach((status) => (counts[status] = 0));
+
+  projectList.forEach((project) =>
+    (project.modules || []).forEach((module) => {
+      const status = STATUSES.includes(module.status)
+        ? module.status
+        : "Not Assigned";
+      counts[status] += 1;
+    })
+  );
+
+  return counts;
+};
+
+// ==================================================
+// SMALL UI PIECES (defined outside so inputs keep focus)
+// ==================================================
+
+const Avatar = ({ text, size = "h-10 w-10", rounded = "rounded-full" }) => (
+  <span
+    className={`flex ${size} shrink-0 items-center justify-center ${rounded} text-sm font-semibold ${toneFor(
+      text
+    )}`}
+  >
+    {getInitials(text)}
+  </span>
+);
+
+const Card = ({ title, action, children, className = "" }) => (
+  <section className={`${cardClass} ${className}`}>
+    {(title || action) && (
+      <div className="flex items-center justify-between gap-3 px-5 pt-5">
+        <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+        {action}
+      </div>
+    )}
+    <div className="p-5">{children}</div>
+  </section>
+);
+
+const CardAction = ({ icon: Icon, onClick, children }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="inline-flex items-center gap-1.5 text-sm text-slate-500 transition hover:text-slate-900"
+  >
+    {Icon && <Icon size={15} />}
+    {children}
+  </button>
+);
+
+const InfoRow = ({ label, children }) => (
+  <div className="flex items-center justify-between gap-3 border-b border-slate-100 py-3 text-sm last:border-0">
+    <span className="text-slate-500">{label}</span>
+    <span className="min-w-0 truncate text-right font-medium text-slate-900">
+      {children}
+    </span>
+  </div>
+);
+
+const ProjectStatusPill = ({ status }) => (
+  <span
+    className={`inline-flex rounded-full border px-3 py-0.5 text-xs font-medium capitalize ${
+      status === "inactive"
+        ? "border-slate-200 bg-slate-100 text-slate-600"
+        : "border-[#2d7f6b]/40 bg-[#e8f3f0] text-[#2d7f6b]"
+    }`}
+  >
+    {status || "active"}
+  </span>
+);
+
+const ModulePill = ({ status }) => (
+  <span
+    className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+      MODULE_PILL[status] || MODULE_PILL["Not Assigned"]
+    }`}
+  >
+    {status || "Not Assigned"}
+  </span>
+);
+
+const Legend = ({ items }) => (
+  <ul className="space-y-2.5">
+    {items.map((item) => (
+      <li
+        key={item.label}
+        className="flex items-center gap-2 text-sm text-slate-600"
+      >
+        <span
+          className="h-2.5 w-2.5 shrink-0 rounded-full"
+          style={{ backgroundColor: item.color }}
+        />
+        <span>{item.label}</span>
+        <span className="ml-auto font-semibold text-slate-900">
+          {item.value}
+        </span>
+      </li>
+    ))}
+  </ul>
+);
+
+const DonutChart = ({ value, size = 140, stroke = 18, color = BRAND }) => {
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const safe = Math.min(Math.max(value, 0), 100);
+  const offset = circumference - (safe / 100) * circumference;
+
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="#e5e7eb"
+          strokeWidth={stroke}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={color}
+          strokeWidth={stroke}
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+        />
+      </svg>
+
+      <span className="absolute inset-0 flex items-center justify-center text-2xl font-semibold text-slate-900">
+        {safe}%
+      </span>
+    </div>
+  );
+};
+
+const PieChart = ({ data, size = 140 }) => {
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+  const radius = size / 2;
+  const visible = data.filter((item) => item.value > 0);
+
+  if (!total || visible.length === 0) {
+    return (
+      <svg width={size} height={size} className="shrink-0">
+        <circle cx={radius} cy={radius} r={radius} fill="#f1f5f9" />
+      </svg>
+    );
+  }
+
+  if (visible.length === 1) {
+    return (
+      <svg width={size} height={size} className="shrink-0">
+        <circle cx={radius} cy={radius} r={radius} fill={visible[0].color} />
+      </svg>
+    );
+  }
+
+  let angle = -Math.PI / 2;
+
+  const slices = visible.map((item) => {
+    const slice = (item.value / total) * Math.PI * 2;
+    const x1 = radius + radius * Math.cos(angle);
+    const y1 = radius + radius * Math.sin(angle);
+    angle += slice;
+    const x2 = radius + radius * Math.cos(angle);
+    const y2 = radius + radius * Math.sin(angle);
+    const large = slice > Math.PI ? 1 : 0;
+
+    return {
+      key: item.label,
+      color: item.color,
+      path: `M${radius},${radius} L${x1},${y1} A${radius},${radius} 0 ${large} 1 ${x2},${y2} Z`,
+    };
+  });
+
+  return (
+    <svg width={size} height={size} className="shrink-0">
+      {slices.map((slice) => (
+        <path
+          key={slice.key}
+          d={slice.path}
+          fill={slice.color}
+          stroke="#fff"
+          strokeWidth="2"
+        />
+      ))}
+    </svg>
+  );
+};
+
+const ModalShell = ({
+  title,
+  subtitle,
+  onClose,
+  size = "max-w-4xl",
+  z = "z-50",
+  actions,
+  children,
+}) => (
+  <div
+    className={`fixed inset-0 ${z} flex items-center justify-center overflow-y-auto bg-slate-900/50 p-3 sm:p-6`}
+  >
+    <div
+      className={`my-auto max-h-[94vh] w-full ${size} overflow-y-auto rounded-2xl bg-white shadow-2xl`}
+    >
+      <div className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4">
+        <div className="min-w-0">
+          <h2 className="truncate text-lg font-semibold text-slate-900">
+            {title}
+          </h2>
+          {subtitle && (
+            <p className="mt-0.5 truncate text-xs text-slate-500">
+              {subtitle}
+            </p>
+          )}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1">
+          {actions}
+          <button type="button" onClick={onClose} className={iconButton}>
+            <X size={20} />
+          </button>
+        </div>
+      </div>
+
+      {children}
+    </div>
+  </div>
+);
+
+// ==================================================
+// PAGE
+// ==================================================
 
 const Projects = () => {
   // --------------------------------------------------
   // STATE
   // --------------------------------------------------
-const { companyId } = useParams();
+  const { companyId } = useParams();
   const [projects, setProjects] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [deletedProjects, setDeletedProjects] = useState([]);
@@ -176,8 +482,8 @@ const { companyId } = useParams();
   // COMPANY EMPLOYEES AND ROLES
   // --------------------------------------------------
 
-  const fetchCompanyData = useCallback(async (companyId) => {
-    if (!companyId) {
+  const fetchCompanyData = useCallback(async (targetCompanyId) => {
+    if (!targetCompanyId) {
       setRoles([]);
       setEmployees([]);
       return;
@@ -187,8 +493,8 @@ const { companyId } = useParams();
 
     try {
       const [roleResponse, employeeResponse] = await Promise.all([
-        api.get(`/roles/company/${companyId}`),
-        api.get(`/employees/company/${companyId}`),
+        api.get(`/roles/company/${targetCompanyId}`),
+        api.get(`/employees/company/${targetCompanyId}`),
       ]);
 
       setRoles(getArray(roleResponse, "roles"));
@@ -222,15 +528,20 @@ const { companyId } = useParams();
       });
     });
 
+    const moduleCounts = getModuleStatusCounts(projects);
+    const totalModules = projects.reduce(
+      (sum, p) => sum + (p.modules?.length || 0),
+      0
+    );
+
     return {
       total: projects.length,
       active: projects.filter((p) => p.status === "active").length,
       inactive: projects.filter((p) => p.status === "inactive").length,
-      modules: projects.reduce(
-        (sum, p) => sum + (p.modules?.length || 0),
-        0
-      ),
+      modules: totalModules,
       employees: employeeIds.size,
+      moduleCounts,
+      completedPercent: toPercent(moduleCounts.Completed, totalModules),
     };
   }, [projects]);
 
@@ -256,9 +567,7 @@ const { companyId } = useParams();
         project.projectDescription,
       ]
         .filter(Boolean)
-        .some((value) =>
-          String(value).toLowerCase().includes(query)
-        );
+        .some((value) => String(value).toLowerCase().includes(query));
     });
   }, [projects, search, statusFilter]);
 
@@ -285,9 +594,7 @@ const { companyId } = useParams();
     const modules = getArray(response, "modules");
 
     setSelectedProject((prev) =>
-      prev && getId(prev) === projectId
-        ? { ...prev, modules }
-        : prev
+      prev && getId(prev) === projectId ? { ...prev, modules } : prev
     );
 
     await fetchProjects();
@@ -299,16 +606,12 @@ const { companyId } = useParams();
     setEditingModuleId("");
 
     try {
-      const response = await api.get(
-        `/projects/${getId(project)}/modules`
-      );
+      const response = await api.get(`/projects/${getId(project)}/modules`);
 
       const modules = getArray(response, "modules");
 
       setSelectedProject((prev) =>
-        prev && getId(prev) === getId(project)
-          ? { ...prev, modules }
-          : prev
+        prev && getId(prev) === getId(project) ? { ...prev, modules } : prev
       );
     } catch (error) {
       toast.error(getError(error));
@@ -319,19 +622,19 @@ const { companyId } = useParams();
   // CREATE PROJECT
   // --------------------------------------------------
 
-const openCreate = () => {
-  setForm({
-    ...EMPTY_PROJECT,
-    companyId: companyId || "",
-  });
+  const openCreate = () => {
+    setForm({
+      ...EMPTY_PROJECT,
+      companyId: companyId || "",
+    });
 
-  setRoles([]);
-  setEmployees([]);
-  setSelectedProject(null);
-  setRoleSearch("");
-  setEmployeeSearch("");
-  setModal("create");
-};
+    setRoles([]);
+    setEmployees([]);
+    setSelectedProject(null);
+    setRoleSearch("");
+    setEmployeeSearch("");
+    setModal("create");
+  };
 
   // --------------------------------------------------
   // EDIT PROJECT
@@ -348,9 +651,7 @@ const openCreate = () => {
       projectDescription: project.projectDescription || "",
       remarks: project.remarks || "",
       companyId: getId(project.companyId),
-      employeeAccess: (project.employeeAccess || [])
-        .map(getId)
-        .filter(Boolean),
+      employeeAccess: (project.employeeAccess || []).map(getId).filter(Boolean),
       modules: project.modules || [],
       status: project.status || "active",
     });
@@ -378,24 +679,16 @@ const openCreate = () => {
     const roleQuery = roleSearch.trim().toLowerCase();
 
     return roles
-      .filter((role) =>
-        (role.roleName || "").toLowerCase().includes(roleQuery)
-      )
+      .filter((role) => (role.roleName || "").toLowerCase().includes(roleQuery))
       .map((role) => ({
         ...role,
         employees: employees.filter((employee) => {
           if (getEmployeeRoleId(employee) !== getId(role)) return false;
           if (!query) return true;
 
-          return [
-            getName(employee),
-            getEmpCode(employee),
-            employee.email,
-          ]
+          return [getName(employee), getEmpCode(employee), employee.email]
             .filter(Boolean)
-            .some((value) =>
-              String(value).toLowerCase().includes(query)
-            );
+            .some((value) => String(value).toLowerCase().includes(query));
         }),
       }));
   }, [roles, employees, employeeSearch, roleSearch]);
@@ -454,28 +747,18 @@ const openCreate = () => {
         });
 
         const originalIds = [
-          ...new Set(
-            (selectedProject.employeeAccess || []).map(getId)
-          ),
+          ...new Set((selectedProject.employeeAccess || []).map(getId)),
         ].filter(Boolean);
 
-        const selectedIds = [
-          ...new Set(form.employeeAccess),
-        ].filter(Boolean);
+        const selectedIds = [...new Set(form.employeeAccess)].filter(Boolean);
 
-        const toGrant = selectedIds.filter(
-          (id) => !originalIds.includes(id)
-        );
-
-        const toRevoke = originalIds.filter(
-          (id) => !selectedIds.includes(id)
-        );
+        const toGrant = selectedIds.filter((id) => !originalIds.includes(id));
+        const toRevoke = originalIds.filter((id) => !selectedIds.includes(id));
 
         if (toGrant.length) {
-          await api.post(
-            `/projects/${projectId}/access/super-admin`,
-            { employeeIds: toGrant }
-          );
+          await api.post(`/projects/${projectId}/access/super-admin`, {
+            employeeIds: toGrant,
+          });
         }
 
         for (const employeeId of toRevoke) {
@@ -502,11 +785,8 @@ const openCreate = () => {
   // --------------------------------------------------
 
   const archiveProject = async (project) => {
-    if (
-      !window.confirm(
-        `Move "${project.projectName}" to Deleted Projects?`
-      )
-    ) return;
+    if (!window.confirm(`Move "${project.projectName}" to Deleted Projects?`))
+      return;
 
     try {
       await api.delete(`/projects/${getId(project)}`);
@@ -530,10 +810,7 @@ const openCreate = () => {
       await api.post(`/projects/deleted/${getId(project)}/restore`);
       toast.success("Project restored.");
 
-      await Promise.all([
-        fetchProjects(),
-        fetchDeletedProjects(),
-      ]);
+      await Promise.all([fetchProjects(), fetchDeletedProjects()]);
     } catch (error) {
       toast.error(getError(error));
     }
@@ -544,12 +821,11 @@ const openCreate = () => {
       !window.confirm(
         `Permanently delete "${project.projectName}"? This cannot be undone.`
       )
-    ) return;
+    )
+      return;
 
     try {
-      await api.delete(
-        `/projects/deleted/${getId(project)}/permanent`
-      );
+      await api.delete(`/projects/deleted/${getId(project)}/permanent`);
 
       toast.success("Project permanently deleted.");
       await fetchDeletedProjects();
@@ -570,9 +846,7 @@ const openCreate = () => {
 
     try {
       const [projectResponse, employeeResponse] = await Promise.all([
-        api.get(
-          `/projects/${getId(project)}/role-access/super-admin`
-        ),
+        api.get(`/projects/${getId(project)}/role-access/super-admin`),
         api.get(`/employees/company/${getId(project.companyId)}`),
       ]);
 
@@ -585,14 +859,10 @@ const openCreate = () => {
         data.data?.employees ||
         [];
 
-      setAccessEmployees(
-        Array.isArray(accessList) ? accessList : []
-      );
+      setAccessEmployees(Array.isArray(accessList) ? accessList : []);
 
       if (!accessList.length) {
-        setAccessEmployees(
-          getArray(employeeResponse, "employees")
-        );
+        setAccessEmployees(getArray(employeeResponse, "employees"));
       }
     } catch (error) {
       try {
@@ -612,20 +882,16 @@ const openCreate = () => {
     if (!selectedProject || !employeeId) return;
 
     try {
-      await api.post(
-        `/projects/${getId(selectedProject)}/access/super-admin`,
-        { employeeIds: [employeeId] }
-      );
+      await api.post(`/projects/${getId(selectedProject)}/access/super-admin`, {
+        employeeIds: [employeeId],
+      });
 
       toast.success("Project access granted.");
       await fetchProjects();
 
       await openAccessManager({
         ...selectedProject,
-        employeeAccess: [
-          ...(selectedProject.employeeAccess || []),
-          employeeId,
-        ],
+        employeeAccess: [...(selectedProject.employeeAccess || []), employeeId],
       });
     } catch (error) {
       toast.error(getError(error));
@@ -639,7 +905,8 @@ const openCreate = () => {
       !window.confirm(
         "Revoke this employee's project access? Their module assignments will also be removed."
       )
-    ) return;
+    )
+      return;
 
     try {
       await api.delete(
@@ -715,13 +982,10 @@ const openCreate = () => {
     setSaving(true);
 
     try {
-      await api.put(
-        `/projects/${getId(project)}/modules/${getId(module)}`,
-        {
-          moduleName: editingModuleName.trim(),
-          status: editingModuleStatus,
-        }
-      );
+      await api.put(`/projects/${getId(project)}/modules/${getId(module)}`, {
+        moduleName: editingModuleName.trim(),
+        status: editingModuleStatus,
+      });
 
       setEditingModuleId("");
       await refreshSelectedProject(getId(project));
@@ -739,9 +1003,7 @@ const openCreate = () => {
     setSaving(true);
 
     try {
-      await api.delete(
-        `/projects/${getId(project)}/modules/${getId(module)}`
-      );
+      await api.delete(`/projects/${getId(project)}/modules/${getId(module)}`);
 
       await refreshSelectedProject(getId(project));
       toast.success("Module deleted.");
@@ -846,44 +1108,45 @@ const openCreate = () => {
   };
 
   // --------------------------------------------------
-  // STYLES
+  // DERIVED DATA FOR THE SELECTED PROJECT
   // --------------------------------------------------
 
-  const inputClass =
-    "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100";
+  const selectedModuleCounts = useMemo(
+    () => getModuleStatusCounts(selectedProject ? [selectedProject] : []),
+    [selectedProject]
+  );
 
-  const labelClass =
-    "mb-1.5 block text-sm font-semibold text-slate-700";
+  const selectedModuleTotal = selectedProject?.modules?.length || 0;
 
-  const buttonPrimary =
-    "inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50";
+  const stop = (handler) => (event) => {
+    event.stopPropagation();
+    handler();
+  };
 
-  const buttonSecondary =
-    "inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50";
+  const moduleLegend = (counts) =>
+    STATUSES.map((status) => ({
+      label: status,
+      value: counts[status] || 0,
+      color: MODULE_COLORS[status],
+    }));
 
   // --------------------------------------------------
   // RENDER
   // --------------------------------------------------
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 text-slate-800 sm:p-6 lg:p-8">
-      <div className="mx-auto max-w-[1600px] space-y-6">
+    <div className="min-h-screen bg-white p-4 text-slate-800 sm:p-6 lg:p-8">
+      <div className="mx-auto max-w-[1600px]">
+        {/* ================= HEADER ================= */}
 
-        {/* HEADER */}
-
-        <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
+        <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-center">
           <div>
-            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-indigo-600">
-              <ShieldCheck size={17} />
-              Super Admin / Company Management
-            </div>
-
-            <h1 className="text-3xl font-bold tracking-tight">
-              Project Management
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+              Projects List
             </h1>
 
             <p className="mt-1 text-sm text-slate-500">
-              Manage company projects, employee access, module assignments and descriptions.
+              Manage company projects, team access, modules and assignments.
             </p>
           </div>
 
@@ -893,14 +1156,11 @@ const openCreate = () => {
               onClick={() => {
                 fetchProjects();
                 fetchCompanies();
-
-                if (modal === "deleted") {
-                  fetchDeletedProjects();
-                }
+                if (modal === "deleted") fetchDeletedProjects();
               }}
               className={buttonSecondary}
             >
-              <RefreshCw size={16} />
+              <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
               Refresh
             </button>
 
@@ -910,265 +1170,291 @@ const openCreate = () => {
                 setModal("deleted");
                 await fetchDeletedProjects();
               }}
-              className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 hover:bg-amber-100"
+              className={buttonSecondary}
             >
               <Archive size={16} />
-              Deleted Projects
+              Deleted
             </button>
 
-            <button
-              type="button"
-              onClick={openCreate}
-              className={buttonPrimary}
-            >
+            <button type="button" onClick={openCreate} className={buttonPrimary}>
               <Plus size={17} />
               Create Project
             </button>
           </div>
         </div>
 
-        {/* STATS */}
+        {/* ================= BODY ================= */}
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          {[
-            {
-              title: "Total Projects",
-              value: stats.total,
-              icon: FolderKanban,
-              color: "bg-indigo-50 text-indigo-600",
-            },
-            {
-              title: "Active Projects",
-              value: stats.active,
-              icon: Check,
-              color: "bg-emerald-50 text-emerald-600",
-            },
-            {
-              title: "Inactive Projects",
-              value: stats.inactive,
-              icon: AlertCircle,
-              color: "bg-amber-50 text-amber-600",
-            },
-            {
-              title: "Total Modules",
-              value: stats.modules,
-              icon: Layers,
-              color: "bg-violet-50 text-violet-600",
-            },
-            {
-              title: "Employees With Access",
-              value: stats.employees,
-              icon: Users,
-              color: "bg-sky-50 text-sky-600",
-            },
-          ].map((item) => {
-            const Icon = item.icon;
+        <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          {/* ---------- LEFT COLUMN ---------- */}
 
-            return (
-              <div
-                key={item.title}
-                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-500">
-                    {item.title}
-                  </span>
+          <div className="min-w-0 space-y-5">
+            {/* PROJECT CARDS */}
 
-                  <span className={`rounded-xl p-2.5 ${item.color}`}>
-                    <Icon size={19} />
-                  </span>
+            <Card
+              title="Company Projects"
+              action={
+                <span className="text-xs text-slate-500">
+                  {filteredProjects.length} project(s)
+                </span>
+              }
+            >
+              <div className="mb-4 grid gap-3 md:grid-cols-[1fr_200px]">
+                <div className="relative">
+                  <Search
+                    size={17}
+                    className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className={`${inputClass} pl-10`}
+                    placeholder="Search project, code or client..."
+                  />
                 </div>
 
-                <p className="mt-4 text-3xl font-bold tracking-tight">
-                  {item.value}
-                </p>
+                <div className="relative">
+                  <Filter
+                    size={16}
+                    className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className={`${inputClass} appearance-none pl-10`}
+                  >
+                    <option value="">All Statuses</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
               </div>
-            );
-          })}
-        </div>
 
-        {/* FILTERS */}
+              {loading ? (
+                <div className="flex items-center justify-center gap-3 py-20 text-sm text-slate-500">
+                  <Loader2 size={20} className="animate-spin" />
+                  Loading projects...
+                </div>
+              ) : filteredProjects.length === 0 ? (
+                <div className="py-16 text-center">
+                  <FolderKanban
+                    size={40}
+                    className="mx-auto mb-3 text-slate-300"
+                  />
+                  <h3 className="font-semibold text-slate-900">
+                    No projects found
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Change filters or create a new project.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {filteredProjects.map((project) => {
+                    const modules = project.modules || [];
+                    const done = modules.filter(
+                      (m) => m.status === "Completed"
+                    ).length;
+                    const pct = toPercent(done, modules.length);
 
-        <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-[1fr_220px]">
-          <div className="relative">
-            <Search
-              size={18}
-              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-            />
+                    return (
+                      <div
+                        key={getId(project)}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => loadProjectDetails(project)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") loadProjectDetails(project);
+                        }}
+                        className="cursor-pointer rounded-xl border border-slate-200 bg-white p-4 transition hover:border-[#2d7f6b]/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2d7f6b]"
+                      >
+                        <div className="flex items-start gap-3">
+                          <Avatar
+                            text={project.projectName}
+                            rounded="rounded-lg"
+                          />
 
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className={`${inputClass} pl-10`}
-              placeholder="Search project, code or client..."
-            />
-          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-semibold text-slate-900">
+                              {project.projectName}
+                            </p>
 
-          <div className="relative">
-            <Filter
-              size={16}
-              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-            />
+                            <p className="truncate text-xs text-slate-500">
+                              {project.projectCode || "No project code"} ·{" "}
+                              {project.clientName || "No client"}
+                            </p>
+                          </div>
 
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className={`${inputClass} appearance-none pl-10`}
-            >
-              <option value="">All Statuses</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
-        </div>
-
-        {/* PROJECT TABLE */}
-
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
-            <div>
-              <h2 className="font-bold">Company Project Directory</h2>
-              <p className="mt-1 text-xs text-slate-500">
-                {filteredProjects.length} project(s) found
-              </p>
-            </div>
-
-            <span className="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700">
-              Current Company
-            </span>
-          </div>
-
-          {loading ? (
-            <div className="flex items-center justify-center gap-3 py-24 text-sm text-slate-500">
-              <Loader2 size={20} className="animate-spin" />
-              Loading projects...
-            </div>
-          ) : filteredProjects.length === 0 ? (
-            <div className="py-20 text-center">
-              <FolderKanban
-                size={42}
-                className="mx-auto mb-3 text-slate-300"
-              />
-              <h3 className="font-bold">No projects found</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                Change filters or create a new project.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1050px] text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-5 py-4">Project</th>
-                    <th className="px-5 py-4">Company</th>
-                    <th className="px-5 py-4">Client</th>
-                    <th className="px-5 py-4">Employees</th>
-                    <th className="px-5 py-4">Modules</th>
-                    <th className="px-5 py-4">Status</th>
-                    <th className="px-5 py-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-slate-100">
-                  {filteredProjects.map((project) => (
-                    <tr
-                      key={getId(project)}
-                      className="transition hover:bg-slate-50"
-                    >
-                      <td className="px-5 py-4">
-                        <p className="font-bold">{project.projectName}</p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {project.projectCode || "No project code"}
-                        </p>
-                      </td>
-
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-2">
-                          <Building2 size={15} className="text-slate-400" />
-                          {getCompanyName(project, companies)}
+                          <ProjectStatusPill status={project.status} />
                         </div>
-                      </td>
 
-                      <td className="px-5 py-4">
-                        {project.clientName || "—"}
-                      </td>
-
-                      <td className="px-5 py-4">
-                        <button
-                          type="button"
-                          onClick={() => openAccessManager(project)}
-                          className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
-                        >
-                          <Users size={14} />
-                          {project.employeeAccess?.length || 0}
-                          <Settings2 size={12} />
-                        </button>
-                      </td>
-
-                      <td className="px-5 py-4">
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700">
-                          <Layers size={14} />
-                          {project.modules?.length || 0}
-                        </span>
-                      </td>
-
-                      <td className="px-5 py-4">
-                        <span
-                          className={`rounded-full px-3 py-1.5 text-xs font-bold ${
-                            project.status === "inactive"
-                              ? "bg-slate-100 text-slate-600"
-                              : "bg-emerald-50 text-emerald-700"
-                          }`}
-                        >
-                          {project.status || "active"}
-                        </span>
-                      </td>
-
-                      <td className="px-5 py-4">
-                        <div className="flex justify-end gap-1">
-                          <button
-                            type="button"
-                            title="View project"
-                            onClick={() => loadProjectDetails(project)}
-                            className="rounded-lg p-2 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600"
-                          >
-                            <Eye size={17} />
-                          </button>
-
-                          <button
-                            type="button"
-                            title="Employee access"
-                            onClick={() => openAccessManager(project)}
-                            className="rounded-lg p-2 text-slate-500 hover:bg-sky-50 hover:text-sky-600"
-                          >
-                            <Users size={17} />
-                          </button>
-
-                          <button
-                            type="button"
-                            title="Edit project"
-                            onClick={() => openEdit(project)}
-                            className="rounded-lg p-2 text-slate-500 hover:bg-amber-50 hover:text-amber-600"
-                          >
-                            <Pencil size={17} />
-                          </button>
-
-                          <button
-                            type="button"
-                            title="Archive project"
-                            onClick={() => archiveProject(project)}
-                            className="rounded-lg p-2 text-slate-500 hover:bg-red-50 hover:text-red-600"
-                          >
-                            <Trash2 size={17} />
-                          </button>
+                        <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-500">
+                          <Building2 size={13} />
+                          <span className="truncate">
+                            {getCompanyName(project, companies)}
+                          </span>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+
+                        <div className="mt-3">
+                          <div className="mb-1.5 flex items-center justify-between text-xs">
+                            <span className="text-slate-500">
+                              Modules completed
+                            </span>
+                            <span className="font-semibold text-slate-800">
+                              {done}/{modules.length} · {pct}%
+                            </span>
+                          </div>
+
+                          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className="h-full rounded-full bg-[#2d7f6b]"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={stop(() => openAccessManager(project))}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                            >
+                              <Users size={13} />
+                              {project.employeeAccess?.length || 0}
+                              <Settings2 size={11} className="text-slate-400" />
+                            </button>
+
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700">
+                              <Layers size={13} />
+                              {modules.length}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center">
+                            <button
+                              type="button"
+                              title="Edit project"
+                              onClick={stop(() => openEdit(project))}
+                              className={iconButton}
+                            >
+                              <Pencil size={16} />
+                            </button>
+
+                            <button
+                              type="button"
+                              title="Archive project"
+                              onClick={stop(() => archiveProject(project))}
+                              className={`${iconButton} hover:bg-red-50 hover:text-red-600`}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+
+            {/* PROGRESS */}
+
+            <Card title="Progress">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="flex flex-col items-center gap-5 rounded-xl border border-slate-200 p-5 sm:flex-row">
+                  <div className="w-full sm:w-auto">
+                    <p className="mb-3 text-sm text-slate-600 sm:hidden">
+                      Completed modules
+                    </p>
+                  </div>
+
+                  <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center">
+                    <div className="space-y-3">
+                      <p className="hidden text-sm text-slate-600 sm:block">
+                        Completed modules
+                      </p>
+                      <DonutChart value={stats.completedPercent} />
+                    </div>
+
+                    <Legend
+                      items={[
+                        {
+                          label: "Completed",
+                          value: stats.moduleCounts.Completed,
+                          color: BRAND,
+                        },
+                        {
+                          label: "Incomplete",
+                          value: stats.modules - stats.moduleCounts.Completed,
+                          color: "#e5e7eb",
+                        },
+                      ]}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-4 rounded-xl border border-slate-200 p-5 sm:flex-row sm:items-center">
+                  <div className="space-y-3">
+                    <p className="text-sm text-slate-600">Module status</p>
+                    <PieChart
+                      data={moduleLegend(stats.moduleCounts)}
+                    />
+                  </div>
+
+                  <Legend items={moduleLegend(stats.moduleCounts)} />
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* ---------- RIGHT COLUMN ---------- */}
+
+          <div className="space-y-5">
+            <Card title="About Projects">
+              <InfoRow label="Total Projects">{stats.total}</InfoRow>
+              <InfoRow label="Active">
+                <ProjectStatusPill status="active" />
+              </InfoRow>
+              <InfoRow label="Active Count">{stats.active}</InfoRow>
+              <InfoRow label="Inactive Count">{stats.inactive}</InfoRow>
+              <InfoRow label="Total Modules">{stats.modules}</InfoRow>
+              <InfoRow label="Employees With Access">
+                {stats.employees}
+              </InfoRow>
+            </Card>
+
+            <Card title="Project Status">
+              <div className="flex items-center gap-5">
+                <PieChart
+                  size={120}
+                  data={[
+                    { label: "Active", value: stats.active, color: BRAND },
+                    {
+                      label: "Inactive",
+                      value: stats.inactive,
+                      color: "#cbd5e1",
+                    },
+                  ]}
+                />
+
+                <div className="min-w-0 flex-1">
+                  <Legend
+                    items={[
+                      { label: "Active", value: stats.active, color: BRAND },
+                      {
+                        label: "Inactive",
+                        value: stats.inactive,
+                        color: "#cbd5e1",
+                      },
+                    ]}
+                  />
+                </div>
+              </div>
+            </Card>
+          </div>
         </div>
       </div>
 
@@ -1177,404 +1463,397 @@ const openCreate = () => {
       ================================================== */}
 
       {(modal === "create" || modal === "edit") && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-3 sm:p-6">
-          <div className="my-auto max-h-[95vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-            <div className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-6 py-4">
-              <div>
-                <h2 className="text-xl font-bold">
-                  {modal === "create" ? "Create New Project" : "Edit Project"}
-                </h2>
+        <ModalShell
+          title={modal === "create" ? "Create New Project" : "Edit Project"}
+          subtitle="Configure project information and individual employee access."
+          onClose={closeModal}
+        >
+          <form onSubmit={saveProject} className="space-y-5 p-5">
+            <Card
+              title="Project Information"
+              action={<BriefcaseBusiness size={17} className="text-[#2d7f6b]" />}
+            >
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className={labelClass}>Company *</label>
 
-                <p className="mt-1 text-xs text-slate-500">
-                  Configure project information and individual employee access.
-                </p>
-              </div>
-
-              <button
-                onClick={closeModal}
-                type="button"
-                className="rounded-xl p-2 hover:bg-slate-100"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <form onSubmit={saveProject} className="space-y-6 p-5 sm:p-6">
-              <section>
-                <h3 className="mb-4 flex items-center gap-2 font-bold">
-                  <BriefcaseBusiness
-                    size={17}
-                    className="text-indigo-600"
-                  />
-                  Project Information
-                </h3>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-<div>
-  <label className={labelClass}>Company *</label>
-
-  <div
-    className={`${inputClass} flex cursor-not-allowed items-center bg-slate-100 text-slate-600`}
-  >
-    {companies.find(
-      (company) => getId(company) === form.companyId
-    )?.companyName || "Loading company..."}
-  </div>
-</div>
-
-                  <div>
-                    <label className={labelClass}>Project Name *</label>
-                    <input
-                      required
-                      value={form.projectName}
-                      onChange={(e) =>
-                        updateForm("projectName", e.target.value)
-                      }
-                      className={inputClass}
-                      placeholder="Project name"
-                    />
+                  <div
+                    className={`${inputClass} flex cursor-not-allowed items-center bg-slate-100 text-slate-600`}
+                  >
+                    {companies.find(
+                      (company) => getId(company) === form.companyId
+                    )?.companyName || "Loading company..."}
                   </div>
-
-                  <div>
-                    <label className={labelClass}>Project Code</label>
-                    <input
-                      disabled={modal === "edit"}
-                      value={form.projectCode}
-                      onChange={(e) =>
-                        updateForm("projectCode", e.target.value)
-                      }
-                      className={`${inputClass} disabled:bg-slate-100`}
-                      placeholder="Auto generated or enter code"
-                    />
-                  </div>
-
-                  <div>
-                    <label className={labelClass}>Client Name *</label>
-                    <input
-                      required
-                      value={form.clientName}
-                      onChange={(e) =>
-                        updateForm("clientName", e.target.value)
-                      }
-                      className={inputClass}
-                      placeholder="Client name"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <label className={labelClass}>Project Details</label>
-                    <textarea
-                      rows={2}
-                      value={form.projectDetails}
-                      onChange={(e) =>
-                        updateForm("projectDetails", e.target.value)
-                      }
-                      className={inputClass}
-                    />
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <label className={labelClass}>Project Description</label>
-                    <textarea
-                      rows={3}
-                      value={form.projectDescription}
-                      onChange={(e) =>
-                        updateForm("projectDescription", e.target.value)
-                      }
-                      className={inputClass}
-                      placeholder="Enter the overall project description..."
-                    />
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <label className={labelClass}>Remarks</label>
-                    <textarea
-                      rows={2}
-                      value={form.remarks}
-                      onChange={(e) =>
-                        updateForm("remarks", e.target.value)
-                      }
-                      className={inputClass}
-                    />
-                  </div>
-
-                  {modal === "edit" && (
-                    <div>
-                      <label className={labelClass}>Status</label>
-
-                      <select
-                        value={form.status}
-                        onChange={(e) =>
-                          updateForm("status", e.target.value)
-                        }
-                        className={inputClass}
-                      >
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                      </select>
-                    </div>
-                  )}
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-slate-200 p-4">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="font-bold">Employee Project Access</h3>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Select employees individually. Access is company-specific.
-                    </p>
-                  </div>
-
-                  <span className="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700">
-                    {form.employeeAccess.length} selected
-                  </span>
                 </div>
 
-                <div className="mb-3 grid gap-2 sm:grid-cols-2">
+                <div>
+                  <label className={labelClass}>Project Name *</label>
                   <input
-                    value={roleSearch}
-                    onChange={(e) => setRoleSearch(e.target.value)}
+                    required
+                    value={form.projectName}
+                    onChange={(e) => updateForm("projectName", e.target.value)}
                     className={inputClass}
-                    placeholder="Search role..."
-                  />
-
-                  <input
-                    value={employeeSearch}
-                    onChange={(e) => setEmployeeSearch(e.target.value)}
-                    className={inputClass}
-                    placeholder="Search employee..."
+                    placeholder="Project name"
                   />
                 </div>
 
-                {!form.companyId ? (
-                  <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-700">
-                    Select a company first.
-                  </p>
-                ) : employeeLoading ? (
-                  <p className="flex items-center gap-2 py-6 text-sm text-slate-500">
-                    <Loader2 size={17} className="animate-spin" />
-                    Loading employees...
-                  </p>
-                ) : filteredFormEmployees.length === 0 ? (
-                  <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-                    No employees found.
-                  </p>
-                ) : (
-                  <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
-                    {filteredFormEmployees.map((role) => (
-                      <details
-                        key={getId(role)}
-                        className="rounded-xl border border-slate-200"
-                      >
-                        <summary className="flex cursor-pointer items-center justify-between p-3 font-semibold">
-                          <span className="flex items-center gap-2">
-                            <ChevronDown size={16} />
-                            {role.roleName}
-                          </span>
+                <div>
+                  <label className={labelClass}>Project Code</label>
+                  <input
+                    disabled={modal === "edit"}
+                    value={form.projectCode}
+                    onChange={(e) => updateForm("projectCode", e.target.value)}
+                    className={inputClass}
+                    placeholder="Auto generated or enter code"
+                  />
+                </div>
 
-                          <span className="text-xs text-slate-500">
-                            {role.employees.filter((e) =>
-                              form.employeeAccess.includes(getId(e))
-                            ).length} selected
-                          </span>
-                        </summary>
+                <div>
+                  <label className={labelClass}>Client Name *</label>
+                  <input
+                    required
+                    value={form.clientName}
+                    onChange={(e) => updateForm("clientName", e.target.value)}
+                    className={inputClass}
+                    placeholder="Client name"
+                  />
+                </div>
 
-                        <div className="grid gap-2 border-t p-3 sm:grid-cols-2">
-                          {role.employees.map((employee) => {
-                            const employeeId = getId(employee);
-
-                            return (
-                              <label
-                                key={employeeId}
-                                className="flex cursor-pointer items-start gap-2 rounded-lg border p-3 hover:bg-slate-50"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={form.employeeAccess.includes(employeeId)}
-                                  onChange={() =>
-                                    toggleFormEmployee(employeeId)
-                                  }
-                                  className="mt-1 accent-indigo-600"
-                                />
-
-                                <span className="min-w-0 text-sm">
-                                  <span className="block font-semibold">
-                                    {getName(employee)}
-                                  </span>
-
-                                  <span className="text-xs text-slate-500">
-                                    {[
-                                      getEmpCode(employee),
-                                      employee.email,
-                                    ]
-                                      .filter(Boolean)
-                                      .join(" · ")}
-                                  </span>
-                                </span>
-                              </label>
-                            );
-                          })}
-
-                          {role.employees.length === 0 && (
-                            <p className="text-sm text-slate-500">
-                              No matching employees in this role.
-                            </p>
-                          )}
-                        </div>
-                      </details>
-                    ))}
-                  </div>
-                )}
-              </section>
-
-              {modal === "create" && (
-                <section className="rounded-2xl border border-slate-200 p-4">
-                  <h3 className="mb-1 font-bold">Initial Project Modules</h3>
-
-                  <p className="mb-3 text-xs text-slate-500">
-                    Add one module name per line.
-                  </p>
-
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>Project Details</label>
                   <textarea
-                    rows={4}
-                    value={form.modules
-                      .map((m) =>
-                        typeof m === "string"
-                          ? m
-                          : m.moduleName || ""
-                      )
-                      .join("\n")}
+                    rows={2}
+                    value={form.projectDetails}
                     onChange={(e) =>
-                      updateForm(
-                        "modules",
-                        e.target.value.split("\n").map((name) => ({
-                          moduleName: name,
-                        }))
-                      )
+                      updateForm("projectDetails", e.target.value)
                     }
                     className={inputClass}
-                    placeholder={"Frontend Development\nBackend Development\nTesting"}
                   />
-                </section>
-              )}
+                </div>
 
-              <div className="flex flex-col-reverse justify-end gap-2 border-t pt-4 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  disabled={saving}
-                  className={buttonSecondary}
-                >
-                  Cancel
-                </button>
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>Project Description</label>
+                  <textarea
+                    rows={3}
+                    value={form.projectDescription}
+                    onChange={(e) =>
+                      updateForm("projectDescription", e.target.value)
+                    }
+                    className={inputClass}
+                    placeholder="Enter the overall project description..."
+                  />
+                </div>
 
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className={buttonPrimary}
-                >
-                  {saving ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <Save size={16} />
-                  )}
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>Remarks</label>
+                  <textarea
+                    rows={2}
+                    value={form.remarks}
+                    onChange={(e) => updateForm("remarks", e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
 
-                  {modal === "create" ? "Create Project" : "Save Changes"}
-                </button>
+                {modal === "edit" && (
+                  <div>
+                    <label className={labelClass}>Status</label>
+
+                    <select
+                      value={form.status}
+                      onChange={(e) => updateForm("status", e.target.value)}
+                      className={inputClass}
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                )}
               </div>
-            </form>
-          </div>
-        </div>
+            </Card>
+
+            <Card
+              title="Team Members"
+              action={
+                <span className="rounded-full border border-[#2d7f6b]/30 bg-[#e8f3f0] px-3 py-1 text-xs font-medium text-[#2d7f6b]">
+                  {form.employeeAccess.length} selected
+                </span>
+              }
+            >
+              <p className="mb-3 text-xs text-slate-500">
+                Select employees individually. Access is company-specific.
+              </p>
+
+              <div className="mb-3 grid gap-2 sm:grid-cols-2">
+                <input
+                  value={roleSearch}
+                  onChange={(e) => setRoleSearch(e.target.value)}
+                  className={inputClass}
+                  placeholder="Search role..."
+                />
+
+                <input
+                  value={employeeSearch}
+                  onChange={(e) => setEmployeeSearch(e.target.value)}
+                  className={inputClass}
+                  placeholder="Search employee..."
+                />
+              </div>
+
+              {!form.companyId ? (
+                <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-700">
+                  Select a company first.
+                </p>
+              ) : employeeLoading ? (
+                <p className="flex items-center gap-2 py-6 text-sm text-slate-500">
+                  <Loader2 size={17} className="animate-spin" />
+                  Loading employees...
+                </p>
+              ) : filteredFormEmployees.length === 0 ? (
+                <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+                  No employees found.
+                </p>
+              ) : (
+                <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
+                  {filteredFormEmployees.map((role) => (
+                    <details
+                      key={getId(role)}
+                      className="rounded-xl border border-slate-200"
+                    >
+                      <summary className="flex cursor-pointer items-center justify-between p-3 text-sm font-semibold text-slate-800">
+                        <span className="flex items-center gap-2">
+                          <ChevronDown size={16} className="text-slate-500" />
+                          {role.roleName}
+                        </span>
+
+                        <span className="text-xs font-normal text-slate-500">
+                          {
+                            role.employees.filter((e) =>
+                              form.employeeAccess.includes(getId(e))
+                            ).length
+                          }{" "}
+                          selected
+                        </span>
+                      </summary>
+
+                      <div className="grid gap-2 border-t border-slate-200 p-3 sm:grid-cols-2">
+                        {role.employees.map((employee) => {
+                          const employeeId = getId(employee);
+                          const checked =
+                            form.employeeAccess.includes(employeeId);
+
+                          return (
+                            <label
+                              key={employeeId}
+                              className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition ${
+                                checked
+                                  ? "border-[#2d7f6b]/50 bg-[#e8f3f0]/60"
+                                  : "border-slate-200 hover:bg-slate-50"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleFormEmployee(employeeId)}
+                                className="accent-[#2d7f6b]"
+                              />
+
+                              <Avatar text={getName(employee)} size="h-9 w-9" />
+
+                              <span className="min-w-0 text-sm">
+                                <span className="block truncate font-medium text-slate-900">
+                                  {getName(employee)}
+                                </span>
+
+                                <span className="block truncate text-xs text-slate-500">
+                                  {[getEmpCode(employee), employee.email]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                </span>
+                              </span>
+                            </label>
+                          );
+                        })}
+
+                        {role.employees.length === 0 && (
+                          <p className="text-sm text-slate-500">
+                            No matching employees in this role.
+                          </p>
+                        )}
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {modal === "create" && (
+              <Card title="Initial Project Modules">
+                <p className="mb-3 text-xs text-slate-500">
+                  Add one module name per line.
+                </p>
+
+                <textarea
+                  rows={4}
+                  value={form.modules
+                    .map((m) => (typeof m === "string" ? m : m.moduleName || ""))
+                    .join("\n")}
+                  onChange={(e) =>
+                    updateForm(
+                      "modules",
+                      e.target.value.split("\n").map((name) => ({
+                        moduleName: name,
+                      }))
+                    )
+                  }
+                  className={inputClass}
+                  placeholder={"Frontend Development\nBackend Development\nTesting"}
+                />
+              </Card>
+            )}
+
+            <div className="flex flex-col-reverse justify-end gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={closeModal}
+                disabled={saving}
+                className={buttonSecondary}
+              >
+                Cancel
+              </button>
+
+              <button type="submit" disabled={saving} className={buttonPrimary}>
+                {saving ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Save size={16} />
+                )}
+
+                {modal === "create" ? "Create Project" : "Save Changes"}
+              </button>
+            </div>
+          </form>
+        </ModalShell>
       )}
 
       {/* ==================================================
-          PROJECT DETAILS AND MODULES
+          PROJECT DETAILS (About / Team / Modules / Progress)
       ================================================== */}
 
       {modal === "details" && selectedProject && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-3 sm:p-6">
-          <div className="my-auto max-h-[95vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-            <div className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-5 py-4">
-              <div>
-                <h2 className="text-xl font-bold">
-                  {selectedProject.projectName}
-                </h2>
-
-                <p className="mt-1 text-xs text-slate-500">
-                  {selectedProject.projectCode || "No code"} ·{" "}
-                  {getCompanyName(selectedProject, companies)}
-                </p>
-              </div>
-
+        <ModalShell
+          title={selectedProject.projectName}
+          subtitle={`${selectedProject.projectCode || "No code"} · ${getCompanyName(
+            selectedProject,
+            companies
+          )}`}
+          onClose={closeModal}
+          size="max-w-6xl"
+          actions={
+            <>
               <button
                 type="button"
-                onClick={closeModal}
-                className="rounded-xl p-2 hover:bg-slate-100"
+                onClick={() => openEdit(selectedProject)}
+                className={buttonSecondary}
               >
-                <X size={20} />
+                <Pencil size={15} />
+                Edit
               </button>
-            </div>
+            </>
+          }
+        >
+          <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_310px]">
+            {/* ---------- LEFT ---------- */}
 
-            <div className="space-y-6 p-5">
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-xl bg-slate-50 p-4">
-                  <p className="text-xs text-slate-500">Client</p>
-                  <p className="mt-1 font-bold">
-                    {selectedProject.clientName || "—"}
-                  </p>
-                </div>
+            <div className="min-w-0 space-y-5">
+              <Card title="About Project">
+                <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                  {selectedProject.projectDescription?.trim() ||
+                    "No description provided."}
+                </p>
 
-                <div className="rounded-xl bg-slate-50 p-4">
-                  <p className="text-xs text-slate-500">Project Status</p>
-                  <p className="mt-1 font-bold capitalize">
-                    {selectedProject.status}
-                  </p>
-                </div>
-
-                <div className="rounded-xl bg-slate-50 p-4">
-                  <p className="text-xs text-slate-500">Project Access</p>
-                  <p className="mt-1 font-bold">
-                    {selectedProject.employeeAccess?.length || 0} employees
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <h3 className="mb-2 font-bold">Project Details</h3>
-
-                  <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">
-                    {selectedProject.projectDetails || "No details provided."}
-                  </p>
-                </div>
-
-                <div>
-                  <h3 className="mb-2 font-bold">Project Description</h3>
-
-                  <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">
-                    {selectedProject.projectDescription || "No description provided."}
-                  </p>
-                </div>
-              </div>
-
-              {/* PROJECT MODULES */}
-
-              <section className="rounded-2xl border border-slate-200 p-4">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="font-bold">Project Modules</h3>
-
-                    <p className="mt-1 text-xs text-slate-500">
-                      Each assigned employee's module description and status are displayed below.
+                {selectedProject.projectDetails?.trim() && (
+                  <div className="mt-4 border-t border-slate-100 pt-4">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Details
+                    </p>
+                    <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                      {selectedProject.projectDetails}
                     </p>
                   </div>
+                )}
 
-                  <span className="rounded-full bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700">
-                    {selectedProject.modules?.length || 0} modules
-                  </span>
+                {selectedProject.remarks?.trim() && (
+                  <div className="mt-4 border-t border-slate-100 pt-4">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Remarks
+                    </p>
+                    <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                      {selectedProject.remarks}
+                    </p>
+                  </div>
+                )}
+              </Card>
+
+              {/* TEAM MEMBERS */}
+
+              <Card
+                title="Team Members"
+                action={
+                  <CardAction
+                    icon={Settings2}
+                    onClick={() => openAccessManager(selectedProject)}
+                  >
+                    Manage
+                  </CardAction>
+                }
+              >
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {getEmployeesFromProject(selectedProject).map((employee) => (
+                    <div
+                      key={getId(employee)}
+                      className="flex items-center gap-3 rounded-xl border border-slate-200 p-3"
+                    >
+                      <Avatar text={getName(employee)} />
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-900">
+                          {getName(employee)}
+                        </p>
+
+                        <p className="truncate text-xs text-slate-500">
+                          {employee.email || getEmpCode(employee) || ""}
+                        </p>
+                      </div>
+
+                      <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                        {getEmployeeRoleName(employee)}
+                      </span>
+                    </div>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={() => openAccessManager(selectedProject)}
+                    className="flex items-center gap-3 rounded-xl border border-dashed border-slate-300 p-3 text-left text-sm font-medium text-slate-700 transition hover:border-[#2d7f6b] hover:bg-[#e8f3f0]/50"
+                  >
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100">
+                      <Plus size={17} />
+                    </span>
+                    Add team member
+                  </button>
                 </div>
+              </Card>
 
+              {/* MODULES */}
+
+              <Card
+                title="Modules"
+                action={
+                  <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700">
+                    {selectedModuleTotal} modules
+                  </span>
+                }
+              >
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -1613,9 +1892,7 @@ const openCreate = () => {
                         {isEditing ? (
                           <div className="grid gap-3 sm:grid-cols-2">
                             <div>
-                              <label className={labelClass}>
-                                Module Name
-                              </label>
+                              <label className={labelClass}>Module Name</label>
 
                               <input
                                 value={editingModuleName}
@@ -1669,50 +1946,49 @@ const openCreate = () => {
                         ) : (
                           <>
                             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-                              <div>
-                                <h4 className="font-bold">
+                              <div className="min-w-0">
+                                <h4 className="truncate font-semibold text-slate-900">
                                   {module.moduleName}
                                 </h4>
 
-                                <p className="mt-1 text-xs text-slate-500">
-                                  Module status:{" "}
-                                  <span className="font-semibold">
-                                    {module.status || "Not Assigned"}
-                                  </span>
-                                  {" · "}
-                                  {assignments.length} assigned
-                                </p>
+                                <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                  <ModulePill status={module.status} />
+                                  <span>{assignments.length} assigned</span>
+                                </div>
                               </div>
 
                               <div className="flex flex-wrap gap-1">
-                                <button
-                                  type="button"
+                                <CardAction
+                                  icon={Users}
                                   onClick={() =>
-                                    openModuleAssignment(selectedProject, module)
+                                    openModuleAssignment(
+                                      selectedProject,
+                                      module
+                                    )
                                   }
-                                  className="rounded-lg px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-50"
                                 >
-                                  <Users size={14} className="mr-1 inline" />
                                   Employees
-                                </button>
+                                </CardAction>
 
-                                <button
-                                  type="button"
+                                <span className="mx-1 w-px bg-slate-200" />
+
+                                <CardAction
+                                  icon={Pencil}
                                   onClick={() => startEditModule(module)}
-                                  className="rounded-lg px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
                                 >
-                                  <Pencil size={14} className="mr-1 inline" />
                                   Edit
-                                </button>
+                                </CardAction>
+
+                                <span className="mx-1 w-px bg-slate-200" />
 
                                 <button
                                   type="button"
                                   onClick={() =>
                                     deleteModule(selectedProject, module)
                                   }
-                                  className="rounded-lg px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50"
+                                  className="inline-flex items-center gap-1.5 text-sm text-red-600 transition hover:text-red-800"
                                 >
-                                  <Trash2 size={14} className="mr-1 inline" />
+                                  <Trash2 size={15} />
                                   Delete
                                 </button>
                               </div>
@@ -1721,13 +1997,13 @@ const openCreate = () => {
                             {/* INDIVIDUAL EMPLOYEE MODULE ASSIGNMENTS */}
 
                             {assignments.length > 0 && (
-                              <div className="mt-4 border-t pt-4">
-                                <h5 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-700">
+                              <div className="mt-4 border-t border-slate-100 pt-4">
+                                <h5 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
                                   <Users size={15} />
                                   Employee Assignments ({assignments.length})
                                 </h5>
 
-                                <div className="grid gap-3 sm:grid-cols-2">
+                                <div className="grid gap-3 md:grid-cols-2">
                                   {assignments.map((assignment, index) => {
                                     const employee =
                                       getAssignmentEmployee(assignment);
@@ -1743,36 +2019,39 @@ const openCreate = () => {
                                           getId(assignment) ||
                                           `${moduleId}-${index}`
                                         }
-                                        className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+                                        className="rounded-xl border border-slate-200 bg-slate-50/60 p-3"
                                       >
-                                        <div className="flex items-start justify-between gap-2">
-                                          <div className="min-w-0">
-                                            <p className="font-semibold text-slate-800">
+                                        <div className="flex items-center gap-3">
+                                          <Avatar
+                                            text={
+                                              employee
+                                                ? getName(employee)
+                                                : "Assigned"
+                                            }
+                                            size="h-9 w-9"
+                                          />
+
+                                          <div className="min-w-0 flex-1">
+                                            <p className="truncate text-sm font-semibold text-slate-900">
                                               {employee
                                                 ? getName(employee)
                                                 : "Assigned employee"}
                                             </p>
 
-                                            <p className="mt-1 text-xs text-slate-500">
-                                              {employee?.email || ""}
+                                            <p className="truncate text-xs text-slate-500">
+                                              {[
+                                                employee &&
+                                                  getEmpCode(employee),
+                                                employee?.email,
+                                              ]
+                                                .filter(Boolean)
+                                                .join(" · ")}
                                             </p>
-
-                                            {employee && getEmpCode(employee) && (
-                                              <p className="mt-1 text-xs text-slate-500">
-                                                Employee ID: {getEmpCode(employee)}
-                                              </p>
-                                            )}
                                           </div>
-
-                                          <span className="shrink-0 rounded-full bg-indigo-100 px-2.5 py-1 text-[11px] font-bold text-indigo-700">
-                                            Assigned
-                                          </span>
                                         </div>
 
-                                        {/* DESCRIPTION */}
-
-                                        <div className="mt-3 rounded-lg border border-indigo-100 bg-white p-3">
-                                          <p className="mb-1 flex items-center gap-1.5 text-xs font-bold text-indigo-700">
+                                        <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+                                          <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-[#2d7f6b]">
                                             <FileText size={13} />
                                             Assigned Task Description
                                           </p>
@@ -1784,16 +2063,15 @@ const openCreate = () => {
                                           </p>
                                         </div>
 
-                                        {/* INDIVIDUAL STATUS */}
-
                                         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                                          <label className="text-xs font-semibold text-slate-600">
+                                          <label className="text-xs font-medium text-slate-600">
                                             Employee Status
                                           </label>
 
                                           <select
                                             value={
-                                              assignment.status || "Not Assigned"
+                                              assignment.status ||
+                                              "Not Assigned"
                                             }
                                             onChange={(e) =>
                                               updateEmployeeModuleStatus(
@@ -1803,7 +2081,7 @@ const openCreate = () => {
                                                 e.target.value
                                               )
                                             }
-                                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold"
+                                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 outline-none focus:border-[#2d7f6b]"
                                           >
                                             {STATUSES.map((status) => (
                                               <option key={status}>
@@ -1830,80 +2108,58 @@ const openCreate = () => {
                     </p>
                   )}
                 </div>
-              </section>
+              </Card>
+            </div>
 
-              {/* PROJECT EMPLOYEE ACCESS */}
+            {/* ---------- RIGHT ---------- */}
 
-              <section className="rounded-2xl border border-slate-200 p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="font-bold">
-                    Employees With Project Access
-                  </h3>
+            <div className="space-y-5">
+              <Card title="Project Info">
+                <InfoRow label="Project Status">
+                  <ProjectStatusPill status={selectedProject.status} />
+                </InfoRow>
+                <InfoRow label="Client">
+                  {selectedProject.clientName || "—"}
+                </InfoRow>
+                <InfoRow label="Company">
+                  {getCompanyName(selectedProject, companies)}
+                </InfoRow>
+                <InfoRow label="Project Code">
+                  {selectedProject.projectCode || "—"}
+                </InfoRow>
+                <InfoRow label="Team Members">
+                  {selectedProject.employeeAccess?.length || 0}
+                </InfoRow>
+                <InfoRow label="Modules">{selectedModuleTotal}</InfoRow>
+              </Card>
 
-                  <span className="text-xs font-bold text-indigo-700">
-                    {selectedProject.employeeAccess?.length || 0} employees
-                  </span>
+              <Card title="Progress">
+                <div className="flex flex-col items-center gap-5">
+                  <DonutChart
+                    value={toPercent(
+                      selectedModuleCounts.Completed,
+                      selectedModuleTotal
+                    )}
+                  />
+
+                  <div className="w-full">
+                    <Legend items={moduleLegend(selectedModuleCounts)} />
+                  </div>
                 </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {getEmployeesFromProject(selectedProject).map((employee) => (
-                    <div
-                      key={getId(employee)}
-                      className="rounded-xl border border-slate-200 bg-slate-50 p-3"
-                    >
-                      <p className="text-sm font-semibold">
-                        {getName(employee)}
-                      </p>
-
-                      <p className="mt-1 text-xs text-slate-500">
-                        {employee.email || ""}
-                      </p>
-
-                      {getEmpCode(employee) && (
-                        <p className="mt-1 text-xs text-slate-500">
-                          Employee ID: {getEmpCode(employee)}
-                        </p>
-                      )}
-
-                      {/* Project-level description is shared by the project.
-                          The current backend does not store employee-specific
-                          descriptions in employeeAccess. */}
-
-                      <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
-                        <p className="mb-1 flex items-center gap-1.5 text-xs font-bold text-slate-700">
-                          <FileText size={13} />
-                          Project Description
-                        </p>
-
-                        <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">
-                          {selectedProject.projectDescription?.trim()
-                            ? selectedProject.projectDescription
-                            : "No project description provided."}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-
-                  {!selectedProject.employeeAccess?.length && (
-                    <p className="text-sm text-slate-500">
-                      No employees assigned.
-                    </p>
-                  )}
-                </div>
-              </section>
-
-              <div className="flex justify-end border-t pt-4">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className={buttonSecondary}
-                >
-                  Close
-                </button>
-              </div>
+              </Card>
             </div>
           </div>
-        </div>
+
+          <div className="flex justify-end border-t border-slate-200 px-5 py-4">
+            <button
+              type="button"
+              onClick={closeModal}
+              className={buttonSecondary}
+            >
+              Close
+            </button>
+          </div>
+        </ModalShell>
       )}
 
       {/* ==================================================
@@ -1911,168 +2167,121 @@ const openCreate = () => {
       ================================================== */}
 
       {modal === "access" && selectedProject && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-3 sm:p-6">
-          <div className="my-auto max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-            <div className="sticky top-0 flex items-center justify-between border-b bg-white px-5 py-4">
-              <div>
-                <h2 className="text-lg font-bold">
-                  Project Employee Access
-                </h2>
+        <ModalShell
+          title="Project Team Access"
+          subtitle={`${selectedProject.projectName} · ${getCompanyName(
+            selectedProject,
+            companies
+          )}`}
+          onClose={closeModal}
+        >
+          <div className="space-y-4 p-5">
+            <div className="relative">
+              <Search
+                size={17}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+              />
 
-                <p className="mt-1 text-xs text-slate-500">
-                  {selectedProject.projectName} ·{" "}
-                  {getCompanyName(selectedProject, companies)}
-                </p>
-              </div>
+              <input
+                value={accessSearch}
+                onChange={(e) => setAccessSearch(e.target.value)}
+                className={`${inputClass} pl-10`}
+                placeholder="Search employee..."
+              />
+            </div>
 
+            <div className="grid gap-3 sm:grid-cols-2">
+              {accessEmployees
+                .filter((employee) => {
+                  const query = accessSearch.toLowerCase();
+
+                  return [
+                    getName(employee),
+                    getEmpCode(employee),
+                    employee.email,
+                    employee.roleName,
+                    employee.roleId?.roleName,
+                  ]
+                    .filter(Boolean)
+                    .some((value) => String(value).toLowerCase().includes(query));
+                })
+                .map((employee) => {
+                  const employeeId = getId(employee);
+
+                  const hasAccess =
+                    employee.hasAccess === true ||
+                    (selectedProject.employeeAccess || []).some(
+                      (item) => getId(item) === employeeId
+                    );
+
+                  return (
+                    <div
+                      key={employeeId}
+                      className={`flex items-center gap-3 rounded-xl border p-3 ${
+                        hasAccess
+                          ? "border-[#2d7f6b]/40 bg-[#e8f3f0]/50"
+                          : "border-slate-200"
+                      }`}
+                    >
+                      <Avatar text={getName(employee)} />
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-900">
+                          {getName(employee)}
+                        </p>
+
+                        <p className="truncate text-xs text-slate-500">
+                          {[
+                            getEmpCode(employee),
+                            employee.roleId?.roleName || employee.roleName,
+                            employee.email,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      </div>
+
+                      {hasAccess ? (
+                        <button
+                          type="button"
+                          onClick={() => revokeAccess(employeeId)}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+                        >
+                          <UserMinus size={14} />
+                          Revoke
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => grantAccess(employeeId)}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#e8f3f0] px-3 py-1.5 text-xs font-semibold text-[#2d7f6b] hover:bg-[#d6ebe5]"
+                        >
+                          <UserPlus size={14} />
+                          Grant
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+
+            {accessEmployees.length === 0 && (
+              <p className="rounded-xl bg-slate-50 p-5 text-center text-sm text-slate-500">
+                No employee data returned by the access endpoint.
+              </p>
+            )}
+
+            <div className="flex justify-end border-t border-slate-200 pt-4">
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-xl p-2 hover:bg-slate-100"
+                className={buttonSecondary}
               >
-                <X size={20} />
+                Close
               </button>
             </div>
-
-            <div className="space-y-4 p-5">
-              <div className="relative">
-                <Search
-                  size={17}
-                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-
-                <input
-                  value={accessSearch}
-                  onChange={(e) => setAccessSearch(e.target.value)}
-                  className={`${inputClass} pl-10`}
-                  placeholder="Search employee..."
-                />
-              </div>
-
-              <div className="overflow-x-auto rounded-xl border">
-                <table className="w-full min-w-[650px] text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3">Employee</th>
-                      <th className="px-4 py-3">Employee ID</th>
-                      <th className="px-4 py-3">Role</th>
-                      <th className="px-4 py-3">Access</th>
-                      <th className="px-4 py-3 text-right">Action</th>
-                    </tr>
-                  </thead>
-
-                  <tbody className="divide-y">
-                    {accessEmployees
-                      .filter((employee) => {
-                        const query = accessSearch.toLowerCase();
-
-                        return [
-                          getName(employee),
-                          getEmpCode(employee),
-                          employee.email,
-                          employee.roleName,
-                          employee.roleId?.roleName,
-                        ]
-                          .filter(Boolean)
-                          .some((value) =>
-                            String(value).toLowerCase().includes(query)
-                          );
-                      })
-                      .map((employee) => {
-                        const employeeId = getId(employee);
-
-                        const hasAccess =
-                          employee.hasAccess === true ||
-                          (selectedProject.employeeAccess || []).some(
-                            (item) => getId(item) === employeeId
-                          );
-
-                        return (
-                          <tr key={employeeId}>
-                            <td className="px-4 py-3">
-                              <p className="font-semibold">
-                                {getName(employee)}
-                              </p>
-
-                              <p className="text-xs text-slate-500">
-                                {employee.email || ""}
-                              </p>
-                            </td>
-
-                            <td className="px-4 py-3">
-                              {getEmpCode(employee) || "—"}
-                            </td>
-
-                            <td className="px-4 py-3">
-                              {employee.roleId?.roleName ||
-                                employee.roleName ||
-                                "—"}
-                            </td>
-
-                            <td className="px-4 py-3">
-                              <span
-                                className={`rounded-full px-2.5 py-1 text-xs font-bold ${
-                                  hasAccess
-                                    ? "bg-emerald-50 text-emerald-700"
-                                    : "bg-slate-100 text-slate-600"
-                                }`}
-                              >
-                                {hasAccess ? "Granted" : "Not Granted"}
-                              </span>
-                            </td>
-
-                            <td className="px-4 py-3 text-right">
-                              {hasAccess ? (
-                                <button
-                                  type="button"
-                                  onClick={() => revokeAccess(employeeId)}
-                                  className="rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-100"
-                                >
-                                  <UserMinus
-                                    size={14}
-                                    className="mr-1 inline"
-                                  />
-                                  Revoke
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => grantAccess(employeeId)}
-                                  className="rounded-lg bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
-                                >
-                                  <UserPlus
-                                    size={14}
-                                    className="mr-1 inline"
-                                  />
-                                  Grant
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
-
-              {accessEmployees.length === 0 && (
-                <p className="rounded-xl bg-slate-50 p-5 text-center text-sm text-slate-500">
-                  No employee data returned by the access endpoint.
-                </p>
-              )}
-
-              <div className="flex justify-end border-t pt-4">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className={buttonSecondary}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
           </div>
-        </div>
+        </ModalShell>
       )}
 
       {/* ==================================================
@@ -2080,201 +2289,153 @@ const openCreate = () => {
       ================================================== */}
 
       {modal === "moduleEmployees" && selectedProject && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-950/60 p-3 sm:p-6">
-          <div className="my-auto max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-            <div className="sticky top-0 flex items-center justify-between border-b bg-white px-5 py-4">
-              <div>
-                <h2 className="font-bold">
-                  Module Employee Assignment
-                </h2>
+        <ModalShell
+          title="Module Employee Assignment"
+          subtitle={selectedProject.projectName}
+          onClose={closeModal}
+          size="max-w-3xl"
+          z="z-[60]"
+        >
+          <div className="space-y-4 p-5">
+            <div className="relative">
+              <Search
+                size={17}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+              />
 
-                <p className="mt-1 text-xs text-slate-500">
-                  {selectedProject.projectName}
+              <input
+                value={moduleEmployeeSearch}
+                onChange={(e) => setModuleEmployeeSearch(e.target.value)}
+                className={`${inputClass} pl-10`}
+                placeholder="Search project employees..."
+              />
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Only employees who already have access to this project can be
+              assigned to its modules.
+            </p>
+
+            <div className="rounded-xl border border-[#2d7f6b]/20 bg-[#e8f3f0]/40 p-4">
+              <label className={labelClass}>Module Assignment Description</label>
+
+              <textarea
+                rows={3}
+                value={moduleAssignmentDescription}
+                onChange={(e) => setModuleAssignmentDescription(e.target.value)}
+                className={inputClass}
+                placeholder="Write the specific task or responsibility for the employee before clicking Assign..."
+              />
+
+              <p className="mt-2 text-xs text-slate-500">
+                This description will be saved with the employee's module
+                assignment.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {moduleEmployees
+                .filter((employee) =>
+                  [getName(employee), getEmpCode(employee), employee.email]
+                    .filter(Boolean)
+                    .some((value) =>
+                      String(value)
+                        .toLowerCase()
+                        .includes(moduleEmployeeSearch.toLowerCase())
+                    )
+                )
+                .map((employee) => {
+                  const employeeId = getId(employee);
+
+                  const module = (selectedProject.modules || []).find(
+                    (item) => getId(item) === selectedModuleId
+                  );
+
+                  const assignment = module?.employees?.find(
+                    (item) => getId(item.employeeId) === employeeId
+                  );
+
+                  return (
+                    <div
+                      key={employeeId}
+                      className="rounded-xl border border-slate-200 p-3"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Avatar text={getName(employee)} />
+
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-slate-900">
+                            {getName(employee)}
+                          </p>
+
+                          <p className="truncate text-xs text-slate-500">
+                            {[getEmpCode(employee), employee.email]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                        </div>
+
+                        {assignment ? (
+                          <button
+                            type="button"
+                            onClick={() => removeModuleEmployee(employeeId)}
+                            className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+                          >
+                            <UserMinus size={14} />
+                            Remove
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => assignModuleEmployee(employeeId)}
+                            className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#e8f3f0] px-3 py-1.5 text-xs font-semibold text-[#2d7f6b] hover:bg-[#d6ebe5]"
+                          >
+                            <UserPlus size={14} />
+                            Assign
+                          </button>
+                        )}
+                      </div>
+
+                      {assignment && (
+                        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                          <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-[#2d7f6b]">
+                            <FileText size={13} />
+                            Assigned Task Description
+                          </p>
+
+                          <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                            {assignment.description?.trim()
+                              ? assignment.description
+                              : "No description provided for this module assignment."}
+                          </p>
+
+                          <div className="mt-2">
+                            <ModulePill status={assignment.status} />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+              {!moduleEmployees.length && (
+                <p className="rounded-xl bg-slate-50 p-5 text-center text-sm text-slate-500">
+                  No eligible employees returned.
                 </p>
-              </div>
+              )}
+            </div>
 
+            <div className="flex justify-end border-t border-slate-200 pt-4">
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-xl p-2 hover:bg-slate-100"
+                className={buttonSecondary}
               >
-                <X size={20} />
+                Close
               </button>
             </div>
-
-            <div className="space-y-4 p-5">
-              <div className="relative">
-                <Search
-                  size={17}
-                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-
-                <input
-                  value={moduleEmployeeSearch}
-                  onChange={(e) =>
-                    setModuleEmployeeSearch(e.target.value)
-                  }
-                  className={`${inputClass} pl-10`}
-                  placeholder="Search project employees..."
-                />
-              </div>
-
-              <p className="text-xs text-slate-500">
-                Only employees who already have access to this project can be assigned to its modules.
-              </p>
-
-              {/* DESCRIPTION INPUT FOR NEW MODULE ASSIGNMENT */}
-
-              <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4">
-                <label className={labelClass}>
-                  Module Assignment Description
-                </label>
-
-                <textarea
-                  rows={3}
-                  value={moduleAssignmentDescription}
-                  onChange={(e) =>
-                    setModuleAssignmentDescription(e.target.value)
-                  }
-                  className={inputClass}
-                  placeholder="Write the specific task or responsibility for the employee before clicking Assign..."
-                />
-
-                <p className="mt-2 text-xs text-slate-500">
-                  This description will be saved with the employee's module assignment.
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                {moduleEmployees
-                  .filter((employee) =>
-                    [
-                      getName(employee),
-                      getEmpCode(employee),
-                      employee.email,
-                    ]
-                      .filter(Boolean)
-                      .some((value) =>
-                        String(value).toLowerCase().includes(
-                          moduleEmployeeSearch.toLowerCase()
-                        )
-                      )
-                  )
-                  .map((employee) => {
-                    const employeeId = getId(employee);
-
-                    const module = (
-                      selectedProject.modules || []
-                    ).find(
-                      (item) => getId(item) === selectedModuleId
-                    );
-
-                    const assignment = module?.employees?.find(
-                      (item) =>
-                        getId(item.employeeId) === employeeId
-                    );
-
-                    return (
-                      <div
-                        key={employeeId}
-                        className="rounded-xl border border-slate-200 p-4"
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold">
-                              {getName(employee)}
-                            </p>
-
-                            <p className="mt-1 text-xs text-slate-500">
-                              {[
-                                getEmpCode(employee),
-                                employee.email,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ")}
-                            </p>
-                          </div>
-
-                          {assignment ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                removeModuleEmployee(employeeId)
-                              }
-                              className="rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-100"
-                            >
-                              <UserMinus
-                                size={14}
-                                className="mr-1 inline"
-                              />
-                              Remove
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                assignModuleEmployee(employeeId)
-                              }
-                              className="rounded-lg bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
-                            >
-                              <UserPlus
-                                size={14}
-                                className="mr-1 inline"
-                              />
-                              Assign
-                            </button>
-                          )}
-                        </div>
-
-                        {/* SHOW EXISTING ASSIGNMENT DESCRIPTION */}
-
-                        {assignment && (
-                          <div className="mt-3 rounded-lg border border-indigo-100 bg-indigo-50/50 p-3">
-                            <p className="mb-1 flex items-center gap-1.5 text-xs font-bold text-indigo-700">
-                              <FileText size={13} />
-                              Assigned Task Description
-                            </p>
-
-                            <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                              {assignment.description?.trim()
-                                ? assignment.description
-                                : "No description provided for this module assignment."}
-                            </p>
-
-                            <div className="mt-2">
-                              <span className="text-xs font-semibold text-slate-600">
-                                Status:{" "}
-                              </span>
-
-                              <span className="text-xs font-bold text-slate-800">
-                                {assignment.status || "Not Assigned"}
-                              </span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-
-                {!moduleEmployees.length && (
-                  <p className="rounded-xl bg-slate-50 p-5 text-center text-sm text-slate-500">
-                    No eligible employees returned.
-                  </p>
-                )}
-              </div>
-
-              <div className="flex justify-end border-t pt-4">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className={buttonSecondary}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
           </div>
-        </div>
+        </ModalShell>
       )}
 
       {/* ==================================================
@@ -2282,139 +2443,106 @@ const openCreate = () => {
       ================================================== */}
 
       {modal === "deleted" && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-950/60 p-3 sm:p-6">
-          <div className="my-auto max-h-[95vh] w-full max-w-6xl overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b px-5 py-4">
-              <div>
-                <h2 className="text-lg font-bold">
-                  Deleted Projects
-                </h2>
-
-                <p className="mt-1 text-xs text-slate-500">
-                  Restore archived projects or permanently delete them.
-                </p>
+        <ModalShell
+          title="Deleted Projects"
+          subtitle="Restore archived projects or permanently delete them."
+          onClose={closeModal}
+          size="max-w-5xl"
+          z="z-[60]"
+          actions={
+            <button
+              type="button"
+              onClick={fetchDeletedProjects}
+              disabled={deletedLoading}
+              className={iconButton}
+              title="Refresh"
+            >
+              <RefreshCw
+                size={17}
+                className={deletedLoading ? "animate-spin" : ""}
+              />
+            </button>
+          }
+        >
+          <div className="p-5">
+            {deletedLoading ? (
+              <div className="flex items-center justify-center gap-2 py-20 text-sm text-slate-500">
+                <Loader2 size={18} className="animate-spin" />
+                Loading deleted projects...
               </div>
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={fetchDeletedProjects}
-                  disabled={deletedLoading}
-                  className={buttonSecondary}
-                >
-                  <RefreshCw
-                    size={15}
-                    className={deletedLoading ? "animate-spin" : ""}
-                  />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="rounded-xl p-2 hover:bg-slate-100"
-                >
-                  <X size={20} />
-                </button>
+            ) : deletedProjects.length === 0 ? (
+              <div className="py-16 text-center">
+                <Archive size={40} className="mx-auto mb-3 text-slate-300" />
+                <h3 className="font-semibold text-slate-900">
+                  No deleted projects
+                </h3>
               </div>
-            </div>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {deletedProjects.map((project) => (
+                  <div
+                    key={getId(project)}
+                    className="rounded-xl border border-slate-200 p-4"
+                  >
+                    <div className="flex items-start gap-3">
+                      <Avatar text={project.projectName} rounded="rounded-lg" />
 
-            <div className="max-h-[calc(95vh-85px)] overflow-y-auto p-5">
-              {deletedLoading ? (
-                <div className="flex items-center justify-center gap-2 py-20 text-sm text-slate-500">
-                  <Loader2 size={18} className="animate-spin" />
-                  Loading deleted projects...
-                </div>
-              ) : deletedProjects.length === 0 ? (
-                <div className="py-16 text-center">
-                  <Archive
-                    size={40}
-                    className="mx-auto mb-3 text-slate-300"
-                  />
-                  <h3 className="font-bold">
-                    No deleted projects
-                  </h3>
-                </div>
-              ) : (
-                <div className="overflow-x-auto rounded-xl border">
-                  <table className="w-full min-w-[850px] text-left text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                      <tr>
-                        <th className="px-4 py-3">Project</th>
-                        <th className="px-4 py-3">Company</th>
-                        <th className="px-4 py-3">Client</th>
-                        <th className="px-4 py-3">Modules</th>
-                        <th className="px-4 py-3">Deleted At</th>
-                        <th className="px-4 py-3 text-right">Actions</th>
-                      </tr>
-                    </thead>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-semibold text-slate-900">
+                          {project.projectName}
+                        </p>
 
-                    <tbody className="divide-y">
-                      {deletedProjects.map((project) => (
-                        <tr key={getId(project)}>
-                          <td className="px-4 py-4">
-                            <p className="font-bold">
-                              {project.projectName}
-                            </p>
+                        <p className="truncate text-xs text-slate-500">
+                          {project.projectCode || "—"} ·{" "}
+                          {project.clientName || "—"}
+                        </p>
+                      </div>
+                    </div>
 
-                            <p className="text-xs text-slate-500">
-                              {project.projectCode || "—"}
-                            </p>
-                          </td>
+                    <div className="mt-3 space-y-1 text-xs text-slate-500">
+                      <p className="flex items-center gap-1.5">
+                        <Building2 size={13} />
+                        {getCompanyName(project, companies)}
+                      </p>
 
-                          <td className="px-4 py-4">
-                            {getCompanyName(project, companies)}
-                          </td>
+                      <p className="flex items-center gap-1.5">
+                        <Layers size={13} />
+                        {project.modules?.length || 0} modules
+                      </p>
 
-                          <td className="px-4 py-4">
-                            {project.clientName || "—"}
-                          </td>
+                      <p>
+                        Deleted:{" "}
+                        {project.deletedAt
+                          ? new Date(project.deletedAt).toLocaleString()
+                          : "—"}
+                      </p>
+                    </div>
 
-                          <td className="px-4 py-4">
-                            {project.modules?.length || 0}
-                          </td>
+                    <div className="mt-4 flex justify-end gap-2 border-t border-slate-100 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => restoreProject(project)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-[#e8f3f0] px-3 py-1.5 text-xs font-semibold text-[#2d7f6b] hover:bg-[#d6ebe5]"
+                      >
+                        <RotateCcw size={14} />
+                        Restore
+                      </button>
 
-                          <td className="px-4 py-4">
-                            {project.deletedAt
-                              ? new Date(project.deletedAt).toLocaleString()
-                              : "—"}
-                          </td>
-
-                          <td className="px-4 py-4">
-                            <div className="flex justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => restoreProject(project)}
-                                className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
-                              >
-                                <RotateCcw
-                                  size={14}
-                                  className="mr-1 inline"
-                                />
-                                Restore
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => permanentlyDelete(project)}
-                                className="rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-100"
-                              >
-                                <Trash2
-                                  size={14}
-                                  className="mr-1 inline"
-                                />
-                                Delete Forever
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+                      <button
+                        type="button"
+                        onClick={() => permanentlyDelete(project)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+                      >
+                        <Trash2 size={14} />
+                        Delete Forever
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   );

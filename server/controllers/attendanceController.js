@@ -932,3 +932,231 @@ export const updateEmployeeAttendanceTime = async (req, res) => {
     });
   }
 };
+
+// =====================================================
+// GET LAST 18 CHECK-IN DAYS WORKING HOURS REPORT
+// EMPLOYEE = OWN REPORT
+// SUPER ADMIN = SELECTED EMPLOYEE REPORT
+// =====================================================
+export const getLast18DaysWorkingReport = async (req, res) => {
+  try {
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid company information is required.",
+      });
+    }
+
+    let employeeId;
+
+    // Logged-in employee
+    if (req.user?.role === "employee") {
+      employeeId = req.user.id;
+    }
+
+    // Super Admin
+    else if (req.user?.role === "superadmin") {
+      employeeId = req.query.employeeId || req.body.employeeId;
+
+      if (
+        !employeeId ||
+        !mongoose.Types.ObjectId.isValid(employeeId)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Valid employee ID is required.",
+        });
+      }
+    }
+
+    if (!employeeId) {
+      return res.status(401).json({
+        success: false,
+        message: "Employee authentication required.",
+      });
+    }
+
+    // Verify employee belongs to this company
+    const employee = await Employee.findOne({
+      _id: employeeId,
+      companyId,
+      status: "active",
+    }).select("_id name empId");
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "Active employee not found in this company.",
+      });
+    }
+
+    // Get attendance records where check-in exists.
+    // Null check-in records will NOT be included.
+    const attendanceRecords = await Attendance.find({
+      employeeId: employee._id,
+      companyId,
+      checkIn: {
+        $ne: null,
+        $exists: true,
+      },
+    })
+      .sort({
+        attendanceDate: -1,
+        checkIn: -1,
+      })
+      .limit(18)
+      .lean();
+
+    const now = new Date();
+
+    // India current date
+    const today = getTodayDate();
+
+    const records = attendanceRecords.map((attendance) => {
+      const checkIn = attendance.checkIn
+        ? new Date(attendance.checkIn)
+        : null;
+
+      const checkOut = attendance.checkOut
+        ? new Date(attendance.checkOut)
+        : null;
+
+      let workingMinutes = null;
+      let isRunning = false;
+
+const TIFFIN_BREAK_MINUTES = 45;
+
+if (checkIn && checkOut) {
+  const totalMinutes = Math.floor(
+    (checkOut.getTime() - checkIn.getTime()) / 60000
+  );
+
+  workingMinutes = Math.max(
+    0,
+    totalMinutes - TIFFIN_BREAK_MINUTES
+  );
+}
+
+// Today's attendance is still running
+else if (
+  checkIn &&
+  !checkOut &&
+  attendance.attendanceDate === today
+) {
+  const totalMinutes = Math.floor(
+    (now.getTime() - checkIn.getTime()) / 60000
+  );
+
+  workingMinutes = Math.max(
+    0,
+    totalMinutes - TIFFIN_BREAK_MINUTES
+  );
+
+  isRunning = true;
+}
+
+      const hours = workingMinutes !== null
+        ? Math.floor(workingMinutes / 60)
+        : null;
+
+      const minutes = workingMinutes !== null
+        ? workingMinutes % 60
+        : null;
+
+      return {
+        attendanceId: attendance._id,
+        attendanceDate: attendance.attendanceDate,
+        checkIn,
+        checkOut,
+        workingMinutes,
+        workingHours: workingMinutes !== null
+          ? `${hours}h ${String(minutes).padStart(2, "0")}m`
+          : null,
+        decimalHours: workingMinutes !== null
+          ? Number((workingMinutes / 60).toFixed(2))
+          : null,
+        isRunning,
+        status: isRunning
+          ? "Running"
+          : checkOut
+            ? "Completed"
+            : "Incomplete",
+      };
+    });
+
+    // Reverse so the graph shows oldest → newest
+    records.reverse();
+
+    // Summary calculations
+    const completedRecords = records.filter(
+      (record) => record.workingMinutes !== null
+    );
+
+    const totalWorkingMinutes = completedRecords.reduce(
+      (total, record) => total + record.workingMinutes,
+      0
+    );
+
+    const averageWorkingMinutes =
+      completedRecords.length > 0
+        ? Math.round(
+            totalWorkingMinutes / completedRecords.length
+          )
+        : 0;
+
+    const daysAtLeast8Hours = completedRecords.filter(
+      (record) => record.workingMinutes >= 480
+    ).length;
+
+    const daysUnder8Hours = completedRecords.filter(
+      (record) => record.workingMinutes < 480
+    ).length;
+
+    const formatMinutes = (minutes) => {
+      const hours = Math.floor(minutes / 60);
+      const remainingMinutes = minutes % 60;
+
+      return `${hours}h ${String(remainingMinutes).padStart(2, "0")}m`;
+    };
+
+    return res.status(200).json({
+      success: true,
+      employee: {
+        _id: employee._id,
+        name: employee.name,
+        empId: employee.empId,
+      },
+
+      totalDays: records.length,
+
+      totalWorkingMinutes,
+      totalWorkingHours: formatMinutes(totalWorkingMinutes),
+
+      averageWorkingMinutes,
+      averageWorkingHours: formatMinutes(
+        averageWorkingMinutes
+      ),
+
+      daysAtLeast8Hours,
+      daysUnder8Hours,
+
+      targetHours: 8,
+
+      records,
+    });
+  } catch (error) {
+    console.error(
+      "Get Last 18 Days Working Report Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message ||
+        "Failed to fetch last 18 days working report.",
+    });
+  }
+};

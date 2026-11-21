@@ -85,14 +85,21 @@ export default function Timesheet() {
   const [employee, setEmployee] = useState(null);
   const [timesheets, setTimesheets] = useState([]);
   const [projects, setProjects] = useState([]);
-
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionId, setActionId] = useState("");
   const [error, setError] = useState("");
 
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(initialForm);
+  const [showInlineRow, setShowInlineRow] = useState(false);
+const [inlineForm, setInlineForm] = useState({
+  taskType: "Project",
+  projectId: "",
+  task: "Development",
+  description: "",
+  estimatedTime: "",
+});
+
+const [inlineDateTime, setInlineDateTime] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [editingEstimatedId, setEditingEstimatedId] = useState("");
@@ -136,6 +143,82 @@ export default function Timesheet() {
     }
   }, []);
 
+  const handleInlineSave = async () => {
+  try {
+    if (!inlineForm.taskType) {
+      toast.error("Please select task type.");
+      return;
+    }
+
+    if (!inlineForm.projectId) {
+      toast.error("Please select a project.");
+      return;
+    }
+
+    if (!inlineForm.task) {
+      toast.error("Please select a task.");
+      return;
+    }
+
+    if (!inlineForm.description.trim()) {
+      toast.error("Please enter description.");
+      return;
+    }
+
+    if (
+      inlineForm.estimatedTime === "" ||
+      Number(inlineForm.estimatedTime) < 0 ||
+      !Number.isFinite(Number(inlineForm.estimatedTime))
+    ) {
+      toast.error("Please enter a valid estimated time.");
+      return;
+    }
+
+    setSaving(true);
+
+    const payload = {
+      taskType: inlineForm.taskType,
+      projectId: inlineForm.projectId,
+      task: inlineForm.task,
+      description: inlineForm.description.trim(),
+      estimatedTime: Number(inlineForm.estimatedTime),
+
+      // Defaults from Timesheet Model
+      startTime: null,
+      endTime: null,
+      breakTime: null,
+      totalCompletionTime: null,
+      efficiency: null,
+      idleTime: 0,
+      taskStatus: "Not Started",
+      approvalStatus: "Pending",
+    };
+
+    await api.post("/timesheets", payload);
+
+    toast.success("Timesheet created successfully.");
+
+    setShowInlineRow(false);
+
+    setInlineForm({
+      taskType: "Project",
+      projectId: "",
+      task: "Development",
+      description: "",
+      estimatedTime: "",
+    });
+
+    await loadData();
+  } catch (error) {
+    toast.error(
+      error?.response?.data?.message ||
+        "Failed to create timesheet."
+    );
+  } finally {
+    setSaving(false);
+  }
+};
+
   useEffect(() => {
     loadData();
   }, [loadData]);
@@ -154,86 +237,6 @@ export default function Timesheet() {
     typeof employee?.roleId === "object"
       ? employee.roleId?.roleName
       : "";
-
-  const selectedProject = projects.find(
-    (project) => String(project._id) === String(form.projectId)
-  );
-
-  const projectModules = selectedProject?.modules || [];
-
-  const selectedModule = projectModules.find(
-    (module) => String(module._id) === String(form.moduleId)
-  );
-
-  const setField = (name, value) => {
-    setForm((previous) => ({
-      ...previous,
-      [name]: value,
-      ...(name === "projectId" ? { moduleId: "" } : {}),
-    }));
-  };
-
-  const openCreateForm = () => {
-    setForm({ ...initialForm });
-    setError("");
-    setShowForm(true);
-  };
-
-  const handleCreate = async (event) => {
-    event.preventDefault();
-    setError("");
-
-    if (!form.estimatedTime || Number(form.estimatedTime) <= 0) {
-      setError("Estimated time must be greater than 0 minutes.");
-      return;
-    }
-
-    if (form.taskType === "Project") {
-      if (!form.projectId) {
-        setError("Please select a project.");
-        return;
-      }
-
-      if (!form.moduleId) {
-        setError("Please select a task/module.");
-        return;
-      }
-    } else if (!form.description.trim()) {
-      setError("Please enter a description for Learning/Training.");
-      return;
-    }
-
-    const payload = {
-      taskType: form.taskType,
-      estimatedTime: Number(form.estimatedTime),
-      ...(form.taskType === "Project"
-        ? {
-            projectId: form.projectId,
-            moduleId: form.moduleId,
-          }
-        : {
-            projectId: null,
-            moduleId: null,
-            description: form.description.trim(),
-          }),
-    };
-
-    setSaving(true);
-
-    try {
-      await api.post("/timesheets", payload);
-      toast.success("Timesheet created successfully.");
-      setShowForm(false);
-      setForm({ ...initialForm });
-      await loadData();
-    } catch (err) {
-      toast.error(
-        err.response?.data?.message || "Failed to create timesheet."
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleTaskAction = async (item, action) => {
     const endpoints = {
@@ -394,6 +397,7 @@ const handleSaveIdle = async (item) => {
       return matchesStatus && matchesSearch;
     });
   }, [timesheets, search, statusFilter]);
+  
 
   const stats = useMemo(
     () => ({
@@ -444,11 +448,27 @@ const handleSaveIdle = async (item) => {
               <RefreshCw size={16} /> Refresh
             </button>
             <button
-              onClick={openCreateForm}
-              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700"
-            >
-              <Plus size={18} /> New Timesheet
-            </button>
+  type="button"
+  onClick={() => {
+    setInlineDateTime(new Date().toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+    }));
+
+    setInlineForm({
+      taskType: "Project",
+      projectId: "",
+      task: "Development",
+      description: "",
+      estimatedTime: "",
+    });
+
+    setShowInlineRow(true);
+  }}
+  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+>
+  <Plus size={16} />
+  New Timesheet
+</button>
           </div>
         </div>
 
@@ -457,31 +477,6 @@ const handleSaveIdle = async (item) => {
             {error}
           </div>
         )}
-
-        <section className="rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center gap-2">
-            <CalendarDays className="text-blue-600" />
-            <h2 className="font-semibold text-slate-900">
-              Employee Information
-            </h2>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Info label="Employee Name" value={employee?.name} />
-            <Info label="Employee ID" value={employee?.empId} />
-            <Info label="Company" value={companyName} />
-            <Info label="Department" value={departmentName} />
-            <Info label="Role" value={roleName} />
-            <Info label="Email" value={employee?.email} />
-          </div>
-        </section>
-
-        <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-          <Stat label="Total" value={stats.total} icon={<Clock3 />} />
-          <Stat label="Pending" value={stats.pending} icon={<Clock />} />
-          <Stat label="Approved" value={stats.approved} icon={<CheckCircle2 />} />
-          <Stat label="Rejected" value={stats.rejected} icon={<XCircle />} />
-        </section>
 
         <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
           <div className="flex flex-col justify-between gap-3 border-b p-5 sm:flex-row sm:items-center">
@@ -519,11 +514,6 @@ const handleSaveIdle = async (item) => {
             </div>
           </div>
 
-          {filteredTimesheets.length === 0 ? (
-            <div className="py-16 text-center text-slate-500">
-              No timesheets found.
-            </div>
-          ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1700px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase text-slate-500">
@@ -540,7 +530,6 @@ const handleSaveIdle = async (item) => {
                       "End",
                       "Working Time",
                       "Idle Time",
-                      "Estimated Error",
                       "Efficiency",
                       "Task Status",
                       "Approval",
@@ -555,8 +544,18 @@ const handleSaveIdle = async (item) => {
                 </thead>
 
                 <tbody className="divide-y divide-slate-100">
+                  {filteredTimesheets.length === 0 && !showInlineRow && (
+  <tr>
+    <td
+      colSpan={16}
+      className="py-16 text-center text-slate-500"
+    >
+      No timesheets found.
+    </td>
+  </tr>
+)}
                   {filteredTimesheets.map((item) => {
-                    const locked = item.approvalStatus !== "Pending";
+                    const locked = item.approvalStatus === "Approved";
                     const project =
                       typeof item.projectId === "object"
                         ? item.projectId?.projectName
@@ -632,14 +631,16 @@ const handleSaveIdle = async (item) => {
         {formatMinutes(item.estimatedTime)}
       </span>
 
-      <button
-        type="button"
-        onClick={() => handleEditEstimated(item)}
-        title="Edit estimated time"
-        className="rounded-md p-1.5 text-slate-400 transition hover:bg-blue-50 hover:text-blue-600"
-      >
-        <Pencil size={14} />
-      </button>
+      {!locked && (
+  <button
+    type="button"
+    onClick={() => handleEditEstimated(item)}
+    title="Edit estimated time"
+    className="rounded-md p-1.5 text-slate-400 transition hover:bg-blue-50 hover:text-blue-600"
+  >
+    <Pencil size={14} />
+  </button>
+)}
     </div>
   )}
 </td>
@@ -750,22 +751,19 @@ const handleSaveIdle = async (item) => {
         {formatMinutes(item.idleTime)}
       </span>
 
-      <button
-        type="button"
-        onClick={() => handleEditIdle(item)}
-        title="Edit idle time"
-        className="rounded-md p-1.5 text-slate-400 transition hover:bg-blue-50 hover:text-blue-600"
-      >
-        <Pencil size={14} />
-      </button>
+      {!locked && (
+  <button
+    type="button"
+    onClick={() => handleEditIdle(item)}
+    title="Edit idle time"
+    className="rounded-md p-1.5 text-slate-400 transition hover:bg-blue-50 hover:text-blue-600"
+  >
+    <Pencil size={14} />
+  </button>
+)}
     </div>
   )}
 </td>
-                        <td className="whitespace-nowrap px-4 py-4">
-                          {item.estimatedError == null
-                            ? "—"
-                            : formatMinutes(item.estimatedError)}
-                        </td>
                         <td className="px-4 py-4">
                           {item.efficiency == null ? "—" : `${item.efficiency}%`}
                         </td>
@@ -788,198 +786,146 @@ const handleSaveIdle = async (item) => {
                       </tr>
                     );
                   })}
+                  {showInlineRow && (
+  <tr className="bg-blue-50/50">
+    {/* DATE & TIME */}
+    <td className="border-b px-4 py-3 whitespace-nowrap">
+      <div className="text-sm font-medium text-slate-800">
+        {inlineDateTime}
+      </div>
+      <div className="text-xs text-blue-600">
+        New Entry
+      </div>
+    </td>
+
+    {/* TASK TYPE */}
+    <td className="border-b px-4 py-3">
+      <select
+        value={inlineForm.taskType}
+        onChange={(e) =>
+          setInlineForm((prev) => ({
+            ...prev,
+            taskType: e.target.value,
+          }))
+        }
+        className="w-full rounded-lg border px-2 py-2 text-sm"
+      >
+        <option value="Project">Project</option>
+        <option value="Learning">Learning</option>
+        <option value="Training">Training</option>
+      </select>
+    </td>
+
+    {/* PROJECT */}
+    <td className="border-b px-4 py-3">
+      <select
+        value={inlineForm.projectId}
+        onChange={(e) =>
+          setInlineForm((prev) => ({
+            ...prev,
+            projectId: e.target.value,
+          }))
+        }
+        className="w-full min-w-[150px] rounded-lg border px-2 py-2 text-sm"
+      >
+        <option value="">Select Project</option>
+
+        {projects.map((project) => (
+          <option key={project._id} value={project._id}>
+            {project.projectName || project.name}
+          </option>
+        ))}
+      </select>
+    </td>
+
+    {/* TASK */}
+    <td className="border-b px-4 py-3">
+      <select
+        value={inlineForm.task}
+        onChange={(e) =>
+          setInlineForm((prev) => ({
+            ...prev,
+            task: e.target.value,
+          }))
+        }
+        className="w-full min-w-[130px] rounded-lg border px-2 py-2 text-sm"
+      >
+        <option value="Testing">Testing</option>
+        <option value="Development">Development</option>
+        <option value="Learning">Learning</option>
+        <option value="Graphics">Graphics</option>
+        <option value="Management">Management</option>
+        <option value="Meeting">Meeting</option>
+      </select>
+    </td>
+
+    {/* DESCRIPTION */}
+    <td className="border-b px-4 py-3">
+      <input
+        type="text"
+        value={inlineForm.description}
+        onChange={(e) =>
+          setInlineForm((prev) => ({
+            ...prev,
+            description: e.target.value,
+          }))
+        }
+        placeholder="Enter description"
+        className="w-full min-w-[200px] rounded-lg border px-3 py-2 text-sm"
+      />
+    </td>
+
+    {/* ESTIMATED TIME */}
+    <td className="border-b px-4 py-3">
+      <input
+        type="number"
+        min="0"
+        value={inlineForm.estimatedTime}
+        onChange={(e) =>
+          setInlineForm((prev) => ({
+            ...prev,
+            estimatedTime: e.target.value,
+          }))
+        }
+        placeholder="Minutes"
+        className="w-24 rounded-lg border px-2 py-2 text-sm"
+      />
+    </td>
+
+    {/* REMAINING COLUMNS */}
+    <td colSpan={10} className="border-b px-4 py-3">
+      <div className="flex items-center gap-2">
+<button
+  type="button"
+  onClick={handleInlineSave}
+  disabled={saving}
+  className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm text-white hover:bg-green-700 disabled:opacity-50"
+>
+  {saving ? (
+    <RefreshCw size={15} className="animate-spin" />
+  ) : (
+    <Check size={15} />
+  )}
+
+  {saving ? "Saving..." : "Save"}
+</button>
+
+        <button
+          type="button"
+          onClick={() => setShowInlineRow(false)}
+          className="inline-flex items-center gap-1 rounded-lg border bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+        >
+          <X size={15} />
+          Cancel
+        </button>
+      </div>
+    </td>
+  </tr>
+)}
                 </tbody>
               </table>
             </div>
-          )}
         </section>
-
-        {showForm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4">
-            <div className="my-auto w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <div className="flex items-center justify-between border-b p-5">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900">
-                    Create Timesheet
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Date and time are automatically updated.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowForm(false)}
-                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-                >
-                  <XCircle size={21} />
-                </button>
-              </div>
-
-              <form onSubmit={handleCreate}>
-                <div className="grid gap-4 p-5 sm:grid-cols-2">
-                  <FormField label="Date & Time">
-                    <input
-                      readOnly
-                      value={liveTime.toLocaleString("en-IN", {
-                        timeZone: "Asia/Kolkata",
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        hour12: true,
-                      })}
-                      className="w-full rounded-xl border bg-slate-100 px-3 py-3 text-sm"
-                    />
-                  </FormField>
-
-                  <FormField label="Employee">
-                    <input
-                      readOnly
-                      value={`${employee?.name || ""}${employee?.empId ? ` (${employee.empId})` : ""}`}
-                      className="w-full rounded-xl border bg-slate-100 px-3 py-3 text-sm"
-                    />
-                  </FormField>
-
-                  <FormField label="Company">
-                    <input
-                      readOnly
-                      value={companyName || ""}
-                      className="w-full rounded-xl border bg-slate-100 px-3 py-3 text-sm"
-                    />
-                  </FormField>
-
-                  <FormField label="Role / Category">
-                    <input
-                      readOnly
-                      value={roleName || ""}
-                      className="w-full rounded-xl border bg-slate-100 px-3 py-3 text-sm"
-                    />
-                  </FormField>
-
-                  <FormField label="Task Type">
-                    <select
-                      value={form.taskType}
-                      onChange={(event) =>
-                        setField("taskType", event.target.value)
-                      }
-                      className="w-full rounded-xl border px-3 py-3 text-sm"
-                    >
-                      <option value="Project">Project</option>
-                      <option value="Learning">Learning</option>
-                      <option value="Training">Training</option>
-                    </select>
-                  </FormField>
-
-                  {form.taskType === "Project" && (
-                    <>
-                      <FormField label="Project">
-                        <select
-                          value={form.projectId}
-                          onChange={(event) =>
-                            setField("projectId", event.target.value)
-                          }
-                          required
-                          className="w-full rounded-xl border px-3 py-3 text-sm"
-                        >
-                          <option value="">Select Project</option>
-                          {projects.map((project) => (
-                            <option key={project._id} value={project._id}>
-                              {project.projectName}
-                              {project.projectCode
-                                ? ` (${project.projectCode})`
-                                : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </FormField>
-
-                      <FormField label="Task / Module">
-                        <select
-                          value={form.moduleId}
-                          onChange={(event) =>
-                            setField("moduleId", event.target.value)
-                          }
-                          required
-                          disabled={!form.projectId}
-                          className="w-full rounded-xl border px-3 py-3 text-sm disabled:bg-slate-100"
-                        >
-                          <option value="">Select Task / Module</option>
-                          {projectModules.map((module) => (
-                            <option key={module._id} value={module._id}>
-                              {module.moduleName || module.name}
-                            </option>
-                          ))}
-                        </select>
-                      </FormField>
-                    </>
-                  )}
-
-                  {form.taskType !== "Project" && (
-                    <div className="sm:col-span-2">
-                      <FormField label={`${form.taskType} Description`} required>
-                        <textarea
-                          rows={3}
-                          value={form.description}
-                          onChange={(event) =>
-                            setField("description", event.target.value)
-                          }
-                          required
-                          placeholder={`Describe your ${form.taskType.toLowerCase()} activity...`}
-                          className="w-full rounded-xl border px-3 py-3 text-sm"
-                        />
-                      </FormField>
-                    </div>
-                  )}
-
-                  <FormField label="Estimated Time (minutes)" required>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={form.estimatedTime}
-                      onChange={(event) =>
-                        setField("estimatedTime", event.target.value)
-                      }
-                      required
-                      placeholder="e.g. 120"
-                      className="w-full rounded-xl border px-3 py-3 text-sm"
-                    />
-                  </FormField>
-
-                  <div className="flex items-end text-xs text-slate-500">
-                    Start time, end time, break time, working time and
-                    estimated error will be handled through task actions.
-                  </div>
-                </div>
-
-                {error && (
-                  <p className="mx-5 mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">
-                    {error}
-                  </p>
-                )}
-
-                <div className="flex justify-end gap-3 border-t bg-slate-50 p-5">
-                  <button
-                    type="button"
-                    onClick={() => setShowForm(false)}
-                    disabled={saving}
-                    className="rounded-xl border bg-white px-5 py-3 text-sm font-semibold"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
-                  >
-                    {saving && <RefreshCw size={16} className="animate-spin" />}
-                    {saving ? "Saving..." : "Create Timesheet"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

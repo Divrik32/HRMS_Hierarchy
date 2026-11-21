@@ -256,7 +256,7 @@ export const getProjectsForTimesheet = async (req, res) => {
       companyId,
       status: "active",
     })
-      .select("_id projectName projectCode modules")
+      .select("_id projectName projectCode")
       .sort({ projectName: 1 })
       .lean();
 
@@ -278,6 +278,13 @@ export const getProjectsForTimesheet = async (req, res) => {
 
 // =====================================================
 // CREATE TIMESHEET — LOGGED-IN EMPLOYEE
+// =====================================================
+
+// =====================================================
+// CREATE TIMESHEET — LOGGED-IN EMPLOYEE
+// Project required for ALL task types
+// Task is selected from ENUM
+// Description is mandatory for ALL task types
 // =====================================================
 
 export const createTimesheet = async (req, res) => {
@@ -305,27 +312,95 @@ export const createTimesheet = async (req, res) => {
     const {
       taskType = "Project",
       projectId,
-      moduleId,
       task,
       description,
       estimatedTime,
     } = req.body;
 
-    if (!["Project", "Learning", "Training"].includes(taskType)) {
+    // =========================================
+    // TASK TYPE VALIDATION
+    // =========================================
+
+    const allowedTaskTypes = [
+      "Project",
+      "Learning",
+      "Training",
+    ];
+
+    if (!allowedTaskTypes.includes(taskType)) {
       return res.status(400).json({
         success: false,
         message: "Invalid task type.",
       });
     }
 
-    const estimatedMinutes = getMinutes(estimatedTime);
+    // =========================================
+    // TASK ENUM VALIDATION
+    // =========================================
 
-    if (estimatedMinutes === null || estimatedMinutes <= 0) {
+    const allowedTasks = [
+      "Testing",
+      "Development",
+      "Learning",
+      "Graphics",
+      "Management",
+      "Meeting",
+    ];
+
+    if (!allowedTasks.includes(task)) {
       return res.status(400).json({
         success: false,
-        message: "Estimated time must be a positive number of minutes.",
+        message: "Please select a valid task.",
       });
     }
+
+    // =========================================
+    // PROJECT VALIDATION
+    // Required for ALL task types
+    // =========================================
+
+    if (!isValidObjectId(projectId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please select a valid project.",
+      });
+    }
+
+    // =========================================
+    // DESCRIPTION VALIDATION
+    // Required for ALL task types
+    // =========================================
+
+    if (
+      typeof description !== "string" ||
+      !description.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Description is required.",
+      });
+    }
+
+    // =========================================
+    // ESTIMATED TIME VALIDATION
+    // =========================================
+
+    const estimatedMinutes = getMinutes(estimatedTime);
+
+    if (
+      estimatedMinutes === null ||
+      estimatedMinutes <= 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Estimated time must be a positive number of minutes.",
+      });
+    }
+
+    // =========================================
+    // EMPLOYEE VALIDATION
+    // =========================================
 
     const employee = await Employee.findOne({
       _id: employeeId,
@@ -335,74 +410,34 @@ export const createTimesheet = async (req, res) => {
     if (!employee) {
       return res.status(404).json({
         success: false,
-        message: "Logged-in employee was not found in this company.",
+        message:
+          "Logged-in employee was not found in this company.",
       });
     }
 
-    let selectedProjectId = null;
-    let selectedModuleId = null;
-    let selectedTask = "";
-
     // =========================================
-    // PROJECT TASK
+    // PROJECT VALIDATION
+    // All active company projects are allowed
+    // No roleAccess / employeeAccess filtering
     // =========================================
 
-    if (taskType === "Project") {
-      if (
-        !isValidObjectId(projectId) ||
-        !isValidObjectId(moduleId)
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: "Please select a valid project and task.",
-        });
-      }
+    const project = await Project.findOne({
+      _id: projectId,
+      companyId,
+      status: "active",
+    }).select("_id projectName projectCode");
 
-      // All active company projects are allowed here.
-      // No roleAccess / employeeAccess filtering.
-      const project = await Project.findOne({
-        _id: projectId,
-        companyId,
-        status: "active",
-      }).select("_id modules");
-
-      if (!project) {
-        return res.status(404).json({
-          success: false,
-          message: "Active project not found in this company.",
-        });
-      }
-
-      // modules is an embedded array in Project.
-      const selectedModule = project.modules.id(moduleId);
-
-      if (!selectedModule) {
-        return res.status(404).json({
-          success: false,
-          message: "Selected task/module does not belong to this project.",
-        });
-      }
-
-      selectedProjectId = project._id;
-      selectedModuleId = selectedModule._id;
-      selectedTask = selectedModule.moduleName;
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Active project not found in this company.",
+      });
     }
 
     // =========================================
-    // LEARNING / TRAINING TASK
+    // CREATE TIMESHEET
     // =========================================
-
-    if (taskType === "Learning" || taskType === "Training") {
-      if (typeof description !== "string" || !description.trim()) {
-        return res.status(400).json({
-          success: false,
-          message: `Description is required for ${taskType.toLowerCase()}.`,
-        });
-      }
-
-      // Task name is fixed by taskType.
-      selectedTask = taskType;
-    }
 
     const timesheet = await Timesheet.create({
       companyId,
@@ -410,20 +445,19 @@ export const createTimesheet = async (req, res) => {
 
       taskType,
 
-      projectId: selectedProjectId,
-      moduleId: selectedModuleId,
+      projectId: project._id,
 
-      task: selectedTask,
+      task,
 
-      description:
-        typeof description === "string"
-          ? description.trim()
-          : "",
+      description: description.trim(),
 
       estimatedTime: estimatedMinutes,
 
-      // date, idleTime, taskStatus and approvalStatus
-      // will use their schema defaults.
+      // Schema defaults:
+      // date
+      // idleTime
+      // taskStatus
+      // approvalStatus
     });
 
     return res.status(201).json({
@@ -492,391 +526,6 @@ export const getTimesheetsByCompany = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch company timesheets.",
-      error: error.message,
-    });
-  }
-};
-
-// =====================================================
-// UPDATE GLOBAL TIMESHEET — EMPLOYEE & SUPER ADMIN
-// Manual time editing is not allowed.
-// Start/End/Break have separate endpoints.
-// =====================================================
-
-export const updateTimesheet = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { field, value } = req.body;
-
-    if (!isSuperAdmin(req) && !isEmployee(req)) {
-      return res.status(403).json({
-        success: false,
-        message: "You are not allowed to update timesheets.",
-      });
-    }
-
-    const companyId = getCompanyId(req);
-
-    if (
-      !isValidObjectId(id) ||
-      !isValidObjectId(companyId)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid timesheet or company ID.",
-      });
-    }
-
-    const allowedFields = [
-      "taskType",
-      "projectId",
-      "moduleId",
-      "task",
-      "description",
-      "estimatedTime",
-      "idleTime",
-      "remarks.delayFast",
-      "remarks.reason",
-    ];
-
-    if (!allowedFields.includes(field)) {
-      return res.status(400).json({
-        success: false,
-        message: "This field cannot be updated.",
-      });
-    }
-
-    const timesheet = await Timesheet.findOne({
-      _id: id,
-      companyId,
-    });
-
-    if (!timesheet) {
-      return res.status(404).json({
-        success: false,
-        message: "Timesheet not found in this company.",
-      });
-    }
-
-    if (timesheet.approvalStatus === "Approved") {
-      return res.status(403).json({
-        success: false,
-        message: "Approved timesheets cannot be modified.",
-      });
-    }
-
-    // Employees can update only their own timesheets.
-    if (
-      isEmployee(req) &&
-      String(timesheet.employeeId) !== String(getEmployeeId(req))
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "You can only update your own timesheets.",
-      });
-    }
-
-    // Completed tasks cannot be edited.
-    if (timesheet.taskStatus === "Completed") {
-      return res.status(403).json({
-        success: false,
-        message: "Completed tasks cannot be modified.",
-      });
-    }
-
-    switch (field) {
-      // =========================================
-      // TASK TYPE
-      // =========================================
-
-      case "taskType": {
-        if (!["Project", "Learning", "Training"].includes(value)) {
-          return res.status(400).json({
-            success: false,
-            message: "Invalid task type.",
-          });
-        }
-
-        timesheet.taskType = value;
-
-        // Reset project/module/task when type changes.
-        timesheet.projectId = null;
-        timesheet.moduleId = null;
-        timesheet.task = value;
-
-        if (value === "Project") {
-          timesheet.task = "";
-        }
-
-        break;
-      }
-
-      // =========================================
-      // PROJECT
-      // =========================================
-
-      case "projectId": {
-        if (timesheet.taskType !== "Project") {
-          return res.status(400).json({
-            success: false,
-            message: "Project can only be selected for Project task type.",
-          });
-        }
-
-        if (!isValidObjectId(value)) {
-          return res.status(400).json({
-            success: false,
-            message: "Please select a valid project.",
-          });
-        }
-
-        const project = await Project.findOne({
-          _id: value,
-          companyId,
-          status: "active",
-        }).select("_id");
-
-        if (!project) {
-          return res.status(404).json({
-            success: false,
-            message: "Active project not found.",
-          });
-        }
-
-        timesheet.projectId = project._id;
-        timesheet.moduleId = null;
-        timesheet.task = "";
-
-        break;
-      }
-
-      // =========================================
-      // PROJECT MODULE
-      // =========================================
-
-      case "moduleId": {
-        if (
-          timesheet.taskType !== "Project" ||
-          !timesheet.projectId
-        ) {
-          return res.status(400).json({
-            success: false,
-            message: "Select a project first.",
-          });
-        }
-
-        if (!isValidObjectId(value)) {
-          return res.status(400).json({
-            success: false,
-            message: "Please select a valid task/module.",
-          });
-        }
-
-        const project = await Project.findOne({
-          _id: timesheet.projectId,
-          companyId,
-          status: "active",
-        }).select("modules");
-
-        const selectedModule = project?.modules.id(value);
-
-        if (!selectedModule) {
-          return res.status(404).json({
-            success: false,
-            message: "Selected task/module was not found in this project.",
-          });
-        }
-
-        timesheet.moduleId = selectedModule._id;
-        timesheet.task = selectedModule.moduleName;
-
-        break;
-      }
-
-      // =========================================
-      // TASK
-      // =========================================
-
-      case "task": {
-        if (
-          timesheet.taskType !== "Project" ||
-          !timesheet.projectId ||
-          !timesheet.moduleId
-        ) {
-          return res.status(400).json({
-            success: false,
-            message: "Select a project and module first.",
-          });
-        }
-
-        const project = await Project.findOne({
-          _id: timesheet.projectId,
-          companyId,
-        }).select("modules");
-
-        const selectedModule = project?.modules.id(
-          timesheet.moduleId
-        );
-
-        if (!selectedModule) {
-          return res.status(404).json({
-            success: false,
-            message: "Selected module was not found.",
-          });
-        }
-
-        // Task name must match the selected embedded module.
-        if (
-          typeof value !== "string" ||
-          value.trim() !== selectedModule.moduleName
-        ) {
-          return res.status(400).json({
-            success: false,
-            message: "Task name must match the selected project module.",
-          });
-        }
-
-        timesheet.task = selectedModule.moduleName;
-        break;
-      }
-
-      // =========================================
-      // DESCRIPTION
-      // =========================================
-
-      case "description": {
-        if (typeof value !== "string") {
-          return res.status(400).json({
-            success: false,
-            message: "Description must be text.",
-          });
-        }
-
-        if (
-          ["Learning", "Training"].includes(timesheet.taskType) &&
-          !value.trim()
-        ) {
-          return res.status(400).json({
-            success: false,
-            message: "Description is required for Learning and Training.",
-          });
-        }
-
-        timesheet.description = value.trim();
-        break;
-      }
-
-      // =========================================
-      // ESTIMATED TIME
-      // =========================================
-
-      case "estimatedTime": {
-        const minutes = getMinutes(value);
-
-        if (minutes === null || minutes <= 0) {
-          return res.status(400).json({
-            success: false,
-            message: "Estimated time must be a positive number of minutes.",
-          });
-        }
-
-        timesheet.estimatedTime = minutes;
-
-        if (timesheet.endTime) {
-          calculateTaskTime(timesheet);
-        }
-
-        break;
-      }
-
-      // =========================================
-      // IDLE TIME
-      // =========================================
-
-      case "idleTime": {
-        const minutes = getMinutes(value);
-
-        if (minutes === null) {
-          return res.status(400).json({
-            success: false,
-            message: "Idle time must be a valid non-negative number of minutes.",
-          });
-        }
-
-        timesheet.idleTime = minutes;
-        break;
-      }
-
-      // =========================================
-      // DELAY / FAST
-      // =========================================
-
-      case "remarks.delayFast": {
-        if (!["", "Delay", "Fast"].includes(value)) {
-          return res.status(400).json({
-            success: false,
-            message: "Invalid delay/fast remark.",
-          });
-        }
-
-        timesheet.remarks.delayFast = value;
-        break;
-      }
-
-      // =========================================
-      // REMARKS REASON
-      // =========================================
-
-      case "remarks.reason": {
-        if (typeof value !== "string") {
-          return res.status(400).json({
-            success: false,
-            message: "Reason must be text.",
-          });
-        }
-
-        timesheet.remarks.reason = value.trim();
-        break;
-      }
-    }
-
-    // Final validation for Learning / Training.
-    if (
-      ["Learning", "Training"].includes(timesheet.taskType) &&
-      !timesheet.description?.trim()
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Description is required for Learning and Training.",
-      });
-    }
-
-    // Final validation for Project task.
-    if (
-      timesheet.taskType === "Project" &&
-      (!timesheet.projectId ||
-        !timesheet.moduleId ||
-        !timesheet.task?.trim())
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Project and task/module are required.",
-      });
-    }
-
-    await timesheet.save();
-
-    return res.status(200).json({
-      success: true,
-      message: "Timesheet updated successfully.",
-      timesheet,
-    });
-  } catch (error) {
-    console.error("Update Company Timesheet Error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to update timesheet.",
       error: error.message,
     });
   }
@@ -1245,6 +894,10 @@ export const auditTimesheet = async (req, res) => {
     const auditorId = getEmployeeId(req);
     const companyId = req.user?.companyId;
 
+    // =========================================
+    // AUTHENTICATION
+    // =========================================
+
     if (!isEmployee(req) || !companyId) {
       return res.status(403).json({
         success: false,
@@ -1253,6 +906,10 @@ export const auditTimesheet = async (req, res) => {
       });
     }
 
+    // =========================================
+    // VALIDATE TIMESHEET ID
+    // =========================================
+
     if (!isValidObjectId(id)) {
       return res.status(400).json({
         success: false,
@@ -1260,19 +917,33 @@ export const auditTimesheet = async (req, res) => {
       });
     }
 
+    // =========================================
+    // VALIDATE APPROVAL STATUS
+    // =========================================
+
     if (!["Approved", "Rejected"].includes(approvalStatus)) {
       return res.status(400).json({
         success: false,
-        message: "Approval status must be Approved or Rejected.",
+        message:
+          "Approval status must be Approved or Rejected.",
       });
     }
+
+    // =========================================
+    // VALIDATE AUDITOR ID
+    // =========================================
 
     if (!isValidObjectId(auditorId)) {
       return res.status(401).json({
         success: false,
-        message: "Auditor authentication details are missing.",
+        message:
+          "Auditor authentication details are missing.",
       });
     }
+
+    // =========================================
+    // VALIDATE COMPANY ID
+    // =========================================
 
     if (!isValidObjectId(companyId)) {
       return res.status(400).json({
@@ -1281,16 +952,26 @@ export const auditTimesheet = async (req, res) => {
       });
     }
 
+    // =========================================
+    // REJECTION REASON VALIDATION
+    // =========================================
+
     if (
       approvalStatus === "Rejected" &&
-      (typeof rejectionReason !== "string" ||
-        !rejectionReason.trim())
+      (
+        typeof rejectionReason !== "string" ||
+        !rejectionReason.trim()
+      )
     ) {
       return res.status(400).json({
         success: false,
         message: "Rejection reason is required.",
       });
     }
+
+    // =========================================
+    // FIND TIMESHEET
+    // =========================================
 
     const timesheet = await Timesheet.findOne({
       _id: id,
@@ -1304,12 +985,21 @@ export const auditTimesheet = async (req, res) => {
       });
     }
 
+    // =========================================
+    // ONLY PENDING TIMESHEETS CAN BE AUDITED
+    // =========================================
+
     if (timesheet.approvalStatus !== "Pending") {
       return res.status(403).json({
         success: false,
-        message: "Only pending timesheets can be audited.",
+        message:
+          "Only pending timesheets can be audited.",
       });
     }
+
+    // =========================================
+    // TASK COMPLETION VALIDATION
+    // =========================================
 
     if (
       timesheet.taskStatus !== "Completed" ||
@@ -1325,6 +1015,10 @@ export const auditTimesheet = async (req, res) => {
       });
     }
 
+    // =========================================
+    // FIND AUDITOR
+    // =========================================
+
     const auditor = await Employee.findOne({
       _id: auditorId,
       companyId,
@@ -1334,9 +1028,14 @@ export const auditTimesheet = async (req, res) => {
     if (!auditor) {
       return res.status(403).json({
         success: false,
-        message: "You are not authorized to audit this timesheet.",
+        message:
+          "You are not authorized to audit this timesheet.",
       });
     }
+
+    // =========================================
+    // FIND TIMESHEET EMPLOYEE
+    // =========================================
 
     const timesheetEmployee = await Employee.findOne({
       _id: timesheet.employeeId,
@@ -1350,6 +1049,10 @@ export const auditTimesheet = async (req, res) => {
       });
     }
 
+    // =========================================
+    // FIND EMPLOYEE ROLE
+    // =========================================
+
     const employeeRole = await Role.findOne({
       _id: timesheetEmployee.roleId,
       companyId,
@@ -1358,11 +1061,18 @@ export const auditTimesheet = async (req, res) => {
     if (!employeeRole) {
       return res.status(400).json({
         success: false,
-        message: "Timesheet employee role not found.",
+        message:
+          "Timesheet employee role not found.",
       });
     }
 
-    const parentRoleId = employeeRole.parentRoleId;
+    // =========================================
+    // FIND PARENT / GRANDPARENT ROLE
+    // =========================================
+
+    const parentRoleId =
+      employeeRole.parentRoleId;
+
     let grandparentRoleId = null;
 
     if (parentRoleId) {
@@ -1371,8 +1081,13 @@ export const auditTimesheet = async (req, res) => {
         companyId,
       }).select("_id parentRoleId");
 
-      grandparentRoleId = parentRole?.parentRoleId || null;
+      grandparentRoleId =
+        parentRole?.parentRoleId || null;
     }
+
+    // =========================================
+    // AUTHORIZED AUDITOR ROLES
+    // =========================================
 
     const allowedRoleIds = [
       parentRoleId,
@@ -1396,18 +1111,55 @@ export const auditTimesheet = async (req, res) => {
       });
     }
 
+    // =========================================
+    // AUDIT TIMESHEET
+    // =========================================
+
     timesheet.approvalStatus = approvalStatus;
     timesheet.auditedBy = auditor._id;
 
+    // =========================================
+    // REJECT TIMESHEET
+    // =========================================
+
     if (approvalStatus === "Rejected") {
-      timesheet.rejectionReason = rejectionReason.trim();
+      const reason = rejectionReason.trim();
+
+      // Current rejection reason
+      timesheet.rejectionReason = reason;
+
+      // Rejection information
       timesheet.rejectedBy = auditor._id;
       timesheet.rejectedAt = new Date();
-    } else {
+
+      // =========================================
+      // REJECTION HISTORY
+      // =========================================
+
+      if (!Array.isArray(timesheet.rejectionHistory)) {
+        timesheet.rejectionHistory = [];
+      }
+
+      timesheet.rejectionHistory.push({
+        reason,
+        rejectedBy: auditor._id,
+        rejectedAt: new Date(),
+      });
+    }
+
+    // =========================================
+    // APPROVE TIMESHEET
+    // =========================================
+
+    if (approvalStatus === "Approved") {
       timesheet.rejectionReason = "";
       timesheet.rejectedBy = null;
       timesheet.rejectedAt = null;
     }
+
+    // =========================================
+    // SAVE
+    // =========================================
 
     await timesheet.save();
 
@@ -1963,12 +1715,31 @@ export const getTimesheetsForApproval = async (req, res) => {
 // Supports estimatedTime editing in all task statuses
 // =====================================================
 
+// =====================================================
+// EDIT TIMESHEET — EMPLOYEE
+// Consolidated Update + Edit Functionality
+// Supports:
+// - Estimated Time
+// - Idle Time
+// - Task Type
+// - Project
+// - Task
+// - Description
+// - Delay/Fast Remarks
+// - Remarks Reason
+// - Rejected Timesheet Resubmission
+// - Efficiency Recalculation
+// =====================================================
+
 export const editTimesheet = async (req, res) => {
   try {
     const { id } = req.params;
     const { field, value } = req.body;
 
-    // Only employees can edit their own timesheets.
+    // =========================================
+    // AUTHENTICATION
+    // =========================================
+
     if (!isEmployee(req)) {
       return res.status(403).json({
         success: false,
@@ -1990,8 +1761,20 @@ export const editTimesheet = async (req, res) => {
       });
     }
 
-    // Only explicitly allowed fields can be edited.
-    const allowedFields = ["estimatedTime", "idleTime"];
+    // =========================================
+    // ALLOWED FIELDS
+    // =========================================
+
+    const allowedFields = [
+      "estimatedTime",
+      "idleTime",
+      "taskType",
+      "projectId",
+      "task",
+      "description",
+      "remarks.delayFast",
+      "remarks.reason",
+    ];
 
     if (!allowedFields.includes(field)) {
       return res.status(400).json({
@@ -2000,7 +1783,10 @@ export const editTimesheet = async (req, res) => {
       });
     }
 
-    // Find only the logged-in employee's own timesheet.
+    // =========================================
+    // FIND OWN TIMESHEET
+    // =========================================
+
     const timesheet = await Timesheet.findOne({
       _id: id,
       employeeId,
@@ -2015,63 +1801,682 @@ export const editTimesheet = async (req, res) => {
     }
 
     // =========================================
+    // APPROVAL VALIDATION
+    // Approved timesheets cannot be edited.
+    // =========================================
+
+    if (timesheet.approvalStatus === "Approved") {
+      return res.status(403).json({
+        success: false,
+        message: "Approved timesheets cannot be modified.",
+      });
+    }
+
+    // =========================================
+    // REJECTED / RESUBMITTED TIMESHEET CHECK
+    // =========================================
+
+    const isRejectedTimesheet =
+      timesheet.approvalStatus === "Rejected";
+
+    const isResubmittedTimesheet =
+      timesheet.approvalStatus === "Pending" &&
+      (timesheet.resubmissionCount || 0) > 0;
+
+    // =========================================
+    // COMPLETED TASK VALIDATION
+    // =========================================
+
+    /*
+      Completed timesheets normally cannot be modified.
+
+      Allowed exceptions:
+
+      1. Rejected timesheet
+      2. Previously resubmitted timesheet
+
+      This preserves the existing updateTimesheet
+      controller's behavior.
+    */
+
+    if (
+      timesheet.taskStatus === "Completed" &&
+      !isRejectedTimesheet &&
+      !isResubmittedTimesheet
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Completed tasks cannot be modified.",
+      });
+    }
+
+    // =========================================
+    // TASK TYPE
+    // =========================================
+
+    if (field === "taskType") {
+      const allowedTaskTypes = [
+        "Project",
+        "Learning",
+        "Training",
+      ];
+
+      if (!allowedTaskTypes.includes(value)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid task type.",
+        });
+      }
+
+      timesheet.taskType = value;
+    }
+
+    // =========================================
+    // PROJECT
+    // =========================================
+
+    if (field === "projectId") {
+      if (!isValidObjectId(value)) {
+        return res.status(400).json({
+          success: false,
+          message: "Please select a valid project.",
+        });
+      }
+
+      const project = await Project.findOne({
+        _id: value,
+        companyId,
+        status: "active",
+      }).select("_id projectName projectCode");
+
+      if (!project) {
+        return res.status(404).json({
+          success: false,
+          message: "Active project not found in this company.",
+        });
+      }
+
+      timesheet.projectId = project._id;
+    }
+
+    // =========================================
+    // TASK
+    // =========================================
+
+    if (field === "task") {
+      const allowedTasks = [
+        "Testing",
+        "Development",
+        "Learning",
+        "Graphics",
+        "Management",
+        "Meeting",
+      ];
+
+      if (!allowedTasks.includes(value)) {
+        return res.status(400).json({
+          success: false,
+          message: "Please select a valid task.",
+        });
+      }
+
+      timesheet.task = value;
+    }
+
+    // =========================================
+    // DESCRIPTION
+    // =========================================
+
+    if (field === "description") {
+      if (
+        typeof value !== "string" ||
+        !value.trim()
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Description is required.",
+        });
+      }
+
+      timesheet.description = value.trim();
+    }
+
+    // =========================================
     // ESTIMATED TIME
     // =========================================
 
-    switch (field) {
-      case "estimatedTime": {
-        const minutes = getMinutes(value);
+    if (field === "estimatedTime") {
+      const minutes = getMinutes(value);
 
-        if (minutes === null || minutes <= 0) {
-          return res.status(400).json({
-            success: false,
-            message: "Estimated time must be a positive number of minutes.",
-          });
-        }
-
-        timesheet.estimatedTime = minutes;
-
-        break;
-      }
-      case "idleTime": {
-  const minutes = getMinutes(value);
-
-  if (minutes === null || minutes < 0) {
-    return res.status(400).json({
-      success: false,
-      message: "Idle time must be a non-negative number of minutes.",
-    });
-  }
-
-  timesheet.idleTime = minutes;
-  break;
-}
-
-      default:
+      if (minutes === null || minutes <= 0) {
         return res.status(400).json({
           success: false,
-          message: "Unsupported field.",
+          message:
+            "Estimated time must be a positive number of minutes.",
         });
+      }
+
+      timesheet.estimatedTime = minutes;
     }
 
-    // Save updated timesheet.
+    // =========================================
+    // IDLE TIME
+    // =========================================
+
+    if (field === "idleTime") {
+      const minutes = getMinutes(value);
+
+      if (minutes === null || minutes < 0) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Idle time must be a non-negative number of minutes.",
+        });
+      }
+
+      timesheet.idleTime = minutes;
+    }
+
+    // =========================================
+    // DELAY / FAST REMARK
+    // =========================================
+
+    if (field === "remarks.delayFast") {
+      if (
+        !["", "Delay", "Fast"].includes(value)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid delay/fast remark.",
+        });
+      }
+
+      timesheet.remarks.delayFast = value;
+    }
+
+    // =========================================
+    // REMARKS REASON
+    // =========================================
+
+    if (field === "remarks.reason") {
+      if (typeof value !== "string") {
+        return res.status(400).json({
+          success: false,
+          message: "Reason must be text.",
+        });
+      }
+
+      timesheet.remarks.reason = value.trim();
+    }
+
+    // =========================================
+    // FINAL VALIDATION
+    // =========================================
+
+    if (!timesheet.projectId) {
+      return res.status(400).json({
+        success: false,
+        message: "Project is required.",
+      });
+    }
+
+    // =========================================
+    // FINAL TASK VALIDATION
+    // =========================================
+
+    const allowedTasks = [
+      "Testing",
+      "Development",
+      "Learning",
+      "Graphics",
+      "Management",
+      "Meeting",
+    ];
+
+    if (!allowedTasks.includes(timesheet.task)) {
+      return res.status(400).json({
+        success: false,
+        message: "A valid task must be selected.",
+      });
+    }
+
+    // =========================================
+    // FINAL TASK TYPE VALIDATION
+    // =========================================
+
+    if (
+      !["Project", "Learning", "Training"].includes(
+        timesheet.taskType
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid task type.",
+      });
+    }
+
+    // =========================================
+    // FINAL DESCRIPTION VALIDATION
+    // =========================================
+
+    if (
+      typeof timesheet.description !== "string" ||
+      !timesheet.description.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Description is required.",
+      });
+    }
+
+    // =========================================
+    // RECALCULATE EFFICIENCY
+    // When Estimated Time is changed
+    // on a completed task.
+    // =========================================
+
+    if (
+      field === "estimatedTime" &&
+      timesheet.startTime &&
+      timesheet.endTime
+    ) {
+      try {
+        calculateTaskTime(timesheet);
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          message: error.message,
+        });
+      }
+    }
+
+    // =========================================
+    // REJECTED TIMESHEET RESUBMISSION
+    // =========================================
+
+    if (isRejectedTimesheet) {
+      // Return to approval pending
+      timesheet.approvalStatus = "Pending";
+
+      // Clear current rejection information
+      timesheet.rejectionReason = "";
+      timesheet.rejectedBy = null;
+      timesheet.rejectedAt = null;
+
+      // Reset auditor
+      timesheet.auditedBy = null;
+
+      // Increment resubmission count
+      timesheet.resubmissionCount =
+        (timesheet.resubmissionCount || 0) + 1;
+
+      /*
+        rejectionHistory is intentionally preserved.
+        Previous rejection records remain available.
+      */
+    }
+
+    // =========================================
+    // SAVE
+    // =========================================
+
     await timesheet.save();
 
     return res.status(200).json({
       success: true,
-      message:
-  field === "idleTime"
-    ? "Idle time updated successfully."
-    : "Estimated time updated successfully.",
+      message: isRejectedTimesheet
+        ? "Rejected timesheet updated and resubmitted for approval successfully."
+        : "Timesheet updated successfully.",
       timesheet,
     });
-
   } catch (error) {
     console.error("Edit Timesheet Error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Failed to edit timesheet.",
+      error: error.message,
+    });
+  }
+};
+
+
+// =====================================================
+// GET MY TIMESHEET WEEKLY STATUS — LAST 8 WEEKS
+// Draft / Submitted / Rejected / Approved
+// =====================================================
+
+
+// =====================================================
+// GET MY TIMESHEET WEEKLY STATUS — LAST 8 WEEKS
+// Approved / Rejected / Pending / Updated Pending
+// Incomplete tasks are excluded.
+// =====================================================
+
+export const getMyTimesheetWeeklyStatus = async (req, res) => {
+  try {
+    // =========================================
+    // AUTHENTICATION
+    // =========================================
+
+    if (!isEmployee(req)) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Only employees can access their weekly timesheet status.",
+      });
+    }
+
+    const employeeId = getEmployeeId(req);
+    const companyId = req.user?.companyId;
+
+    if (
+      !isValidObjectId(employeeId) ||
+      !isValidObjectId(companyId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid employee or company ID.",
+      });
+    }
+
+    // =========================================
+    // CURRENT DATE — ASIA/KOLKATA
+    // =========================================
+
+    const todayString = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+
+    const today = new Date(
+      `${todayString}T00:00:00.000Z`
+    );
+
+    // =========================================
+    // CURRENT WEEK START — MONDAY
+    // =========================================
+
+    const currentWeekStart = new Date(today);
+
+    const day = currentWeekStart.getUTCDay();
+
+    const difference = day === 0 ? -6 : 1 - day;
+
+    currentWeekStart.setUTCDate(
+      currentWeekStart.getUTCDate() + difference
+    );
+
+    // =========================================
+    // LAST 8 WEEKS INCLUDING CURRENT WEEK
+    // =========================================
+
+    const startDate = new Date(currentWeekStart);
+
+    startDate.setUTCDate(
+      startDate.getUTCDate() - 7 * 7
+    );
+
+    const endDate = new Date(currentWeekStart);
+
+    endDate.setUTCDate(
+      endDate.getUTCDate() + 7
+    );
+
+    // =========================================
+    // FETCH EMPLOYEE TIMESHEETS
+    // =========================================
+
+    const timesheets = await Timesheet.find({
+      employeeId,
+      companyId,
+      date: {
+        $gte: startDate,
+        $lt: endDate,
+      },
+    })
+      .select(
+        "_id date taskStatus approvalStatus rejectionHistory taskType projectId createdAt"
+      )
+      .populate(
+        "projectId",
+        "projectName projectCode"
+      )
+      .sort({
+        date: -1,
+        createdAt: -1,
+      })
+      .lean();
+
+    // =========================================
+    // CLASSIFY TIMESHEET STATUS
+    // =========================================
+
+    const getTimesheetStatus = (timesheet) => {
+      // Approved
+      if (timesheet.approvalStatus === "Approved") {
+        return "Approved";
+      }
+
+      // Rejected
+      if (timesheet.approvalStatus === "Rejected") {
+        return "Rejected";
+      }
+
+      // Updated Pending
+      // Pending + at least one previous rejection
+      if (
+        timesheet.approvalStatus === "Pending" &&
+        Array.isArray(timesheet.rejectionHistory) &&
+        timesheet.rejectionHistory.length > 0
+      ) {
+        return "Updated Pending";
+      }
+
+      // Normal Pending
+      if (timesheet.approvalStatus === "Pending") {
+        return "Pending";
+      }
+
+      return null;
+    };
+
+    // =========================================
+    // INITIALIZE LAST 8 WEEKS
+    // =========================================
+
+    const weeks = [];
+
+    for (let i = 0; i < 8; i++) {
+      const weekStart = new Date(startDate);
+
+      weekStart.setUTCDate(
+        weekStart.getUTCDate() + i * 7
+      );
+
+      const weekEnd = new Date(weekStart);
+
+      weekEnd.setUTCDate(
+        weekEnd.getUTCDate() + 7
+      );
+
+      weeks.push({
+        weekStart,
+        weekEnd,
+
+        weekLabel: `Week of ${weekStart.toLocaleDateString(
+          "en-GB",
+          {
+            day: "numeric",
+            month: "short",
+            timeZone: "UTC",
+          }
+        )}`,
+
+        status: "No timesheets",
+
+        counts: {
+          approved: 0,
+          rejected: 0,
+          pending: 0,
+          updatedPending: 0,
+        },
+
+        totalTimesheets: 0,
+
+        timesheets: [],
+      });
+    }
+
+    // =========================================
+    // GROUP TIMESHEETS BY WEEK
+    // =========================================
+
+    for (const timesheet of timesheets) {
+      if (!timesheet.date) continue;
+
+      // Incomplete tasks are excluded completely.
+      if (timesheet.taskStatus !== "Completed") {
+        continue;
+      }
+
+      const status = getTimesheetStatus(timesheet);
+
+      if (!status) continue;
+
+      const timesheetDate = new Date(timesheet.date);
+
+      const weekIndex = Math.floor(
+        (
+          timesheetDate.getTime() -
+          startDate.getTime()
+        ) /
+          (7 * 24 * 60 * 60 * 1000)
+      );
+
+      if (weekIndex < 0 || weekIndex >= 8) {
+        continue;
+      }
+
+      const week = weeks[weekIndex];
+
+      week.timesheets.push({
+        ...timesheet,
+        weeklyStatus: status,
+      });
+
+      // Update counts
+      const countKey = {
+        Approved: "approved",
+        Rejected: "rejected",
+        Pending: "pending",
+        "Updated Pending": "updatedPending",
+      }[status];
+
+      week.counts[countKey]++;
+
+      week.totalTimesheets++;
+    }
+
+    // =========================================
+    // DETERMINE WEEKLY STATUS
+    // =========================================
+
+    for (const week of weeks) {
+      const counts = week.counts;
+
+      if (week.totalTimesheets === 0) {
+        week.status = "No timesheets";
+      } else if (counts.rejected > 0) {
+        week.status = "Rejected";
+      } else if (counts.updatedPending > 0) {
+        week.status = "Updated Pending";
+      } else if (counts.pending > 0) {
+        week.status = "Pending";
+      } else {
+        week.status = "Approved";
+      }
+    }
+
+    // =========================================
+    // OVERALL SUMMARY — LAST 8 WEEKS
+    // =========================================
+
+    const summary = {
+      totalTimesheets: 0,
+      approved: 0,
+      rejected: 0,
+      pending: 0,
+      updatedPending: 0,
+    };
+
+    for (const week of weeks) {
+      summary.approved += week.counts.approved;
+      summary.rejected += week.counts.rejected;
+      summary.pending += week.counts.pending;
+      summary.updatedPending +=
+        week.counts.updatedPending;
+    }
+
+    summary.totalTimesheets =
+      summary.approved +
+      summary.rejected +
+      summary.pending +
+      summary.updatedPending;
+
+    // =========================================
+    // RESPONSE
+    // =========================================
+
+    return res.status(200).json({
+      success: true,
+
+      period: "Last 8 weeks",
+
+      startDate: startDate.toISOString().slice(0, 10),
+
+      endDate: new Date(
+        endDate.getTime() - 1
+      )
+        .toISOString()
+        .slice(0, 10),
+
+      summary,
+
+      weeks: weeks.map((week) => ({
+        weekStart: week.weekStart
+          .toISOString()
+          .slice(0, 10),
+
+        weekEnd: new Date(
+          week.weekEnd.getTime() - 1
+        )
+          .toISOString()
+          .slice(0, 10),
+
+        weekLabel: week.weekLabel,
+
+        status: week.status,
+
+        counts: week.counts,
+
+        totalTimesheets: week.totalTimesheets,
+
+        timesheets: week.timesheets,
+      })),
+    });
+  } catch (error) {
+    console.error(
+      "Weekly Timesheet Status Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to fetch weekly timesheet status.",
       error: error.message,
     });
   }

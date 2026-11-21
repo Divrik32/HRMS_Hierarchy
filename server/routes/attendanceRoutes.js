@@ -6,6 +6,7 @@ import {
   getAttendanceByDate,
   getAttendanceByDateRange,
   getAttendanceByMonth,
+  getLast18DaysWorkingReport,
   getMyAttendance,
   updateEmployeeAttendanceTime,
 } from "../controllers/attendanceController.js";
@@ -80,6 +81,11 @@ router.put(
   "/update-employee-time",
   employeeAuth,
   updateEmployeeAttendanceTime
+);
+router.get(
+  "/last-18-days-working-report",
+  employeeAuth,
+  getLast18DaysWorkingReport
 );
 
 export default router;

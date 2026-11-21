@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 const deletedModuleSchema = new mongoose.Schema(
@@ -20,6 +21,21 @@ const deletedModuleSchema = new mongoose.Schema(
       ],
       default: "Not Assigned",
     },
+
+    employees: [
+      {
+        employeeId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Employee",
+          required: true,
+        },
+
+        assignedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
 
     createdAt: Date,
     updatedAt: Date,

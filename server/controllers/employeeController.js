@@ -894,7 +894,14 @@ export const getMyEmployeeProfile = async (req, res) => {
       .select("-password -resetOtp -resetOtpExpire")
       .populate("companyId", "companyName companyType")
       .populate("departmentId", "departmentName")
-      .populate("roleId", "roleName");
+      .populate({
+        path: "roleId",
+        select: "roleName parentRoleId",
+        populate: {
+          path: "parentRoleId",
+          select: "roleName",
+        },
+      });
 
     if (!employee) {
       return res.status(404).json({
@@ -903,10 +910,55 @@ export const getMyEmployeeProfile = async (req, res) => {
       });
     }
 
+    // =========================================
+    // JOINING DATE
+    // createdAt -> March 2022 format
+    // =========================================
+
+    const joiningDate = employee.createdAt
+      ? new Date(employee.createdAt).toLocaleDateString("en-US", {
+          month: "long",
+          year: "numeric",
+        })
+      : "—";
+
+    // =========================================
+    // REPORTS TO
+    // Find employees belonging to Parent Role
+    // =========================================
+
+    const parentRoleId = employee.roleId?.parentRoleId?._id;
+
+    let reportsTo = "—";
+
+    if (parentRoleId) {
+      const parentRoleEmployees = await Employee.find({
+        companyId: employee.companyId._id,
+        roleId: parentRoleId,
+      })
+        .select("name")
+        .sort({ name: 1 })
+        .lean();
+
+      reportsTo = parentRoleEmployees
+        .map((emp) => emp.name)
+        .filter(Boolean)
+        .join(", ") || "—";
+    }
+
+    // =========================================
+    // RESPONSE
+    // =========================================
+
+    const employeeResponse = employee.toObject();
+
+    employeeResponse.joiningDate = joiningDate;
+    employeeResponse.reportsTo = reportsTo;
+
     return res.status(200).json({
       success: true,
       message: "Your profile fetched successfully",
-      employee,
+      employee: employeeResponse,
     });
   } catch (error) {
     console.error("Get My Employee Profile Error:", error);
