@@ -885,31 +885,83 @@ export const resumeTask = async (req, res) => {
 // AUDIT TIMESHEET — APPROVE OR REJECT
 // Only parent / grandparent role can audit.
 // =====================================================
+
 export const auditTimesheet = async (req, res) => {
   try {
-    const { approvalStatus, rejectionReason } = req.body;
     const { id } = req.params;
+    const { approvalStatus, rejectionReason } = req.body;
 
-    const employeeId = getEmployeeId(req);
-    const companyId = getCompanyId(req);
+    const auditorId = getEmployeeId(req);
+    const companyId = req.user?.companyId;
 
-    if (!isEmployee(req)) {
+    // =========================================
+    // AUTHENTICATION
+    // =========================================
+
+    if (!isEmployee(req) || !companyId) {
       return res.status(403).json({
         success: false,
-        message: "Only employees can audit timesheets.",
+        message:
+          "Only employees in the parent or grandparent role can audit timesheets.",
       });
     }
+
+    // =========================================
+    // VALIDATE TIMESHEET ID
+    // =========================================
+
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid timesheet ID.",
+      });
+    }
+
+    // =========================================
+    // VALIDATE APPROVAL STATUS
+    // =========================================
 
     if (!["Approved", "Rejected"].includes(approvalStatus)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid approval status.",
+        message:
+          "Approval status must be Approved or Rejected.",
       });
     }
 
+    // =========================================
+    // VALIDATE AUDITOR ID
+    // =========================================
+
+    if (!isValidObjectId(auditorId)) {
+      return res.status(401).json({
+        success: false,
+        message:
+          "Auditor authentication details are missing.",
+      });
+    }
+
+    // =========================================
+    // VALIDATE COMPANY ID
+    // =========================================
+
+    if (!isValidObjectId(companyId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid company ID.",
+      });
+    }
+
+    // =========================================
+    // REJECTION REASON VALIDATION
+    // =========================================
+
     if (
       approvalStatus === "Rejected" &&
-      !String(rejectionReason || "").trim()
+      (
+        typeof rejectionReason !== "string" ||
+        !rejectionReason.trim()
+      )
     ) {
       return res.status(400).json({
         success: false,
@@ -917,16 +969,9 @@ export const auditTimesheet = async (req, res) => {
       });
     }
 
-    if (
-      !isValidObjectId(id) ||
-      !isValidObjectId(employeeId) ||
-      !isValidObjectId(companyId)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid ID.",
-      });
-    }
+    // =========================================
+    // FIND TIMESHEET
+    // =========================================
 
     const timesheet = await Timesheet.findOne({
       _id: id,
@@ -940,93 +985,175 @@ export const auditTimesheet = async (req, res) => {
       });
     }
 
+    // =========================================
+    // ONLY PENDING TIMESHEETS CAN BE AUDITED
+    // =========================================
+
     if (timesheet.approvalStatus !== "Pending") {
-      return res.status(400).json({
+      return res.status(403).json({
         success: false,
-        message: "Only pending timesheets can be audited.",
+        message:
+          "Only pending timesheets can be audited.",
       });
     }
+
+    // =========================================
+    // TASK COMPLETION VALIDATION
+    // =========================================
 
     if (
       timesheet.taskStatus !== "Completed" ||
       !timesheet.startTime ||
       !timesheet.endTime ||
-      Number(timesheet.totalCompletionTime || 0) <= 0
+      timesheet.totalCompletionTime == null ||
+      timesheet.totalCompletionTime <= 0
     ) {
       return res.status(400).json({
         success: false,
-        message: "Timesheet must be completed before auditing.",
+        message:
+          "Timesheet cannot be audited until the task is completed.",
       });
     }
+
+    // =========================================
+    // FIND AUDITOR
+    // =========================================
 
     const auditor = await Employee.findOne({
-      _id: employeeId,
+      _id: auditorId,
       companyId,
-      isActive: true,
-    });
+      status: "active",
+    }).select("_id roleId companyId");
 
-    const targetEmployee = await Employee.findOne({
+    if (!auditor) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "You are not authorized to audit this timesheet.",
+      });
+    }
+
+    // =========================================
+    // FIND TIMESHEET EMPLOYEE
+    // =========================================
+
+    const timesheetEmployee = await Employee.findOne({
       _id: timesheet.employeeId,
       companyId,
-    });
+    }).select("_id roleId companyId");
 
-    if (!auditor || !targetEmployee) {
+    if (!timesheetEmployee) {
       return res.status(404).json({
         success: false,
-        message: "Employee not found.",
+        message: "Timesheet employee not found.",
       });
     }
 
-    const targetRole = await Role.findById(targetEmployee.roleId);
+    // =========================================
+    // FIND EMPLOYEE ROLE
+    // =========================================
 
-    if (!targetRole) {
-      return res.status(403).json({
+    const employeeRole = await Role.findOne({
+      _id: timesheetEmployee.roleId,
+      companyId,
+    }).select("_id parentRoleId");
+
+    if (!employeeRole) {
+      return res.status(400).json({
         success: false,
-        message: "Employee role not found.",
+        message:
+          "Timesheet employee role not found.",
       });
     }
 
-    const parentRoleId = targetRole.parentRole;
-    let grandParentRoleId = null;
+    // =========================================
+    // FIND PARENT / GRANDPARENT ROLE
+    // =========================================
+
+    const parentRoleId = employeeRole.parentRoleId;
+
+    let grandparentRoleId = null;
 
     if (parentRoleId) {
-      const parentRole = await Role.findById(parentRoleId);
-      grandParentRoleId = parentRole?.parentRole || null;
+      const parentRole = await Role.findOne({
+        _id: parentRoleId,
+        companyId,
+      }).select("_id parentRoleId");
+
+      grandparentRoleId =
+        parentRole?.parentRoleId || null;
     }
 
-    const auditorRoleId = String(auditor.roleId);
+    // =========================================
+    // AUTHORIZED AUDITOR ROLES
+    // =========================================
 
-    const isAuthorized =
-      auditorRoleId === String(parentRoleId) ||
-      auditorRoleId === String(grandParentRoleId);
+    const allowedRoleIds = [
+      parentRoleId,
+      grandparentRoleId,
+    ]
+      .filter(Boolean)
+      .map((roleId) => String(roleId));
 
-    if (!isAuthorized) {
+    const auditorRoleId = auditor.roleId
+      ? String(auditor.roleId)
+      : null;
+
+    if (
+      !auditorRoleId ||
+      !allowedRoleIds.includes(auditorRoleId)
+    ) {
       return res.status(403).json({
         success: false,
-        message: "You are not authorized to audit this timesheet.",
+        message:
+          "Only employees in the parent or grandparent role can audit this timesheet.",
       });
     }
 
+    // =========================================
+    // AUDIT TIMESHEET
+    // =========================================
+
     timesheet.approvalStatus = approvalStatus;
-    timesheet.auditedBy = employeeId;
+    timesheet.auditedBy = auditor._id;
+
+    // =========================================
+    // REJECT TIMESHEET
+    // =========================================
 
     if (approvalStatus === "Rejected") {
-      const reason = String(rejectionReason).trim();
+      const reason = rejectionReason.trim();
 
       timesheet.rejectionReason = reason;
-      timesheet.rejectedBy = employeeId;
+      timesheet.rejectedBy = auditor._id;
       timesheet.rejectedAt = new Date();
+
+      // REJECTION HISTORY
+
+      if (!Array.isArray(timesheet.rejectionHistory)) {
+        timesheet.rejectionHistory = [];
+      }
 
       timesheet.rejectionHistory.push({
         reason,
-        rejectedBy: employeeId,
+        rejectedBy: auditor._id,
         rejectedAt: new Date(),
       });
-    } else {
+    }
+
+    // =========================================
+    // APPROVE TIMESHEET
+    // =========================================
+
+    if (approvalStatus === "Approved") {
       timesheet.rejectionReason = "";
       timesheet.rejectedBy = null;
       timesheet.rejectedAt = null;
     }
+
+    // =========================================
+    // SAVE
+    // =========================================
 
     await timesheet.save();
 
@@ -1045,6 +1172,7 @@ export const auditTimesheet = async (req, res) => {
     });
   }
 };
+
 
 
 // =====================================================

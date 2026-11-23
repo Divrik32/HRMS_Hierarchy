@@ -88,7 +88,7 @@ const burstGlitter = (el) => {
 const headings = [
   "Employee", "Role", "Date", "Task Type", "Project", "Task / Module", "Description",
   "Estimated", "Start Time", "End Time", "Working Time", "Idle Time",
-  "Estimated Error", "Efficiency", "Action",
+  "Employee Justification", "Efficiency", "Action",
 ];
 
 /* =========================================================
@@ -380,8 +380,10 @@ export default function TimesheetApprovals() {
                           <td className="whitespace-nowrap px-4 py-4">{formatDateTime(item.endTime)}</td>
                           <td className="whitespace-nowrap px-4 py-4 font-medium">{formatMinutes(item.totalCompletionTime)}</td>
                           <td className="whitespace-nowrap px-4 py-4">{formatMinutes(item.idleTime)}</td>
-                          <td className="whitespace-nowrap px-4 py-4">
-                            {item.estimatedError == null ? "—" : formatMinutes(item.estimatedError)}
+                          <td className="min-w-[250px] whitespace-normal px-4 py-4 text-slate-700">
+                            {item.employeeResponseHistory?.length > 0
+                              ? item.employeeResponseHistory[item.employeeResponseHistory.length - 1]?.reason || "—"
+                              : "—"}
                           </td>
                           <td className="whitespace-nowrap px-4 py-4 font-bold text-sky-800">
                             {item.efficiency == null ? "—" : `${item.efficiency}%`}

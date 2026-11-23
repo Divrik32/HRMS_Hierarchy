@@ -84,7 +84,7 @@ const PORT = process.env.PORT || 5003;
 const startServer = async () => {
   try {
     await connectDB();
-    await createPersonalProjectsForAllCompanies();
+    // await createPersonalProjectsForAllCompanies();
     await startLeaveAccrualJob();
     app.listen(PORT, () => {
       console.log(`HRMS Server running on port ${PORT}`);

@@ -30,6 +30,10 @@ const blankInline = {
   task: "Development",
   description: "",
   estimatedTime: "",
+  estimatedHours: "",
+  estimatedMinutes: "",
+  idleHours: "0",
+  idleMinutes: "0",
 };
 
 const IST = "Asia/Kolkata";
@@ -193,11 +197,16 @@ export default function Timesheet() {
 
   const [dateFrom, setDateFrom] = useState(getTodayIST);
   const [dateTo, setDateTo] = useState(getTodayIST);
-
+  const [rejectedDateFrom, setRejectedDateFrom] = useState(getTodayIST);
+  const [rejectedDateTo, setRejectedDateTo] = useState(getTodayIST);
   // one inline editor at a time: { id, field, value }
   const [editing, setEditing] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
-
+  const [rejectedEditingId, setRejectedEditingId] = useState("");
+  const [rejectedDrafts, setRejectedDrafts] = useState({});
+  const [rejectionComments, setRejectionComments] = useState({});
+  const [rejectionSubmittingId, setRejectionSubmittingId] = useState("");
+  
   const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -286,6 +295,76 @@ const updateInlineRow = (rowId, key, value) => {
   });
 };
 
+const updateInlineEstimatedTime = (rowId, key, value, row) => {
+  const hours =
+    key === "estimatedHours" ? value : row.form.estimatedHours;
+
+  const minutes =
+    key === "estimatedMinutes" ? value : row.form.estimatedMinutes;
+
+  const estimatedTime =
+    hours !== "" && minutes !== ""
+      ? String(Number(hours) * 60 + Number(minutes))
+      : "";
+
+  setInlineRows((prev) => {
+    const updatedForm = {
+      ...row.form,
+      [key]: value,
+      estimatedTime,
+    };
+
+    if (rowId === "auto-inline-row") {
+      setHideAutoInlineRow(true);
+
+      return [
+        {
+          id: `converted-${Date.now()}`,
+          form: updatedForm,
+          dateTime: new Date().toLocaleString("en-IN", {
+            timeZone: IST,
+          }),
+        },
+      ];
+    }
+
+    return prev.map((item) =>
+      item.id === rowId
+        ? { ...item, form: updatedForm }
+        : item
+    );
+  });
+};
+
+const updateInlineIdleTime = (rowId, key, value, row) => {
+  setInlineRows((prev) => {
+    const updatedForm = {
+      ...row.form,
+      [key]: value,
+    };
+
+    if (rowId === "auto-inline-row") {
+      setHideAutoInlineRow(true);
+
+      return [
+        {
+          id: `converted-${Date.now()}`,
+          form: updatedForm,
+          dateTime: new Date().toLocaleString("en-IN", {
+            timeZone: IST,
+          }),
+        },
+      ];
+    }
+
+    return prev.map((item) =>
+      item.id === rowId
+        ? { ...item, form: updatedForm }
+        : item
+    );
+  });
+};
+
 const removeInlineRow = (rowId) => {
   if (rowId === "auto-inline-row") {
     setHideAutoInlineRow(true);
@@ -299,7 +378,7 @@ const removeInlineRow = (rowId) => {
 
 const handleInlineSave = async (row) => {
   const { form } = row;
-
+  const idleTime = Number(form.idleHours || 0) * 60 + Number(form.idleMinutes || 0);
   if (
     !form.taskType ||
     !form.projectId ||
@@ -350,27 +429,28 @@ const handleInlineSave = async (row) => {
   }
 };
 
-useEffect(() => {
-  if (savingRowId) return;
+const handleInlineEnter = (e, row) => {
+  if (e.key !== "Enter") return;
 
-  const readyRow = inlineRows.find((row) => {
-    const { form } = row;
+  e.preventDefault();
 
-    return (
-      form.taskType &&
-      form.projectId &&
-      form.task &&
-      form.description.trim() &&
-      form.estimatedTime !== "" &&
-      Number.isFinite(Number(form.estimatedTime)) &&
-      Number(form.estimatedTime) >= 0
-    );
-  });
+  const { form } = row;
 
-  if (readyRow) {
-    handleInlineSave(readyRow);
+  // পাঁচটি ফিল্ড পূর্ণ না হলে নীরবে return করবে
+  if (
+    !form.taskType ||
+    !form.projectId ||
+    !form.task ||
+    !form.description.trim() ||
+    form.estimatedTime === "" ||
+    !Number.isFinite(Number(form.estimatedTime)) ||
+    Number(form.estimatedTime) < 0
+  ) {
+    return;
   }
-}, [inlineRows, savingRowId]);
+
+  handleInlineSave(row);
+};
 
   /* ---------- start / break / resume / end ---------- */
   const handleTaskAction = async (item, action) => {
@@ -400,46 +480,266 @@ useEffect(() => {
   };
 
   /* ---------- edit estimated / idle ---------- */
-  const startEdit = (item, field) =>
-    setEditing({
-      id: item._id,
+const startEdit = (item, field) => {
+  const totalMinutes = Number(
+    field === "estimatedTime"
+      ? item.estimatedTime ?? 0
+      : item.idleTime ?? 0
+  );
+
+  setEditing({
+    id: item._id,
+    field,
+    hours: String(Math.floor(totalMinutes / 60)),
+    minutes: String(totalMinutes % 60),
+  });
+};
+
+const saveEdit = async (item) => {
+  const { field, hours, minutes } = editing;
+
+  const isEstimated = field === "estimatedTime";
+
+  if (
+    hours === "" ||
+    minutes === "" ||
+    !Number.isInteger(Number(hours)) ||
+    Number(hours) < 0 ||
+    Number(hours) > 12 ||
+    !Number.isInteger(Number(minutes)) ||
+    Number(minutes) < 0 ||
+    Number(minutes) > 59
+  ) {
+    toast.error(`Please select valid ${isEstimated ? "Estimated" : "Idle"} Time.`);
+    return;
+  }
+
+  const totalMinutes =
+    Number(hours) * 60 + Number(minutes);
+
+  if (isEstimated && totalMinutes <= 0) {
+    toast.error("Estimated time must be greater than zero.");
+    return;
+  }
+
+  setSavingEdit(true);
+
+  try {
+    await api.patch(`/timesheets/${item._id}/edit`, {
       field,
-      value: String(field === "estimatedTime" ? item.estimatedTime ?? "" : item.idleTime ?? 0),
+      value: totalMinutes,
     });
 
-  const saveEdit = async (item) => {
-    const { field, value } = editing;
-    const minutes = Number(value);
-    const isEstimated = field === "estimatedTime";
+    toast.success(
+      isEstimated
+        ? "Estimated time updated successfully."
+        : "Idle time updated successfully."
+    );
 
-    if (
-      !value.trim() ||
-      !Number.isInteger(minutes) ||
-      (isEstimated ? minutes <= 0 : minutes < 0)
-    ) {
-      toast.error(
-        isEstimated
-          ? "Estimated time must be a positive whole number."
-          : "Idle time must be a non-negative whole number."
+    setEditing(null);
+    await loadData();
+  } catch (err) {
+    toast.error(
+      err.response?.data?.message ||
+        (isEstimated
+          ? "Failed to update estimated time."
+          : "Failed to update idle time.")
+    );
+  } finally {
+    setSavingEdit(false);
+  }
+};
+
+  /* ---------- Rejected Timesheet Actions ---------- */
+
+const startRejectedUpdate = (item) => {
+  const estimatedMinutes = Number(item.estimatedTime || 0);
+  const idleMinutes = Number(item.idleTime || 0);
+
+  setRejectedDrafts((prev) => ({
+    ...prev,
+    [item._id]: {
+      estimatedTime: String(item.estimatedTime ?? ""),
+      estimatedHours: String(Math.floor(estimatedMinutes / 60)),
+      estimatedMinutes: String(estimatedMinutes % 60),
+
+      idleTime: String(item.idleTime ?? 0),
+      idleHours: String(Math.floor(idleMinutes / 60)),
+      idleMinutes: String(idleMinutes % 60),
+
+      description: item.description || "",
+    },
+  }));
+
+  setRejectedEditingId(item._id);
+};
+
+const handleRejectedAccept = async (item) => {
+  const draft = rejectedDrafts[item._id];
+
+  if (!draft || rejectedEditingId !== item._id) {
+    toast.error("Please click Update and change a field first.");
+    return;
+  }
+
+if (
+  draft.estimatedHours === "" ||
+  draft.estimatedMinutes === "" ||
+  !Number.isInteger(Number(draft.estimatedHours)) ||
+  Number(draft.estimatedHours) < 0 ||
+  Number(draft.estimatedHours) > 12 ||
+  !Number.isInteger(Number(draft.estimatedMinutes)) ||
+  Number(draft.estimatedMinutes) < 0 ||
+  Number(draft.estimatedMinutes) > 59
+) {
+  toast.error("Please select valid Estimated Time.");
+  return;
+}
+
+  const newEstimatedTime =
+    Number(draft.estimatedHours) * 60 +
+    Number(draft.estimatedMinutes);
+
+if (
+  draft.idleHours === "" ||
+  draft.idleMinutes === "" ||
+  !Number.isInteger(Number(draft.idleHours)) ||
+  Number(draft.idleHours) < 0 ||
+  Number(draft.idleHours) > 12 ||
+  !Number.isInteger(Number(draft.idleMinutes)) ||
+  Number(draft.idleMinutes) < 0 ||
+  Number(draft.idleMinutes) > 59
+) {
+  toast.error("Please select valid Idle Time.");
+  return;
+}
+
+const newIdleTime =
+  Number(draft.idleHours) * 60 +
+  Number(draft.idleMinutes);
+
+  const changes = [];
+
+  if (newEstimatedTime !== Number(item.estimatedTime ?? 0)) {
+    changes.push({
+      field: "estimatedTime",
+      value: newEstimatedTime,
+    });
+  }
+
+  if (newIdleTime !== Number(item.idleTime ?? 0)) {
+    changes.push({
+      field: "idleTime",
+      value: newIdleTime,
+    });
+  }
+
+  if (draft.description.trim() !== (item.description || "")) {
+    changes.push({
+      field: "description",
+      value: draft.description.trim(),
+    });
+  }
+
+  if (changes.length === 0) {
+    toast.error("Please change at least one field before accepting.");
+    return;
+  }
+
+  setRejectionSubmittingId(item._id);
+
+  try {
+    // Description update
+    const descriptionChange = changes.find(
+      (change) => change.field === "description"
+    );
+
+    if (descriptionChange) {
+      await api.patch(`/timesheets/${item._id}/edit`, descriptionChange);
+    }
+
+    // Numeric field updates
+    const numericChanges = changes.filter(
+      (change) => change.field !== "description"
+    );
+
+    for (const change of numericChanges.slice(0, -1)) {
+      await api.patch(`/timesheets/${item._id}/edit`, change);
+    }
+
+    if (numericChanges.length > 0) {
+      const finalChange = numericChanges[numericChanges.length - 1];
+
+      await api.patch(
+        `/timesheets/${item._id}/respond-to-rejection`,
+        {
+          response: "Accepted",
+          field: finalChange.field,
+          value: finalChange.value,
+        }
       );
+    } else {
+      await api.patch(
+        `/timesheets/${item._id}/respond-to-rejection`,
+        { response: "Accepted" }
+      );
+    }
+
+    toast.success("Timesheet updated and resubmitted successfully.");
+
+    setRejectedEditingId("");
+
+    setRejectedDrafts((prev) => {
+      const updated = { ...prev };
+      delete updated[item._id];
+      return updated;
+    });
+
+    await loadData();
+  } catch (err) {
+    toast.error(
+      err.response?.data?.message ||
+        "Failed to update and resubmit timesheet."
+    );
+  } finally {
+    setRejectionSubmittingId("");
+  }
+};
+
+  const handleRejectedComment = async (item) => {
+    const reason = (rejectionComments[item._id] || "").trim();
+
+    if (!reason) {
+      toast.error("Please enter your comment.");
       return;
     }
 
-    setSavingEdit(true);
+    setRejectionSubmittingId(item._id);
+
     try {
-      await api.patch(`/timesheets/${item._id}/edit`, { field, value: minutes });
-      toast.success(
-        isEstimated ? "Estimated time updated successfully." : "Idle time updated successfully."
+      await api.patch(
+        `/timesheets/${item._id}/respond-to-rejection`,
+        {
+          response: "Disagreed",
+          reason,
+        }
       );
-      setEditing(null);
+
+      toast.success("Your comment has been submitted successfully.");
+
+      setRejectionComments((prev) => ({
+        ...prev,
+        [item._id]: "",
+      }));
+
       await loadData();
     } catch (err) {
       toast.error(
         err.response?.data?.message ||
-          (isEstimated ? "Failed to update estimated time." : "Failed to update idle time.")
+          "Failed to submit your comment."
       );
     } finally {
-      setSavingEdit(false);
+      setRejectionSubmittingId("");
     }
   };
 
@@ -475,29 +775,65 @@ const displayedInlineRows = useMemo(() => {
 }, [inlineRows, latestTimesheet, hideAutoInlineRow]);
 
   /* ---------- derived ---------- */
-  const filteredTimesheets = useMemo(() => {
-  return timesheets.filter((item) => {
-    if (!dateFrom && !dateTo) return true;
+const filteredTimesheets = useMemo(() => {
+  return timesheets
+    .filter((item) => {
+      if (!dateFrom && !dateTo) return true;
 
-    if (!item.date) return false;
+      if (!item.date) return false;
 
-    const itemDate = new Date(item.date);
+      const itemDate = new Date(item.date);
 
-    if (Number.isNaN(itemDate.getTime())) return false;
+      if (Number.isNaN(itemDate.getTime())) return false;
 
-    const recordDate = new Intl.DateTimeFormat("en-CA", {
-      timeZone: IST,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(itemDate);
+      const recordDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: IST,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(itemDate);
 
-    if (dateFrom && recordDate < dateFrom) return false;
-    if (dateTo && recordDate > dateTo) return false;
+      if (dateFrom && recordDate < dateFrom) return false;
+      if (dateTo && recordDate > dateTo) return false;
 
-    return true;
-  });
+      return true;
+    })
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
 }, [timesheets, dateFrom, dateTo]);
+
+const rejectedTimesheets = useMemo(() => {
+  return timesheets
+    .filter((item) => {
+      if (item.approvalStatus !== "Rejected") return false;
+      if (!rejectedDateFrom && !rejectedDateTo) return true;
+      if (!item.date) return false;
+
+      const itemDate = new Date(item.date);
+
+      if (Number.isNaN(itemDate.getTime())) return false;
+
+      const recordDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: IST,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(itemDate);
+
+      if (rejectedDateFrom && recordDate < rejectedDateFrom) return false;
+      if (rejectedDateTo && recordDate > rejectedDateTo) return false;
+
+      return true;
+    })
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+}, [timesheets, rejectedDateFrom, rejectedDateTo]);
+
+const visibleTimesheets = useMemo(
+  () =>
+    filteredTimesheets.filter(
+      (item) => item.approvalStatus !== "Rejected"
+    ),
+  [filteredTimesheets]
+);
 
   const stats = useMemo(
     () => ({
@@ -575,7 +911,7 @@ const displayedInlineRows = useMemo(() => {
           <div className="flex flex-col gap-4 border-b border-slate-200 bg-gradient-to-r from-white to-sky-50/60 p-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2 className="font-serif text-xl font-bold text-[#0b2f45]">My Timesheet Records</h2>
-              <p className="text-sm text-slate-600">{filteredTimesheets.length} record(s)</p>
+              <p className="text-sm text-slate-600">{visibleTimesheets.length} record(s)</p>
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
@@ -613,9 +949,9 @@ const displayedInlineRows = useMemo(() => {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[2400px] text-left text-sm text-slate-800">
-              <thead className="bg-gradient-to-r from-[#0b2f45] to-[#14506f] text-xs uppercase tracking-wide text-white">
+          <div className="max-h-[600px] overflow-auto">
+  <table className="w-full min-w-[2400px] text-left text-sm text-slate-800">
+              <thead className="sticky top-0 z-20 bg-gradient-to-r from-[#0b2f45] to-[#14506f] text-xs uppercase tracking-wide text-white">
                 <tr>
                   {headings.map((h) => (
                     <th key={h} className="whitespace-nowrap px-4 py-4 font-semibold">
@@ -626,7 +962,7 @@ const displayedInlineRows = useMemo(() => {
               </thead>
 
               <tbody className="divide-y divide-slate-200">
-                {filteredTimesheets.length === 0 &&
+                {visibleTimesheets.length === 0 &&
   displayedInlineRows.length === 0 && (
                   <tr>
                     <td colSpan={13} className="py-20 text-center text-slate-600">
@@ -636,7 +972,7 @@ const displayedInlineRows = useMemo(() => {
                 )}
 
                 <AnimatePresence initial={false}>
-                  {filteredTimesheets.map((item, index) => {
+                  {visibleTimesheets.map((item, index) => {
                     const locked = item.approvalStatus === "Approved";
                     const project = typeof item.projectId === "object" ? item.projectId?.projectName : "—";
                     const activeBreak =
@@ -665,18 +1001,20 @@ const displayedInlineRows = useMemo(() => {
 
                         <td className="whitespace-nowrap px-4 py-4">
                           <EditableMinutes
-                            editing={isEditing("estimatedTime")}
-                            value={editing?.value ?? ""}
-                            onChange={(v) => setEditing((p) => ({ ...p, value: v }))}
-                            display={formatMinutes(item.estimatedTime)}
-                            min="1"
-                            saving={savingEdit}
-                            canEdit={!locked}
-                            label="estimated time"
-                            onEdit={() => startEdit(item, "estimatedTime")}
-                            onSave={() => saveEdit(item)}
-                            onCancel={() => setEditing(null)}
-                          />
+  editing={isEditing("estimatedTime")}
+  value={editing || {}}
+  onChange={(key, value) =>
+    setEditing((prev) => ({ ...prev, [key]: value }))
+  }
+  display={formatMinutes(item.estimatedTime)}
+  min="1"
+  saving={savingEdit}
+  canEdit={!locked}
+  label="estimated time"
+  onEdit={() => startEdit(item, "estimatedTime")}
+  onSave={() => saveEdit(item)}
+  onCancel={() => setEditing(null)}
+/>
                         </td>
 
                         <td className="whitespace-nowrap px-4 py-4">
@@ -709,18 +1047,20 @@ const displayedInlineRows = useMemo(() => {
 
                         <td className="whitespace-nowrap px-4 py-4">
                           <EditableMinutes
-                            editing={isEditing("idleTime")}
-                            value={editing?.value ?? ""}
-                            onChange={(v) => setEditing((p) => ({ ...p, value: v }))}
-                            display={formatMinutes(item.idleTime)}
-                            min="0"
-                            saving={savingEdit}
-                            canEdit={!locked}
-                            label="idle time"
-                            onEdit={() => startEdit(item, "idleTime")}
-                            onSave={() => saveEdit(item)}
-                            onCancel={() => setEditing(null)}
-                          />
+  editing={isEditing("idleTime")}
+  value={editing || {}}
+  onChange={(key, value) =>
+    setEditing((prev) => ({ ...prev, [key]: value }))
+  }
+  display={formatMinutes(item.idleTime)}
+  min="0"
+  saving={savingEdit}
+  canEdit={!locked}
+  label="idle time"
+  onEdit={() => startEdit(item, "idleTime")}
+  onSave={() => saveEdit(item)}
+  onCancel={() => setEditing(null)}
+/>
                         </td>
 
                         <td className="px-4 py-4 font-semibold">
@@ -771,65 +1111,68 @@ const displayedInlineRows = useMemo(() => {
   </motion.button>
 </td>
 
-      {/* Task Type */}
-      <td className="px-4 py-3">
-        <select
-          value={row.form.taskType}
-          onChange={(e) =>
-            updateInlineRow(row.id, "taskType", e.target.value)
-          }
-          className={`${inputCls} w-full min-w-[160px]`}
-        >
-          <option value="Project">Project</option>
-          <option value="Learning">Learning</option>
-          <option value="Training">Training</option>
-        </select>
-      </td>
+{/* Task Type */}
+<td className="px-4 py-3">
+  <select
+    value={row.form.taskType}
+    onChange={(e) =>
+      updateInlineRow(row.id, "taskType", e.target.value)
+    }
+    onKeyDown={(e) => handleInlineEnter(e, row)}
+    className={`${inputCls} w-full min-w-[160px]`}
+  >
+    <option value="Project">Project</option>
+    <option value="Learning">Learning</option>
+    <option value="Training">Training</option>
+  </select>
+</td>
 
-      {/* Project */}
-      <td className="px-4 py-3">
-        <select
-          value={row.form.projectId}
-          onChange={(e) =>
-            updateInlineRow(row.id, "projectId", e.target.value)
-          }
-          className={`${inputCls} w-full min-w-[260px]`}
-        >
-          <option value="">Select Project</option>
+{/* Project */}
+<td className="px-4 py-3">
+  <select
+    value={row.form.projectId}
+    onChange={(e) =>
+      updateInlineRow(row.id, "projectId", e.target.value)
+    }
+    onKeyDown={(e) => handleInlineEnter(e, row)}
+    className={`${inputCls} w-full min-w-[260px]`}
+  >
+    <option value="">Select Project</option>
 
-          {projects.map((p) => (
-            <option key={p._id} value={p._id}>
-              {p.projectName || p.name}
-            </option>
-          ))}
-        </select>
-      </td>
+    {projects.map((p) => (
+      <option key={p._id} value={p._id}>
+        {p.projectName || p.name}
+      </option>
+    ))}
+  </select>
+</td>
 
       {/* Task */}
-      <td className="px-4 py-3">
-        <select
-          value={row.form.task}
-          onChange={(e) =>
-            updateInlineRow(row.id, "task", e.target.value)
-          }
-          className={`${inputCls} w-full min-w-[180px]`}
-        >
-          {[
-            "Testing",
-            "Development",
-            "Learning",
-            "Graphics",
-            "Management",
-            "Meeting",
-          ].map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-      </td>
+<td className="px-4 py-3">
+  <select
+    value={row.form.task}
+    onChange={(e) =>
+      updateInlineRow(row.id, "task", e.target.value)
+    }
+    onKeyDown={(e) => handleInlineEnter(e, row)}
+    className={`${inputCls} w-full min-w-[180px]`}
+  >
+    {[
+      "Testing",
+      "Development",
+      "Learning",
+      "Graphics",
+      "Management",
+      "Meeting",
+    ].map((t) => (
+      <option key={t} value={t}>
+        {t}
+      </option>
+    ))}
+  </select>
+</td>
 
-      {/* Description */}
+{/* Description */}
 <td className="px-4 py-3">
   <input
     type="text"
@@ -837,50 +1180,124 @@ const displayedInlineRows = useMemo(() => {
     onChange={(e) =>
       updateInlineRow(row.id, "description", e.target.value)
     }
+    onKeyDown={(e) => handleInlineEnter(e, row)}
     placeholder="Enter description"
     className={`${inputCls} w-full min-w-[300px]`}
   />
 </td>
 
-      {/* Estimated Time */}
+{/* Estimated Time */}
 <td className="px-4 py-3">
-  <input
-    type="number"
-    min="0"
-    step="1"
-    value={row.form.estimatedTime}
-    onChange={(e) =>
-      updateInlineRow(row.id, "estimatedTime", e.target.value)
-    }
-    placeholder="Minutes"
-    className={`${inputCls} w-full min-w-[120px]`}
-  />
+  <div className="flex min-w-[220px] items-center gap-2">
+    <select
+      value={row.form.estimatedHours}
+      onChange={(e) =>
+  updateInlineEstimatedTime(
+    row.id,
+    "estimatedHours",
+    e.target.value,
+    row
+  )
+}
+      onKeyDown={(e) => handleInlineEnter(e, row)}
+      className={`${inputCls} w-full`}
+    >
+<option value="">Hour</option>
+{Array.from({ length: 13 }, (_, i) => i).map((hour) => (
+  <option key={hour} value={hour}>
+    {hour} hr
+  </option>
+))}
+    </select>
+
+    <select
+      value={row.form.estimatedMinutes}
+      onChange={(e) =>
+  updateInlineEstimatedTime(
+    row.id,
+    "estimatedMinutes",
+    e.target.value,
+    row
+  )
+}
+      onKeyDown={(e) => handleInlineEnter(e, row)}
+      className={`${inputCls} w-full`}
+    >
+      <option value="">Minute</option>
+{Array.from({ length: 60 }, (_, i) => i).map((minute) => (
+  <option key={minute} value={minute}>
+    {minute} min
+  </option>
+))}
+    </select>
+  </div>
 </td>
 
-{/* Remaining Columns */}
-<td colSpan={7} className="px-4 py-3">
+
+{/* Start, Break, End, Working Time */}
+<td colSpan={4} className="px-4 py-3">
   <div className="flex flex-wrap items-center gap-2">
     {isSaving && (
       <span className="inline-flex items-center gap-2 text-sm font-medium text-sky-700">
         <RefreshCw size={15} className="animate-spin" />
-        Saving automatically...
+        Saving...
       </span>
     )}
 
-{/* Delete */}
-<motion.button
-  type="button"
-  whileHover={{ y: -1 }}
-  whileTap={{ scale: 0.95 }}
-  onClick={() => removeInlineRow(row.id)}
-  disabled={isSaving}
-  className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
->
-  <Trash2 size={15} />
-  Delete
-</motion.button>
+    <motion.button
+      type="button"
+      whileHover={{ y: -1 }}
+      whileTap={{ scale: 0.95 }}
+      onClick={() => removeInlineRow(row.id)}
+      disabled={isSaving}
+      className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+    >
+      <Trash2 size={15} />
+      Delete
+    </motion.button>
   </div>
 </td>
+
+{/* Idle Time */}
+<td className="px-4 py-3">
+  <div className="flex min-w-[220px] items-center gap-2">
+    <select
+      value={row.form.idleHours}
+      disabled={isSaving}
+      onChange={(e) =>
+        updateInlineIdleTime(row.id, "idleHours", e.target.value, row)
+      }
+      onKeyDown={(e) => handleInlineEnter(e, row)}
+      className={`${inputCls} w-full`}
+    >
+      {Array.from({ length: 13 }, (_, i) => i).map((hour) => (
+        <option key={hour} value={hour}>
+          {hour} hr
+        </option>
+      ))}
+    </select>
+
+    <select
+      value={row.form.idleMinutes}
+      disabled={isSaving}
+      onChange={(e) =>
+        updateInlineIdleTime(row.id, "idleMinutes", e.target.value, row)
+      }
+      onKeyDown={(e) => handleInlineEnter(e, row)}
+      className={`${inputCls} w-full`}
+    >
+      {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
+        <option key={minute} value={minute}>
+          {minute} min
+        </option>
+      ))}
+    </select>
+  </div>
+</td>
+
+{/* Efficiency and Task Status */}
+<td colSpan={2} className="px-4 py-3" />
+
     </motion.tr>
   );
 })}
@@ -907,6 +1324,412 @@ const displayedInlineRows = useMemo(() => {
             </table>
           </div>
         </section>
+
+{/* ================= REJECTED RECORDS ================= */}
+
+<section className="overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-[0_20px_50px_-20px_rgba(127,29,29,0.2)]">
+
+  <div className="border-b border-rose-200 bg-gradient-to-r from-rose-50 to-orange-50 p-5">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2 className="font-serif text-xl font-bold text-rose-900">
+          Rejected Records
+        </h2>
+        <p className="text-sm text-rose-700">
+          {rejectedTimesheets.length} rejected record(s)
+        </p>
+      </div>
+
+<div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+  <div className="flex flex-col gap-1.5">
+    <label className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+      From Date
+    </label>
+
+    <input
+      type="date"
+      value={rejectedDateFrom}
+      max={rejectedDateTo || undefined}
+      onChange={(e) => setRejectedDateFrom(e.target.value)}
+      className={`${inputCls} w-full sm:w-44`}
+    />
+  </div>
+
+  <div className="flex flex-col gap-1.5">
+    <label className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+      To Date
+    </label>
+
+    <input
+      type="date"
+      value={rejectedDateTo}
+      min={rejectedDateFrom || undefined}
+      onChange={(e) => setRejectedDateTo(e.target.value)}
+      className={`${inputCls} w-full sm:w-44`}
+    />
+  </div>
+</div>
+    </div>
+  </div>
+
+  {rejectedTimesheets.length === 0 ? (
+    <div className="py-16 text-center text-sm text-slate-500">
+      No rejected timesheets found for the selected date range.
+    </div>
+  ) : (
+    <div className="max-h-[600px] overflow-auto">
+  <table className="w-full min-w-[3000px] text-left text-sm text-slate-800">
+
+        <thead className="sticky top-0 z-20 bg-gradient-to-r from-rose-900 to-rose-700 text-xs uppercase tracking-wide text-white">
+          <tr>
+            {[
+              ...headings,
+              "Rejection Reason",
+              "Action",
+              "Comment",
+            ].map((heading) => (
+              <th
+                key={heading}
+                className="whitespace-nowrap px-4 py-4 font-semibold"
+              >
+                {heading}
+              </th>
+            ))}
+          </tr>
+        </thead>
+
+        <tbody className="divide-y divide-rose-100">
+
+          {rejectedTimesheets.map((item) => {
+            const isEditingRejected = rejectedEditingId === item._id;
+            const isSubmitting = rejectionSubmittingId === item._id;
+
+            const draft = rejectedDrafts[item._id] || {
+              estimatedTime: String(item.estimatedTime ?? ""),
+              idleTime: String(item.idleTime ?? 0),
+            };
+
+            const rejectionHistory = item.rejectionHistory || [];
+
+            const latestRejection =
+              rejectionHistory.length > 0
+                ? rejectionHistory[rejectionHistory.length - 1]
+                : null;
+
+            const latestReason =
+              latestRejection?.reason ||
+              item.rejectionReason ||
+              "No rejection reason available.";
+
+            const project =
+              typeof item.projectId === "object"
+                ? item.projectId?.projectName
+                : "—";
+
+            return (
+              <motion.tr
+                key={item._id}
+                layout="position"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="align-top bg-rose-50/60 transition-colors hover:bg-rose-100/70"
+              >
+
+                {/* Date */}
+                <td className="whitespace-nowrap px-4 py-4 font-medium">
+                  {formatDateTime(item.date)}
+                </td>
+
+                {/* Task Type */}
+                <td className="whitespace-nowrap px-4 py-4">
+                  {item.taskType || "—"}
+                </td>
+
+                {/* Project */}
+                <td className="whitespace-nowrap px-4 py-4">
+                  {project || "—"}
+                </td>
+
+                {/* Task */}
+                <td className="whitespace-nowrap px-4 py-4 font-semibold text-[#0b2f45]">
+                  {item.task || "—"}
+                </td>
+
+                {/* Description */}
+                <td className="min-w-[300px] whitespace-normal px-4 py-4">
+  {isEditingRejected ? (
+    <textarea
+      rows={3}
+      value={draft.description}
+      disabled={isSubmitting}
+      onChange={(e) =>
+        setRejectedDrafts((prev) => ({
+          ...prev,
+          [item._id]: {
+            ...draft,
+            description: e.target.value,
+          },
+        }))
+      }
+      className={`${inputCls} w-full`}
+      placeholder="Update description..."
+    />
+  ) : (
+    <p className="whitespace-pre-wrap">
+      {item.description || "—"}
+    </p>
+  )}
+</td>
+
+                {/* Estimated Time */}
+                <td className="whitespace-nowrap px-4 py-4">
+{isEditingRejected ? (
+  <div className="flex min-w-[220px] items-center gap-2">
+    <select
+      value={draft.estimatedHours}
+      disabled={isSubmitting}
+      onChange={(e) =>
+        setRejectedDrafts((prev) => ({
+          ...prev,
+          [item._id]: {
+            ...draft,
+            estimatedHours: e.target.value,
+          },
+        }))
+      }
+      className={`${inputCls} w-full`}
+    >
+{Array.from({ length: 13 }, (_, i) => i).map((hour) => (
+  <option key={hour} value={hour}>
+    {hour} hr
+  </option>
+))}
+    </select>
+
+    <select
+      value={draft.estimatedMinutes}
+      disabled={isSubmitting}
+      onChange={(e) =>
+        setRejectedDrafts((prev) => ({
+          ...prev,
+          [item._id]: {
+            ...draft,
+            estimatedMinutes: e.target.value,
+          },
+        }))
+      }
+      className={`${inputCls} w-full`}
+    >
+      {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
+  <option key={minute} value={minute}>
+    {minute} min
+  </option>
+))}
+    </select>
+  </div>
+) : (
+  <span className="font-semibold">
+    {formatMinutes(item.estimatedTime)}
+  </span>
+)}
+                </td>
+
+                {/* Start */}
+                <td className="whitespace-nowrap px-4 py-4">
+                  {formatTime(item.startTime)}
+                </td>
+
+                {/* Break */}
+                <td className="whitespace-nowrap px-4 py-4">
+                  {item.breakTime?.startTime
+                    ? formatTime(item.breakTime.startTime)
+                    : "—"}
+                </td>
+
+                {/* End */}
+                <td className="whitespace-nowrap px-4 py-4">
+                  {formatTime(item.endTime)}
+                </td>
+
+                {/* Working Time */}
+                <td className="whitespace-nowrap px-4 py-4 font-medium">
+                  {formatMinutes(item.totalCompletionTime)}
+                </td>
+
+                {/* Idle Time */}
+<td className="whitespace-nowrap px-4 py-4">
+  {isEditingRejected ? (
+    <div className="flex min-w-[220px] items-center gap-2">
+      <select
+        value={draft.idleHours}
+        disabled={isSubmitting}
+        onChange={(e) =>
+          setRejectedDrafts((prev) => ({
+            ...prev,
+            [item._id]: {
+              ...draft,
+              idleHours: e.target.value,
+            },
+          }))
+        }
+        className={`${inputCls} w-full`}
+      >
+        {Array.from({ length: 13 }, (_, i) => i).map((hour) => (
+          <option key={hour} value={hour}>
+            {hour} hr
+          </option>
+        ))}
+      </select>
+
+      <select
+        value={draft.idleMinutes}
+        disabled={isSubmitting}
+        onChange={(e) =>
+          setRejectedDrafts((prev) => ({
+            ...prev,
+            [item._id]: {
+              ...draft,
+              idleMinutes: e.target.value,
+            },
+          }))
+        }
+        className={`${inputCls} w-full`}
+      >
+        {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
+          <option key={minute} value={minute}>
+            {minute} min
+          </option>
+        ))}
+      </select>
+    </div>
+  ) : (
+    <span className="font-semibold">
+      {formatMinutes(item.idleTime)}
+    </span>
+  )}
+</td>
+
+                {/* Efficiency */}
+                <td className="whitespace-nowrap px-4 py-4 font-semibold">
+                  {item.efficiency == null
+                    ? "—"
+                    : `${item.efficiency}%`}
+                </td>
+
+                {/* Task Status */}
+                <td className="whitespace-nowrap px-4 py-4">
+                  <Chip className={getStatusClass("Rejected")}>
+                    Rejected
+                  </Chip>
+                </td>
+
+                {/* Latest Rejection Reason */}
+                <td className="min-w-[280px] whitespace-normal px-4 py-4">
+                  <div className="rounded-lg border border-rose-200 bg-white p-3">
+                    <p className="whitespace-pre-wrap text-sm text-rose-900">
+                      {latestReason}
+                    </p>
+
+                    {latestRejection?.rejectedAt && (
+                      <p className="mt-2 text-xs text-slate-500">
+                        {formatDateTime(latestRejection.rejectedAt)}
+                      </p>
+                    )}
+                  </div>
+                </td>
+
+                {/* Action */}
+                <td className="whitespace-nowrap px-4 py-4">
+                  <div className="flex items-center gap-2">
+
+                    <button
+                      type="button"
+                      onClick={() => handleRejectedAccept(item)}
+                      disabled={isSubmitting}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isSubmitting ? (
+                        <RefreshCw size={13} className="animate-spin" />
+                      ) : (
+                        <CheckCircle2 size={13} />
+                      )}
+                      Accept
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isEditingRejected) {
+                          setRejectedEditingId("");
+                        } else {
+                          startRejectedUpdate(item);
+                        }
+                      }}
+                      disabled={isSubmitting}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isEditingRejected ? (
+                        <X size={13} />
+                      ) : (
+                        <Pencil size={13} />
+                      )}
+                      {isEditingRejected ? "Cancel" : "Update"}
+                    </button>
+
+                  </div>
+
+                  {isEditingRejected && (
+                    <p className="mt-2 max-w-[190px] whitespace-normal text-xs text-slate-500">
+                      Update Estimated Time, Idle Time or Description, then click Accept.
+                    </p>
+                  )}
+                </td>
+
+                {/* Comment */}
+                <td className="min-w-[280px] px-4 py-4">
+                  <input
+                    type="text"
+                    value={rejectionComments[item._id] || ""}
+                    disabled={isSubmitting}
+                    onChange={(e) =>
+                      setRejectionComments((prev) => ({
+                        ...prev,
+                        [item._id]: e.target.value,
+                      }))
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleRejectedComment(item);
+                      }
+                    }}
+                    placeholder="Write your disagreement..."
+                    className={`${inputCls} w-full`}
+                  />
+
+                  <p className="mt-1.5 text-xs text-slate-500">
+                    Press Enter to submit your comment.
+                  </p>
+
+                  {isSubmitting && (
+                    <span className="mt-2 inline-flex items-center gap-1 text-xs text-rose-700">
+                      <RefreshCw size={12} className="animate-spin" />
+                      Submitting...
+                    </span>
+                  )}
+                </td>
+
+              </motion.tr>
+            );
+          })}
+
+        </tbody>
+      </table>
+    </div>
+  )}
+
+</section>
+
       </motion.div>
     </div>
   );
@@ -967,21 +1790,48 @@ function Chip({ className, children }) {
 }
 
 function EditableMinutes({
-  editing, value, onChange, display, min, saving, canEdit, label, onEdit, onSave, onCancel,
+  editing,
+  value,
+  onChange,
+  display,
+  min,
+  saving,
+  canEdit,
+  label,
+  onEdit,
+  onSave,
+  onCancel,
 }) {
   if (editing) {
     return (
-      <div className="flex items-center gap-2">
-        <input
-          type="number"
-          min={min}
-          step="1"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+      <div className="flex min-w-[220px] items-center gap-2">
+        <select
+          value={value.hours ?? ""}
+          onChange={(e) => onChange("hours", e.target.value)}
           disabled={saving}
           autoFocus
-          className={`${inputCls} w-20 !px-2 !py-1.5`}
-        />
+          className={`${inputCls} w-full`}
+        >
+          {Array.from({ length: 13 }, (_, i) => i).map((hour) => (
+            <option key={hour} value={hour}>
+              {hour} hr
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={value.minutes ?? ""}
+          onChange={(e) => onChange("minutes", e.target.value)}
+          disabled={saving}
+          className={`${inputCls} w-full`}
+        >
+          {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
+            <option key={minute} value={minute}>
+              {minute} min
+            </option>
+          ))}
+        </select>
+
         <motion.button
           whileTap={{ scale: 0.9 }}
           type="button"
@@ -990,8 +1840,13 @@ function EditableMinutes({
           title={`Save ${label}`}
           className="rounded-lg bg-emerald-100 p-1.5 text-emerald-700 hover:bg-emerald-200 disabled:opacity-50"
         >
-          {saving ? <RefreshCw size={15} className="animate-spin" /> : <Check size={16} />}
+          {saving ? (
+            <RefreshCw size={15} className="animate-spin" />
+          ) : (
+            <Check size={16} />
+          )}
         </motion.button>
+
         <motion.button
           whileTap={{ scale: 0.9 }}
           type="button"
@@ -1009,6 +1864,7 @@ function EditableMinutes({
   return (
     <div className="flex items-center gap-2">
       <span className="font-semibold text-slate-800">{display}</span>
+
       {canEdit && (
         <button
           type="button"
