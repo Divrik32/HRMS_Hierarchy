@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  Trash2,
   RotateCcw,
   Pencil,
   Check,
@@ -32,6 +33,13 @@ const blankInline = {
 };
 
 const IST = "Asia/Kolkata";
+const getTodayIST = () =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: IST,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 
 const formatDateTime = (value) => {
   if (!value) return "—";
@@ -159,7 +167,7 @@ const burstGlitter = (el) => {
 const headings = [
   "Date", "Task Type", "Project", "Task / Module", "Description", "Estimated",
   "Start", "Break", "End", "Working Time", "Idle Time", "Efficiency",
-  "Task Status", "Approval", "Audited By", "Rejection Reason",
+  "Task Status"
 ];
 
 const filters = ["All", "Pending", "Updated Pending", "Approved", "Rejected"];
@@ -179,13 +187,12 @@ export default function Timesheet() {
   const [saving, setSaving] = useState(false);
   const [actionId, setActionId] = useState("");
   const [error, setError] = useState("");
+  const [hideAutoInlineRow, setHideAutoInlineRow] = useState(false);
+  const [inlineRows, setInlineRows] = useState([]);
+  const [savingRowId, setSavingRowId] = useState("");
 
-  const [showInlineRow, setShowInlineRow] = useState(false);
-  const [inlineForm, setInlineForm] = useState(blankInline);
-  const [inlineDateTime, setInlineDateTime] = useState("");
-
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
+  const [dateFrom, setDateFrom] = useState(getTodayIST);
+  const [dateTo, setDateTo] = useState(getTodayIST);
 
   // one inline editor at a time: { id, field, value }
   const [editing, setEditing] = useState(null);
@@ -201,6 +208,7 @@ export default function Timesheet() {
         api.get("/timesheets/projects"),
       ]);
       setTimesheets(timesheetRes.data?.timesheets || []);
+      setHideAutoInlineRow(false);
       setProjects(projectRes.data?.projects || []);
     } catch (err) {
       setError(
@@ -216,54 +224,153 @@ export default function Timesheet() {
   }, [loadData]);
 
   /* ---------- create ---------- */
-  const openInlineRow = () => {
-    setInlineDateTime(new Date().toLocaleString("en-IN", { timeZone: IST }));
-    setInlineForm(blankInline);
-    setShowInlineRow(true);
-  };
+  /* ---------- Inline Rows ---------- */
 
-  const handleInlineSave = async (btn) => {
-    try {
-      if (!inlineForm.taskType) return toast.error("Please select task type.");
-      if (!inlineForm.projectId) return toast.error("Please select a project.");
-      if (!inlineForm.task) return toast.error("Please select a task.");
-      if (!inlineForm.description.trim()) return toast.error("Please enter description.");
-      if (
-        inlineForm.estimatedTime === "" ||
-        Number(inlineForm.estimatedTime) < 0 ||
-        !Number.isFinite(Number(inlineForm.estimatedTime))
-      )
-        return toast.error("Please enter a valid estimated time.");
+const createInlineRow = () => ({
+  id: `${Date.now()}-${Math.random()}`,
+  form: { ...blankInline },
+  dateTime: new Date().toLocaleString("en-IN", {
+    timeZone: IST,
+  }),
+});
 
-      burstGlitter(btn);
-      setSaving(true);
+const addInlineRow = (currentRow = null) => {
+  const newRow = createInlineRow();
 
-      await api.post("/timesheets", {
-        taskType: inlineForm.taskType,
-        projectId: inlineForm.projectId,
-        task: inlineForm.task,
-        description: inlineForm.description.trim(),
-        estimatedTime: Number(inlineForm.estimatedTime),
-        startTime: null,
-        endTime: null,
-        breakTime: null,
-        totalCompletionTime: null,
-        efficiency: null,
-        idleTime: 0,
-        taskStatus: "Not Started",
-        approvalStatus: "Pending",
-      });
-
-      toast.success("Timesheet created successfully.");
-      setShowInlineRow(false);
-      setInlineForm(blankInline);
-      await loadData();
-    } catch (err) {
-      toast.error(err?.response?.data?.message || "Failed to create timesheet.");
-    } finally {
-      setSaving(false);
+  setInlineRows((prev) => {
+    if (currentRow?.id === "auto-inline-row") {
+      return [
+        {
+          ...currentRow,
+          id: `converted-${Date.now()}`,
+        },
+        newRow,
+      ];
     }
-  };
+
+    return [...prev, newRow];
+  });
+};
+
+const updateInlineRow = (rowId, key, value) => {
+  setInlineRows((prev) => {
+    // Auto-generated rowকে state-এর মধ্যে নিয়ে আসা
+    if (rowId === "auto-inline-row") {
+      setHideAutoInlineRow(true);
+
+      return [
+        {
+          id: `converted-${Date.now()}`,
+          form: {
+            ...blankInline,
+            [key]: value,
+          },
+          dateTime: new Date().toLocaleString("en-IN", {
+            timeZone: IST,
+          }),
+        },
+      ];
+    }
+
+    return prev.map((row) =>
+      row.id === rowId
+        ? {
+            ...row,
+            form: {
+              ...row.form,
+              [key]: value,
+            },
+          }
+        : row
+    );
+  });
+};
+
+const removeInlineRow = (rowId) => {
+  if (rowId === "auto-inline-row") {
+    setHideAutoInlineRow(true);
+    return;
+  }
+
+  setInlineRows((prev) =>
+    prev.filter((row) => row.id !== rowId)
+  );
+};
+
+const handleInlineSave = async (row) => {
+  const { form } = row;
+
+  if (
+    !form.taskType ||
+    !form.projectId ||
+    !form.task ||
+    !form.description.trim() ||
+    form.estimatedTime === "" ||
+    !Number.isFinite(Number(form.estimatedTime)) ||
+    Number(form.estimatedTime) < 0
+  ) {
+    return;
+  }
+
+  if (savingRowId) return;
+
+  setSavingRowId(row.id);
+
+  try {
+    await api.post("/timesheets", {
+      taskType: form.taskType,
+      projectId: form.projectId,
+      task: form.task,
+      description: form.description.trim(),
+      estimatedTime: Number(form.estimatedTime),
+      startTime: null,
+      endTime: null,
+      breakTime: null,
+      totalCompletionTime: null,
+      efficiency: null,
+      idleTime: 0,
+      taskStatus: "Not Started",
+      approvalStatus: "Pending",
+    });
+
+    toast.success("Timesheet created successfully.");
+
+    setInlineRows((prev) =>
+      prev.filter((item) => item.id !== row.id)
+    );
+
+    await loadData();
+  } catch (err) {
+    toast.error(
+      err?.response?.data?.message ||
+        "Failed to create timesheet."
+    );
+  } finally {
+    setSavingRowId("");
+  }
+};
+
+useEffect(() => {
+  if (savingRowId) return;
+
+  const readyRow = inlineRows.find((row) => {
+    const { form } = row;
+
+    return (
+      form.taskType &&
+      form.projectId &&
+      form.task &&
+      form.description.trim() &&
+      form.estimatedTime !== "" &&
+      Number.isFinite(Number(form.estimatedTime)) &&
+      Number(form.estimatedTime) >= 0
+    );
+  });
+
+  if (readyRow) {
+    handleInlineSave(readyRow);
+  }
+}, [inlineRows, savingRowId]);
 
   /* ---------- start / break / resume / end ---------- */
   const handleTaskAction = async (item, action) => {
@@ -336,28 +443,61 @@ export default function Timesheet() {
     }
   };
 
+  const latestTimesheet = useMemo(() => {
+  if (!timesheets.length) return null;
+
+  return [...timesheets].sort(
+    (a, b) => new Date(b.date) - new Date(a.date)
+  )[0];
+}, [timesheets]);
+
+const displayedInlineRows = useMemo(() => {
+  if (inlineRows.length > 0) {
+    return inlineRows;
+  }
+
+  if (
+    latestTimesheet?.taskStatus === "Completed" &&
+    !hideAutoInlineRow
+  ) {
+    return [
+      {
+        id: "auto-inline-row",
+        form: { ...blankInline },
+        dateTime: new Date().toLocaleString("en-IN", {
+          timeZone: IST,
+        }),
+      },
+    ];
+  }
+
+  return [];
+}, [inlineRows, latestTimesheet, hideAutoInlineRow]);
+
   /* ---------- derived ---------- */
   const filteredTimesheets = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return timesheets.filter((item) => {
-      const status = item.approvalStatus || "Pending";
-      const isUpdatedPending = status === "Pending" && Number(item.resubmissionCount || 0) > 0;
-      const matchesStatus =
-        statusFilter === "All" ||
-        (statusFilter === "Updated Pending" ? isUpdatedPending : status === statusFilter);
+  return timesheets.filter((item) => {
+    if (!dateFrom && !dateTo) return true;
 
-      const projectName =
-        typeof item.projectId === "object" ? item.projectId?.projectName || "" : "";
+    if (!item.date) return false;
 
-      const matchesSearch =
-        !term ||
-        [item.task, item.description, projectName, item.taskType, item.remarks?.reason].some(
-          (v) => String(v || "").toLowerCase().includes(term)
-        );
+    const itemDate = new Date(item.date);
 
-      return matchesStatus && matchesSearch;
-    });
-  }, [timesheets, search, statusFilter]);
+    if (Number.isNaN(itemDate.getTime())) return false;
+
+    const recordDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: IST,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(itemDate);
+
+    if (dateFrom && recordDate < dateFrom) return false;
+    if (dateTo && recordDate > dateTo) return false;
+
+    return true;
+  });
+}, [timesheets, dateFrom, dateTo]);
 
   const stats = useMemo(
     () => ({
@@ -377,9 +517,6 @@ export default function Timesheet() {
       </div>
     );
   }
-
-  const setInline = (key) => (e) =>
-    setInlineForm((prev) => ({ ...prev, [key]: e.target.value }));
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 via-white to-sky-50 p-4 sm:p-6 lg:p-8">
@@ -409,31 +546,6 @@ export default function Timesheet() {
                 Create tasks and track your working time.
               </p>
             </div>
-
-            <div className="flex flex-col items-start gap-4 lg:items-end">
-              <div className="flex gap-3">
-                <motion.button
-                  whileHover={{ y: -2 }}
-                  whileTap={{ scale: 0.96 }}
-                  onClick={loadData}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/40 bg-[#0b2f45]/60 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur transition hover:bg-[#0b2f45]"
-                >
-                  <RefreshCw size={16} /> Refresh
-                </motion.button>
-
-                <motion.button
-                  type="button"
-                  whileHover={{ y: -2, scale: 1.03 }}
-                  whileTap={{ scale: 0.96 }}
-                  onClick={openInlineRow}
-                  className="relative inline-flex items-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400 px-5 py-2.5 text-sm font-bold text-[#0b2f45] shadow-[0_8px_24px_-6px_rgba(251,191,36,0.8)]"
-                >
-                  <span className="ts-anim pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-white/60 blur-md [animation:tsShimmer_2.8s_ease-in-out_infinite]" />
-                  <Plus size={16} className="relative" />
-                  <span className="relative">New Timesheet</span>
-                </motion.button>
-              </div>
-            </div>
           </div>
 
           <div
@@ -460,44 +572,44 @@ export default function Timesheet() {
 
         {/* ================= TABLE ================= */}
         <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_20px_50px_-20px_rgba(15,42,67,0.35)]">
-          <div className="flex flex-col justify-between gap-4 border-b border-slate-200 bg-gradient-to-r from-white to-sky-50/60 p-5 lg:flex-row lg:items-center">
+          <div className="flex flex-col gap-4 border-b border-slate-200 bg-gradient-to-r from-white to-sky-50/60 p-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2 className="font-serif text-xl font-bold text-[#0b2f45]">My Timesheet Records</h2>
               <p className="text-sm text-slate-600">{filteredTimesheets.length} record(s)</p>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <div className="relative">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search timesheets..."
-                  className={`${inputCls} w-full pl-9 sm:w-60`}
-                />
-              </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
+<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-2">
+  <div className="flex flex-col gap-1.5">
+    <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+      From Date
+    </label>
+    <div className="relative">
+      <input
+        type="date"
+        value={dateFrom}
+        max={dateTo || undefined}
+        onChange={(e) => setDateFrom(e.target.value)}
+        className={`${inputCls} w-full sm:w-48`}
+      />
+    </div>
+  </div>
 
-              <div className="flex flex-wrap gap-1.5 rounded-xl bg-slate-100 p-1">
-                {filters.map((status) => (
-                  <button
-                    key={status}
-                    type="button"
-                    onClick={() => setStatusFilter(status)}
-                    className={`relative rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                      statusFilter === status ? "text-white" : "text-slate-700 hover:text-[#0b2f45]"
-                    }`}
-                  >
-                    {statusFilter === status && (
-                      <motion.span
-                        layoutId="filterPill"
-                        transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                        className="absolute inset-0 rounded-lg bg-gradient-to-r from-[#0b2f45] to-[#14506f] shadow-md"
-                      />
-                    )}
-                    <span className="relative">{status}</span>
-                  </button>
-                ))}
-              </div>
+  <div className="flex flex-col gap-1.5">
+    <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+      To Date
+    </label>
+    <div className="relative">
+      <input
+        type="date"
+        value={dateTo}
+        min={dateFrom || undefined}
+        onChange={(e) => setDateTo(e.target.value)}
+        className={`${inputCls} w-full sm:w-48`}
+      />
+    </div>
+  </div>
+</div>
             </div>
           </div>
 
@@ -514,106 +626,16 @@ export default function Timesheet() {
               </thead>
 
               <tbody className="divide-y divide-slate-200">
-                {filteredTimesheets.length === 0 && !showInlineRow && (
+                {filteredTimesheets.length === 0 &&
+  displayedInlineRows.length === 0 && (
                   <tr>
-                    <td colSpan={16} className="py-20 text-center text-slate-600">
+                    <td colSpan={13} className="py-20 text-center text-slate-600">
                       No timesheets found.
                     </td>
                   </tr>
                 )}
 
                 <AnimatePresence initial={false}>
-                  {showInlineRow && (
-                    <motion.tr
-                      key="inline-row"
-                      initial={{ opacity: 0, y: -12 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -12 }}
-                      transition={{ duration: 0.3 }}
-                      className="bg-gradient-to-r from-sky-50 to-amber-50"
-                    >
-                      <td className="whitespace-nowrap px-4 py-3 shadow-[inset_4px_0_0_0_#f59e0b]">
-                        <div className="text-sm font-semibold text-slate-800">{inlineDateTime}</div>
-                        <div className="text-xs font-medium text-sky-700">New Entry</div>
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <select value={inlineForm.taskType} onChange={setInline("taskType")} className={`${inputCls} w-full min-w-[160px]`}>
-                          <option value="Project">Project</option>
-                          <option value="Learning">Learning</option>
-                          <option value="Training">Training</option>
-                        </select>
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <select value={inlineForm.projectId} onChange={setInline("projectId")} className={`${inputCls} w-full min-w-[260px]`}>
-                          <option value="">Select Project</option>
-                          {projects.map((p) => (
-                            <option key={p._id} value={p._id}>
-                              {p.projectName || p.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <select value={inlineForm.task} onChange={setInline("task")} className={`${inputCls} w-full min-w-[180px]`}>
-                          {["Testing", "Development", "Learning", "Graphics", "Management", "Meeting"].map((t) => (
-                            <option key={t} value={t}>{t}</option>
-                          ))}
-                        </select>
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <input
-                          type="text"
-                          value={inlineForm.description}
-                          onChange={setInline("description")}
-                          placeholder="Enter description"
-                          className={`${inputCls} w-full min-w-[300px]`}
-                        />
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <input
-                          type="number"
-                          min="0"
-                          value={inlineForm.estimatedTime}
-                          onChange={setInline("estimatedTime")}
-                          placeholder="Minutes"
-                          className={`${inputCls} w-full min-w-[120px]`}
-                        />
-                      </td>
-
-                      <td colSpan={10} className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <motion.button
-                            type="button"
-                            whileHover={{ y: -1 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={(e) => handleInlineSave(e.currentTarget)}
-                            disabled={saving}
-                            className="relative inline-flex items-center gap-1.5 overflow-hidden rounded-lg bg-gradient-to-r from-emerald-700 to-emerald-500 px-5 py-2 text-sm font-semibold text-white shadow-[0_6px_18px_-6px_rgba(16,185,129,0.9)] disabled:opacity-60"
-                          >
-                            <span className="ts-anim pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-white/40 blur-md [animation:tsShimmer_2.4s_ease-in-out_infinite]" />
-                            {saving ? <RefreshCw size={15} className="relative animate-spin" /> : <Check size={15} className="relative" />}
-                            <span className="relative">{saving ? "Saving..." : "Save"}</span>
-                          </motion.button>
-
-                          <motion.button
-                            type="button"
-                            whileHover={{ y: -1 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => setShowInlineRow(false)}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-                          >
-                            <X size={15} /> Cancel
-                          </motion.button>
-                        </div>
-                      </td>
-                    </motion.tr>
-                  )}
-
                   {filteredTimesheets.map((item, index) => {
                     const locked = item.approvalStatus === "Approved";
                     const project = typeof item.projectId === "object" ? item.projectId?.projectName : "—";
@@ -710,19 +732,177 @@ export default function Timesheet() {
                             {item.taskStatus || "Not Started"}
                           </Chip>
                         </td>
-                        <td className="px-4 py-4">
-                          <Chip className={getStatusClass(item.approvalStatus)}>
-                            {item.approvalStatus || "Pending"}
-                          </Chip>
-                        </td>
-                        <td className="px-4 py-4">{item.auditedBy?.name || "—"}</td>
-                        <td className="max-w-64 whitespace-normal px-4 py-4 font-medium text-rose-700">
-                          {item.rejectionReason || "—"}
-                        </td>
                       </motion.tr>
                     );
                   })}
+                  {displayedInlineRows.map((row, rowIndex) => {
+  const isAutoRow = row.id === "auto-inline-row";
+  const isSaving = savingRowId === row.id;
+
+  return (
+    <motion.tr
+      key={row.id}
+      initial={{ opacity: 0, y: -12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -12 }}
+      transition={{ duration: 0.3 }}
+      className="bg-gradient-to-r from-sky-50 to-amber-50"
+    >
+{/* Date */}
+<td className="whitespace-nowrap px-4 py-3 shadow-[inset_4px_0_0_0_#f59e0b]">
+  <div className="text-sm font-semibold text-slate-800">
+    {row.dateTime}
+  </div>
+
+  <div className="text-xs font-medium text-sky-700">
+    New Entry
+  </div>
+
+  <motion.button
+    type="button"
+    whileHover={{ y: -1 }}
+    whileTap={{ scale: 0.95 }}
+    onClick={() => addInlineRow(row)}
+    disabled={isSaving}
+    className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-sky-700 to-sky-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:from-sky-800 hover:to-sky-600 disabled:opacity-50"
+  >
+    <Plus size={14} />
+    Add
+  </motion.button>
+</td>
+
+      {/* Task Type */}
+      <td className="px-4 py-3">
+        <select
+          value={row.form.taskType}
+          onChange={(e) =>
+            updateInlineRow(row.id, "taskType", e.target.value)
+          }
+          className={`${inputCls} w-full min-w-[160px]`}
+        >
+          <option value="Project">Project</option>
+          <option value="Learning">Learning</option>
+          <option value="Training">Training</option>
+        </select>
+      </td>
+
+      {/* Project */}
+      <td className="px-4 py-3">
+        <select
+          value={row.form.projectId}
+          onChange={(e) =>
+            updateInlineRow(row.id, "projectId", e.target.value)
+          }
+          className={`${inputCls} w-full min-w-[260px]`}
+        >
+          <option value="">Select Project</option>
+
+          {projects.map((p) => (
+            <option key={p._id} value={p._id}>
+              {p.projectName || p.name}
+            </option>
+          ))}
+        </select>
+      </td>
+
+      {/* Task */}
+      <td className="px-4 py-3">
+        <select
+          value={row.form.task}
+          onChange={(e) =>
+            updateInlineRow(row.id, "task", e.target.value)
+          }
+          className={`${inputCls} w-full min-w-[180px]`}
+        >
+          {[
+            "Testing",
+            "Development",
+            "Learning",
+            "Graphics",
+            "Management",
+            "Meeting",
+          ].map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      </td>
+
+      {/* Description */}
+<td className="px-4 py-3">
+  <input
+    type="text"
+    value={row.form.description}
+    onChange={(e) =>
+      updateInlineRow(row.id, "description", e.target.value)
+    }
+    placeholder="Enter description"
+    className={`${inputCls} w-full min-w-[300px]`}
+  />
+</td>
+
+      {/* Estimated Time */}
+<td className="px-4 py-3">
+  <input
+    type="number"
+    min="0"
+    step="1"
+    value={row.form.estimatedTime}
+    onChange={(e) =>
+      updateInlineRow(row.id, "estimatedTime", e.target.value)
+    }
+    placeholder="Minutes"
+    className={`${inputCls} w-full min-w-[120px]`}
+  />
+</td>
+
+{/* Remaining Columns */}
+<td colSpan={7} className="px-4 py-3">
+  <div className="flex flex-wrap items-center gap-2">
+    {isSaving && (
+      <span className="inline-flex items-center gap-2 text-sm font-medium text-sky-700">
+        <RefreshCw size={15} className="animate-spin" />
+        Saving automatically...
+      </span>
+    )}
+
+{/* Delete */}
+<motion.button
+  type="button"
+  whileHover={{ y: -1 }}
+  whileTap={{ scale: 0.95 }}
+  onClick={() => removeInlineRow(row.id)}
+  disabled={isSaving}
+  className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+>
+  <Trash2 size={15} />
+  Delete
+</motion.button>
+  </div>
+</td>
+    </motion.tr>
+  );
+})}
                 </AnimatePresence>
+                {displayedInlineRows.length === 0 && (
+  <tr>
+    <td colSpan={13} className="px-4 py-4">
+      <div className="flex justify-start">
+        <motion.button
+          type="button"
+          whileHover={{ y: -1 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => addInlineRow()}
+          className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-700 to-sky-500 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:from-sky-800 hover:to-sky-600"
+        >
+          <Plus size={17} />
+          Add Timesheet
+        </motion.button>
+      </div>
+    </td>
+  </tr>
+)}
               </tbody>
             </table>
           </div>

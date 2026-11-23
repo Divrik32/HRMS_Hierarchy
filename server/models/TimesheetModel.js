@@ -254,6 +254,31 @@ const timesheetSchema = new mongoose.Schema(
 ],
 
 // =====================================================
+// EMPLOYEE RESPONSE HISTORY
+// =====================================================
+
+employeeResponseHistory: [
+  {
+    response: {
+      type: String,
+      enum: ["Accepted", "Disagreed"],
+      required: true,
+    },
+
+    reason: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    respondedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+],
+
+// =====================================================
 // RESUBMISSION TRACKING
 // =====================================================
 

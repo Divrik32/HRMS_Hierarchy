@@ -22,6 +22,7 @@ import authRoutes from "./routes/authRoutes.js";
 import compOffRoutes from "./routes/compOffRoutes.js";
 import { startWeeklyTimesheetReminderCron } from "./services/weeklyTimesheetReminder.js";
 import { startLeaveAccrualJob } from "./jobs/leaveAccrualJob.js";
+import { createPersonalProjectsForAllCompanies } from "./scripts/createPersonalProjects.js";
 dotenv.config();
 
 dns.setServers(["1.1.1.1", "8.8.8.8"]);
@@ -83,9 +84,8 @@ const PORT = process.env.PORT || 5003;
 const startServer = async () => {
   try {
     await connectDB();
-
+    await createPersonalProjectsForAllCompanies();
     await startLeaveAccrualJob();
-
     app.listen(PORT, () => {
       console.log(`HRMS Server running on port ${PORT}`);
       startWeeklyTimesheetReminderCron();

@@ -15,6 +15,7 @@ import {
   resumeTask,
   editTimesheet,
   getMyTimesheetWeeklyStatus,
+  respondToRejection,
 } from "../controllers/timesheetController.js";
 
 import employeeOrSuperAdminAuth from "../middleware/employeeOrSuperAdminAuth.js";
@@ -145,5 +146,7 @@ router.get(
   employeeAuth,
   getMyTimesheetWeeklyStatus
 );
+
+router.patch("/:id/respond-to-rejection", employeeAuth, respondToRejection);
 
 export default router;
