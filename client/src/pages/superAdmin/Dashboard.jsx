@@ -60,7 +60,7 @@ const Header = () => {
   const [seconds, setSeconds] = useState(0);
   const [superAdmin, setSuperAdmin] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
-
+  const [profilePicError, setProfilePicError] = useState(false);
   useEffect(() => {
     const fetchSuperAdminProfile = async () => {
       try {
@@ -121,45 +121,66 @@ const Header = () => {
   })}`;
 };
 
-  const getProfilePicUrl = (profilePic) => {
-    if (!profilePic) return "";
+const API_ORIGIN = new URL(api.defaults.baseURL).origin;
 
-    if (/^https?:\/\//i.test(profilePic)) {
-      return profilePic;
-    }
+const getProfilePicUrl = (profilePic) => {
+  if (!profilePic) return null;
 
-    const apiBase = api.defaults.baseURL || window.location.origin;
-    const apiRoot = apiBase.replace(/\/api\/?$/, "");
-    const origin = new URL(apiRoot, window.location.origin).origin;
+  if (/^https?:\/\//i.test(profilePic)) {
+    return profilePic;
+  }
 
-    return new URL(
-      profilePic.replace(/^\/+/, ""),
-      `${origin}/`
-    ).href;
-  };
+  if (profilePic.startsWith("/uploads/")) {
+    return `${API_ORIGIN}${profilePic}`;
+  }
 
-  const profilePicUrl = getProfilePicUrl(superAdmin?.profilePic);
+  if (profilePic.startsWith("uploads/")) {
+    return `${API_ORIGIN}/${profilePic}`;
+  }
+
+  return `${API_ORIGIN}/uploads/${profilePic.replace(/^\/+/, "")}`;
+};
+
+const profilePicUrl = getProfilePicUrl(superAdmin?.profilePic);
+useEffect(() => {
+  setProfilePicError(false);
+}, [profilePicUrl]);
 
   return (
     <div className="rounded-2xl bg-[#348aaf] text-white px-6 py-5 flex flex-wrap items-center justify-between gap-4">
       <div className="flex items-center gap-4">
-        {/* Super Admin Profile Picture */}
-        <div className="w-14 h-14 rounded-full p-[3px] border-2 border-orange-500 flex items-center justify-center shrink-0">
-          {profilePicUrl ? (
-            <img
-              src={profilePicUrl}
-              alt="Super Admin"
-              className="w-full h-full rounded-full object-cover"
-              onError={(e) => {
-                e.currentTarget.style.display = "none";
-              }}
-            />
-          ) : (
-            <div className="w-full h-full rounded-full bg-[#4f2ff5] flex items-center justify-center font-bold text-white">
-              {initials}
-            </div>
-          )}
-        </div>
+
+{/* Super Admin Profile Picture */}
+<div className="w-14 h-14 rounded-full p-[3px] border-2 border-orange-500 flex items-center justify-center shrink-0 overflow-hidden">
+  {profileLoading ? (
+    <div className="w-full h-full rounded-full bg-[#4f2ff5] flex items-center justify-center font-bold text-white">
+      {initials}
+    </div>
+  ) : profilePicUrl && !profilePicError ? (
+    <img
+      src={profilePicUrl}
+      alt="Super Admin"
+      className="w-full h-full rounded-full object-cover"
+      onError={(e) => {
+        console.error(
+          "Super Admin Profile Image Failed:",
+          e.currentTarget.src
+        );
+        setProfilePicError(true);
+      }}
+      onLoad={(e) => {
+        console.log(
+          "Super Admin Profile Image Loaded:",
+          e.currentTarget.src
+        );
+      }}
+    />
+  ) : (
+    <div className="w-full h-full rounded-full bg-[#4f2ff5] flex items-center justify-center font-bold text-white">
+      {initials}
+    </div>
+  )}
+</div>
 
         <div>
           <h1 className="text-2xl font-bold leading-tight">

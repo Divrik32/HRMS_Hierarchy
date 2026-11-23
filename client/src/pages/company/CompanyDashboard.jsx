@@ -137,22 +137,39 @@ const Header = () => {
     })}`;
   };
 
-  // Company Logo URL
-  const getLogoUrl = (logo) => {
-    if (!logo) return "";
+// Company Logo URL
+const API_ORIGIN = new URL(api.defaults.baseURL).origin;
 
-    if (/^https?:\/\//i.test(logo)) {
-      return logo;
-    }
+const getLogoUrl = (logo) => {
+  if (!logo) return null;
 
-    const apiBase = api.defaults.baseURL || window.location.origin;
-    const apiRoot = apiBase.replace(/\/api\/?$/, "");
-    const origin = new URL(apiRoot, window.location.origin).origin;
+  const cleanLogo = logo.trim();
 
-    return new URL(logo.replace(/^\/+/, ""), `${origin}/`).href;
-  };
+  // Already a complete URL
+  if (/^https?:\/\//i.test(cleanLogo)) {
+    return cleanLogo;
+  }
 
-  const logoUrl = getLogoUrl(company?.logo);
+  // /uploads/companies/logo.png
+  if (cleanLogo.startsWith("/uploads/")) {
+    return `${API_ORIGIN}${cleanLogo}`;
+  }
+
+  // uploads/companies/logo.png
+  if (cleanLogo.startsWith("uploads/")) {
+    return `${API_ORIGIN}/${cleanLogo}`;
+  }
+
+  // companies/logo.png
+  if (cleanLogo.startsWith("companies/")) {
+    return `${API_ORIGIN}/uploads/${cleanLogo}`;
+  }
+
+  // logo.png
+  return `${API_ORIGIN}/uploads/companies/${cleanLogo.replace(/^\/+/, "")}`;
+};
+
+const logoUrl = getLogoUrl(company?.logo);
 
   useEffect(() => {
     setLogoError(false);
@@ -163,20 +180,30 @@ const Header = () => {
       <div className="flex items-center gap-4 min-w-0">
 
         {/* Company Logo */}
-        <div className="w-14 h-14 rounded-full p-[3px] border-2 border-orange-500 flex items-center justify-center shrink-0">
-          {logoUrl && !logoError ? (
-            <img
-              src={logoUrl}
-              alt="Company Logo"
-              className="w-full h-full rounded-full object-cover bg-white"
-              onError={() => setLogoError(true)}
-            />
-          ) : (
-            <div className="w-full h-full rounded-full bg-[#4f2ff5] flex items-center justify-center font-bold text-white">
-              {initials}
-            </div>
-          )}
-        </div>
+<div className="w-14 h-14 rounded-full p-[3px] border-2 border-orange-500 flex items-center justify-center shrink-0 overflow-hidden">
+  {profileLoading ? (
+    <div className="w-full h-full rounded-full bg-[#4f2ff5] flex items-center justify-center font-bold text-white">
+      {initials}
+    </div>
+  ) : logoUrl && !logoError ? (
+    <img
+      src={logoUrl}
+      alt="Company Logo"
+      className="w-full h-full rounded-full object-cover bg-white"
+      onError={(e) => {
+        console.error("Company Logo Failed:", e.currentTarget.src);
+        setLogoError(true);
+      }}
+      onLoad={(e) => {
+        console.log("Company Logo Loaded:", e.currentTarget.src);
+      }}
+    />
+  ) : (
+    <div className="w-full h-full rounded-full bg-[#4f2ff5] flex items-center justify-center font-bold text-white">
+      {initials}
+    </div>
+  )}
+</div>
 
         <div className="min-w-0">
           {/* Company Name */}
