@@ -22,6 +22,20 @@ import api from "../../api/axios";
 import { toast } from "react-toastify";
 import * as XLSX from "xlsx-js-style";
 import { FileSpreadsheet, Eye } from "lucide-react";
+import { useDispatch, useSelector } from "react-redux";
+
+import {
+  addTimesheetDraft,
+  updateTimesheetDraft,
+  removeTimesheetDraft,
+  removeSavedTimesheetDrafts,
+  selectTimesheetDrafts,
+  selectCompletedTimesheetDrafts,
+  addInlineRowDraft,
+  updateInlineRowDraft,
+  removeInlineRowDraft,
+  selectInlineRows,
+} from "../../redux/slices/timesheetSlice";
 
 /* =========================================================
    Helpers
@@ -63,9 +77,9 @@ const formatDateTime = (value) => {
 };
 
 const formatTime = (value) => {
-  if (!value) return "—";
+  if (!value) return "";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleTimeString("en-IN", {
     timeZone: IST,
     hour: "2-digit",
@@ -94,6 +108,29 @@ const getTaskStatusClass = (status) => {
   if (status === "In Progress") return "bg-sky-100 text-sky-800 ring-sky-300";
   if (status === "On Break") return "bg-orange-100 text-orange-800 ring-orange-300";
   return "bg-slate-100 text-slate-700 ring-slate-300";
+};
+const getProjectName = (projectId, projects = [], fallbackName = "") => {
+  // MongoDB populated project
+  if (projectId && typeof projectId === "object") {
+    return (
+      projectId.projectName ||
+      projectId.name ||
+      fallbackName ||
+      "—"
+    );
+  }
+
+  // Redux draft / MongoDB unpopulated project ID
+  const project = projects.find(
+    (p) => String(p._id) === String(projectId)
+  );
+
+  return (
+    project?.projectName ||
+    project?.name ||
+    fallbackName ||
+    "—"
+  );
 };
 
 const getApprovalRowClass = (item) => {
@@ -172,8 +209,8 @@ const burstGlitter = (el) => {
 
 const headings = [
   "Date", "Task Type", "Project", "Task / Module", "Description", "Estimated",
-  "Start", "Break", "End", "Working Time", "Idle Time", "Efficiency",
-  "Task Status"
+  "Start", "Break", "End", "Working Time", "Efficiency",
+  "Task Status", "Action"
 ];
 
 const filters = ["All", "Pending", "Updated Pending", "Approved", "Rejected"];
@@ -186,7 +223,18 @@ const inputCls =
    ========================================================= */
 export default function Timesheet() {
   const reduce = useReducedMotion();
-
+  const dispatch = useDispatch();
+  const [employeeScopeKey, setEmployeeScopeKey] = useState(null);
+  const timesheetDrafts = useSelector((state) =>
+    employeeScopeKey
+      ? selectTimesheetDrafts(state, employeeScopeKey)
+      : []
+  );
+  const completedDrafts = useSelector((state) =>
+    employeeScopeKey
+      ? selectCompletedTimesheetDrafts(state, employeeScopeKey)
+      : []
+  );
   const [timesheets, setTimesheets] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -194,7 +242,11 @@ export default function Timesheet() {
   const [actionId, setActionId] = useState("");
   const [error, setError] = useState("");
   const [hideAutoInlineRow, setHideAutoInlineRow] = useState(false);
-  const [inlineRows, setInlineRows] = useState([]);
+  const inlineRows = useSelector((state) =>
+  employeeScopeKey
+    ? selectInlineRows(state, employeeScopeKey)
+    : []
+);
   const [savingRowId, setSavingRowId] = useState("");
 
   const [dateFrom, setDateFrom] = useState(getTodayIST);
@@ -216,11 +268,29 @@ export default function Timesheet() {
     setLoading(true);
     setError("");
     try {
-      const [, timesheetRes, projectRes] = await Promise.all([
-        api.get("/employees/profile/me"),
-        api.get("/timesheets"),
-        api.get("/timesheets/projects"),
-      ]);
+const [profileResponse, timesheetRes, projectRes] = await Promise.all([
+  api.get("/employees/profile/me"),
+  api.get("/timesheets"),
+  api.get("/timesheets/projects"),
+]);
+
+const currentEmployee = profileResponse.data?.employee;
+
+if (!currentEmployee?._id) {
+  throw new Error("Employee profile not found");
+}
+
+const companyId =
+  currentEmployee.companyId?._id ||
+  currentEmployee.companyId;
+
+if (!companyId) {
+  throw new Error("Employee company not found");
+}
+
+const scopeKey = `${companyId}:${currentEmployee._id}`;
+
+setEmployeeScopeKey(scopeKey);
       setTimesheets(timesheetRes.data?.timesheets || []);
       setHideAutoInlineRow(false);
       setProjects(projectRes.data?.projects || []);
@@ -241,133 +311,173 @@ export default function Timesheet() {
   /* ---------- Inline Rows ---------- */
 
 const createInlineRow = () => ({
-  id: `${Date.now()}-${Math.random()}`,
+  id:
+    globalThis.crypto?.randomUUID?.() ||
+    `inline-${Date.now()}-${Math.random()}`,
   form: { ...blankInline },
   dateTime: new Date().toLocaleString("en-IN", {
     timeZone: IST,
   }),
 });
 
-const addInlineRow = (currentRow = null) => {
-  const newRow = createInlineRow();
+const addInlineRow = () => {
+  if (!employeeScopeKey) {
+    toast.error("Employee information not loaded.");
+    return;
+  }
 
-  setInlineRows((prev) => {
-    if (currentRow?.id === "auto-inline-row") {
-      return [
-        {
-          ...currentRow,
-          id: `converted-${Date.now()}`,
-        },
-        newRow,
-      ];
-    }
-
-    return [...prev, newRow];
-  });
+  dispatch(
+    addInlineRowDraft({
+      scopeKey: employeeScopeKey,
+      row: createInlineRow(),
+    })
+  );
 };
 
 const updateInlineRow = (rowId, key, value) => {
-  setInlineRows((prev) => {
-    // Auto-generated rowকে state-এর মধ্যে নিয়ে আসা
-    if (rowId === "auto-inline-row") {
-      setHideAutoInlineRow(true);
+  if (!employeeScopeKey) return;
 
-      return [
-        {
-          id: `converted-${Date.now()}`,
-          form: {
-            ...blankInline,
-            [key]: value,
-          },
-          dateTime: new Date().toLocaleString("en-IN", {
-            timeZone: IST,
-          }),
-        },
-      ];
-    }
+  // Auto-generated row-তে প্রথমবার কিছু লিখলে Redux-এ নিয়ে আসবে
+  if (rowId === "auto-inline-row") {
+    const newRow = {
+      id:
+        globalThis.crypto?.randomUUID?.() ||
+        `inline-${Date.now()}-${Math.random()}`,
+      form: {
+        ...blankInline,
+        [key]: value,
+      },
+      dateTime: new Date().toLocaleString("en-IN", {
+        timeZone: IST,
+      }),
+    };
 
-    return prev.map((row) =>
-      row.id === rowId
-        ? {
-            ...row,
-            form: {
-              ...row.form,
-              [key]: value,
-            },
-          }
-        : row
+    dispatch(
+      addInlineRowDraft({
+        scopeKey: employeeScopeKey,
+        row: newRow,
+      })
     );
-  });
+
+    setHideAutoInlineRow(true);
+    return;
+  }
+
+  const existingRow = inlineRows.find((row) => row.id === rowId);
+
+  if (!existingRow) return;
+
+  dispatch(
+    updateInlineRowDraft({
+      scopeKey: employeeScopeKey,
+      rowId,
+      updates: {
+        form: {
+          ...existingRow.form,
+          [key]: value,
+        },
+      },
+    })
+  );
 };
 
 const updateInlineEstimatedTime = (rowId, key, value, row) => {
+  if (!employeeScopeKey) return;
+
   const hours =
-    key === "estimatedHours" ? value : row.form.estimatedHours;
+    key === "estimatedHours"
+      ? value
+      : row.form.estimatedHours;
 
   const minutes =
-    key === "estimatedMinutes" ? value : row.form.estimatedMinutes;
+    key === "estimatedMinutes"
+      ? value
+      : row.form.estimatedMinutes;
 
   const estimatedTime =
     hours !== "" && minutes !== ""
       ? String(Number(hours) * 60 + Number(minutes))
       : "";
 
-  setInlineRows((prev) => {
-    const updatedForm = {
-      ...row.form,
-      [key]: value,
-      estimatedTime,
+  const updatedForm = {
+    ...row.form,
+    [key]: value,
+    estimatedTime,
+  };
+
+  // Auto-generated row
+  if (rowId === "auto-inline-row") {
+    const newRow = {
+      id:
+        globalThis.crypto?.randomUUID?.() ||
+        `inline-${Date.now()}-${Math.random()}`,
+      form: updatedForm,
+      dateTime: new Date().toLocaleString("en-IN", {
+        timeZone: IST,
+      }),
     };
 
-    if (rowId === "auto-inline-row") {
-      setHideAutoInlineRow(true);
-
-      return [
-        {
-          id: `converted-${Date.now()}`,
-          form: updatedForm,
-          dateTime: new Date().toLocaleString("en-IN", {
-            timeZone: IST,
-          }),
-        },
-      ];
-    }
-
-    return prev.map((item) =>
-      item.id === rowId
-        ? { ...item, form: updatedForm }
-        : item
+    dispatch(
+      addInlineRowDraft({
+        scopeKey: employeeScopeKey,
+        row: newRow,
+      })
     );
-  });
+
+    setHideAutoInlineRow(true);
+    return;
+  }
+
+  dispatch(
+    updateInlineRowDraft({
+      scopeKey: employeeScopeKey,
+      rowId,
+      updates: {
+        form: updatedForm,
+      },
+    })
+  );
 };
 
 const updateInlineIdleTime = (rowId, key, value, row) => {
-  setInlineRows((prev) => {
-    const updatedForm = {
-      ...row.form,
-      [key]: value,
+  if (!employeeScopeKey) return;
+
+  const updatedForm = {
+    ...row.form,
+    [key]: value,
+  };
+
+  if (rowId === "auto-inline-row") {
+    const newRow = {
+      id:
+        globalThis.crypto?.randomUUID?.() ||
+        `inline-${Date.now()}-${Math.random()}`,
+      form: updatedForm,
+      dateTime: new Date().toLocaleString("en-IN", {
+        timeZone: IST,
+      }),
     };
 
-    if (rowId === "auto-inline-row") {
-      setHideAutoInlineRow(true);
-
-      return [
-        {
-          id: `converted-${Date.now()}`,
-          form: updatedForm,
-          dateTime: new Date().toLocaleString("en-IN", {
-            timeZone: IST,
-          }),
-        },
-      ];
-    }
-
-    return prev.map((item) =>
-      item.id === rowId
-        ? { ...item, form: updatedForm }
-        : item
+    dispatch(
+      addInlineRowDraft({
+        scopeKey: employeeScopeKey,
+        row: newRow,
+      })
     );
-  });
+
+    setHideAutoInlineRow(true);
+    return;
+  }
+
+  dispatch(
+    updateInlineRowDraft({
+      scopeKey: employeeScopeKey,
+      rowId,
+      updates: {
+        form: updatedForm,
+      },
+    })
+  );
 };
 
 const removeInlineRow = (rowId) => {
@@ -376,113 +486,475 @@ const removeInlineRow = (rowId) => {
     return;
   }
 
-  setInlineRows((prev) =>
-    prev.filter((row) => row.id !== rowId)
+  if (!employeeScopeKey) return;
+
+  dispatch(
+    removeInlineRowDraft({
+      scopeKey: employeeScopeKey,
+      rowId,
+    })
   );
 };
 
-const handleInlineSave = async (row) => {
-  const { form } = row;
-  const idleTime = Number(form.idleHours || 0) * 60 + Number(form.idleMinutes || 0);
-  if (
-    !form.taskType ||
-    !form.projectId ||
-    !form.task ||
-    !form.description.trim() ||
-    form.estimatedTime === "" ||
-    !Number.isFinite(Number(form.estimatedTime)) ||
-    Number(form.estimatedTime) < 0
-  ) {
+const handleInlineSave = (form, rowId, row) => {
+  if (!employeeScopeKey) {
+    toast.error("Employee information not loaded.");
     return;
   }
 
-  if (savingRowId) return;
+  if (!form.taskType) {
+    toast.error("Please select task type.");
+    return;
+  }
 
-  setSavingRowId(row.id);
+  if (!form.projectId) {
+    toast.error("Please select project.");
+    return;
+  }
+
+  if (!form.task) {
+    toast.error("Please select task.");
+    return;
+  }
+
+  if (!form.description?.trim()) {
+    toast.error("Please enter description.");
+    return;
+  }
+
+  const estimatedTime =
+    Number(form.estimatedTime) ||
+    Number(form.estimatedHours || 0) * 60 +
+      Number(form.estimatedMinutes || 0);
+
+  if (!estimatedTime || estimatedTime <= 0) {
+    toast.error("Please enter estimated time.");
+    return;
+  }
+
+  const idleTime =
+    Number(form.idleHours || 0) * 60 +
+    Number(form.idleMinutes || 0);
+
+  const [companyId, employeeId] = employeeScopeKey.split(":");
+
+  const selectedProject = projects.find(
+    (project) => project._id === form.projectId
+  );
+
+  const draft = {
+    clientTimesheetId:
+      globalThis.crypto?.randomUUID?.() ||
+      `draft-${Date.now()}-${Math.random()}`,
+
+    companyId,
+    employeeId,
+
+    taskType: form.taskType,
+    projectId: form.projectId,
+    projectName:
+      selectedProject?.projectName ||
+      selectedProject?.name ||
+      "",
+
+    task: form.task,
+    description: form.description.trim(),
+
+    date: new Date().toISOString(),
+
+    estimatedTime,
+    idleTime,
+
+    startTime: row?.startTime || null,
+endTime: row?.endTime || null,
+breakTime: row?.breakTime || null,
+totalCompletionTime: row?.totalCompletionTime ?? null,
+efficiency: row?.efficiency ?? null,
+estimatedError: row?.estimatedError ?? null,
+
+taskStatus: row?.taskStatus || "Not Started",
+    approvalStatus: "Pending",
+  };
+
+  // Completed form-টি Timesheet draft stack-এ যাবে
+  dispatch(
+    addTimesheetDraft({
+      scopeKey: employeeScopeKey,
+      draft,
+    })
+  );
+
+  // যে incomplete row থেকে draft তৈরি হয়েছে সেটি সরবে
+  dispatch(
+    removeInlineRowDraft({
+      scopeKey: employeeScopeKey,
+      rowId,
+    })
+  );
+
+  toast.success("Timesheet added to stack.");
+};
+const handleInlineTaskAction = (row, action) => {
+  if (!employeeScopeKey) return;
+
+  let targetRow = row;
+
+  // Auto row-তে Action click করলে সেটিকে Redux Inline Row বানাবে
+  if (row.id === "auto-inline-row") {
+    targetRow = createInlineRow();
+
+    dispatch(
+      addInlineRowDraft({
+        scopeKey: employeeScopeKey,
+        row: targetRow,
+      })
+    );
+
+    setHideAutoInlineRow(true);
+  }
+
+  const now = new Date().toISOString();
+  const updates = {};
+
+  if (action === "start") {
+    if (targetRow.taskStatus && targetRow.taskStatus !== "Not Started") {
+      toast.error("This task cannot be started.");
+      return;
+    }
+
+    if (targetRow.startTime) {
+      toast.error("Task has already started.");
+      return;
+    }
+
+    updates.startTime = now;
+    updates.taskStatus = "In Progress";
+  }
+
+  if (action === "break") {
+    if (
+      targetRow.taskStatus !== "In Progress" ||
+      !targetRow.startTime
+    ) {
+      toast.error("Start the task before taking a break.");
+      return;
+    }
+
+    if (targetRow.breakTime?.startTime) {
+      toast.error("Break has already been used.");
+      return;
+    }
+
+    updates.breakTime = {
+      startTime: now,
+      endTime: null,
+      duration: null,
+    };
+
+    updates.taskStatus = "On Break";
+  }
+
+  if (action === "resume") {
+    if (
+      targetRow.taskStatus !== "On Break" ||
+      !targetRow.breakTime?.startTime ||
+      targetRow.breakTime?.endTime
+    ) {
+      toast.error("No active break found.");
+      return;
+    }
+
+    const breakStart = new Date(targetRow.breakTime.startTime);
+    const breakEnd = new Date(now);
+
+    updates.breakTime = {
+      ...targetRow.breakTime,
+      endTime: now,
+      duration: Math.max(
+        0,
+        Math.round((breakEnd - breakStart) / 60000)
+      ),
+    };
+
+    updates.taskStatus = "In Progress";
+  }
+
+  if (action === "end") {
+    if (
+      targetRow.taskStatus !== "In Progress" ||
+      !targetRow.startTime ||
+      targetRow.endTime
+    ) {
+      toast.error("Task cannot be ended.");
+      return;
+    }
+
+    if (
+      targetRow.breakTime?.startTime &&
+      !targetRow.breakTime?.endTime
+    ) {
+      toast.error("Please resume your task before ending it.");
+      return;
+    }
+
+    const start = new Date(targetRow.startTime);
+    const end = new Date(now);
+
+    const elapsedMinutes = Math.max(
+      0,
+      Math.round((end - start) / 60000)
+    );
+
+    const breakMinutes = Number(
+      targetRow.breakTime?.duration || 0
+    );
+
+    const totalCompletionTime = Math.max(
+      0,
+      elapsedMinutes - breakMinutes
+    );
+
+    const estimatedTime = Number(
+      targetRow.form?.estimatedTime || 0
+    );
+
+    const efficiency =
+      totalCompletionTime > 0
+        ? Number(
+            (
+              (estimatedTime / totalCompletionTime) *
+              100
+            ).toFixed(2)
+          )
+        : 0;
+
+    updates.endTime = now;
+    updates.totalCompletionTime = totalCompletionTime;
+    updates.estimatedError = totalCompletionTime - estimatedTime;
+    updates.efficiency = efficiency;
+    updates.taskStatus = "Completed";
+  }
+
+  dispatch(
+    updateInlineRowDraft({
+      scopeKey: employeeScopeKey,
+      rowId: targetRow.id,
+      updates,
+    })
+  );
+
+  toast.success(
+    action === "start"
+      ? "Task started successfully."
+      : action === "break"
+      ? "Break started."
+      : action === "resume"
+      ? "Task resumed."
+      : "Task completed successfully."
+  );
+};
+
+const handleTaskAction = async (item, action) => {
+  const isDraft = Boolean(item.clientTimesheetId);
+
+  const actionKey = `${item._id || item.clientTimesheetId}-${action}`;
+
+  setActionId(actionKey);
 
   try {
-    await api.post("/timesheets", {
-      taskType: form.taskType,
-      projectId: form.projectId,
-      task: form.task,
-      description: form.description.trim(),
-      estimatedTime: Number(form.estimatedTime),
-      startTime: null,
-      endTime: null,
-      breakTime: null,
-      totalCompletionTime: null,
-      efficiency: null,
-      idleTime: 0,
-      taskStatus: "Not Started",
-      approvalStatus: "Pending",
-    });
+    // =========================================
+    // REDUX DRAFT: NO API CALL
+    // =========================================
+    if (isDraft) {
+      const now = new Date().toISOString();
 
-    toast.success("Timesheet created successfully.");
+      const updates = {};
 
-    setInlineRows((prev) =>
-      prev.filter((item) => item.id !== row.id)
-    );
+      if (action === "start") {
+        if (item.taskStatus !== "Not Started") {
+          throw new Error("This task cannot be started.");
+        }
 
-    await loadData();
-  } catch (err) {
-    toast.error(
-      err?.response?.data?.message ||
-        "Failed to create timesheet."
-    );
-  } finally {
-    setSavingRowId("");
-  }
-};
+        updates.startTime = now;
+        updates.taskStatus = "In Progress";
+      }
 
-const handleInlineEnter = (e, row) => {
-  if (e.key !== "Enter") return;
+      if (action === "break") {
+        if (item.taskStatus !== "In Progress") {
+          throw new Error("Task must be running before taking a break.");
+        }
 
-  e.preventDefault();
+        if (item.breakTime?.startTime) {
+          throw new Error("Break has already been used.");
+        }
 
-  const { form } = row;
+        updates.breakTime = {
+          startTime: now,
+          endTime: null,
+          duration: null,
+        };
 
-  // পাঁচটি ফিল্ড পূর্ণ না হলে নীরবে return করবে
-  if (
-    !form.taskType ||
-    !form.projectId ||
-    !form.task ||
-    !form.description.trim() ||
-    form.estimatedTime === "" ||
-    !Number.isFinite(Number(form.estimatedTime)) ||
-    Number(form.estimatedTime) < 0
-  ) {
-    return;
-  }
+        updates.taskStatus = "On Break";
+      }
 
-  handleInlineSave(row);
-};
+      if (action === "resume") {
+        if (
+          item.taskStatus !== "On Break" ||
+          !item.breakTime?.startTime ||
+          item.breakTime?.endTime
+        ) {
+          throw new Error("No active break found.");
+        }
 
-  /* ---------- start / break / resume / end ---------- */
-  const handleTaskAction = async (item, action) => {
+        const breakStart = new Date(item.breakTime.startTime);
+        const breakEnd = new Date(now);
+
+        updates.breakTime = {
+          ...item.breakTime,
+          endTime: now,
+          duration: Math.max(
+            0,
+            Math.round((breakEnd - breakStart) / 60000)
+          ),
+        };
+
+        updates.taskStatus = "In Progress";
+      }
+
+      if (action === "end") {
+        if (
+          item.taskStatus !== "In Progress" ||
+          !item.startTime ||
+          item.endTime
+        ) {
+          throw new Error("Task cannot be ended.");
+        }
+
+        const start = new Date(item.startTime);
+        const end = new Date(now);
+
+        if (item.breakTime?.startTime && !item.breakTime?.endTime) {
+          throw new Error("Please resume your task before ending it.");
+        }
+
+        const totalCompletionTime = Math.max(
+          0,
+          Math.round((end - start) / 60000)
+        );
+
+        const estimatedTime = Number(item.estimatedTime || 0);
+
+        const efficiency =
+          totalCompletionTime > 0
+            ? Number(
+                (
+                  (estimatedTime / totalCompletionTime) *
+                  100
+                ).toFixed(2)
+              )
+            : 0;
+
+        updates.endTime = now;
+        updates.totalCompletionTime = totalCompletionTime;
+        updates.estimatedError = totalCompletionTime - estimatedTime;
+        updates.efficiency = efficiency;
+        updates.taskStatus = "Completed";
+      }
+
+      dispatch(
+        updateTimesheetDraft({
+          scopeKey: employeeScopeKey,
+          clientTimesheetId: item.clientTimesheetId,
+          updates,
+        })
+      );
+
+      toast.success(
+        action === "start"
+          ? "Task started successfully."
+          : action === "break"
+          ? "Break started."
+          : action === "resume"
+          ? "Task resumed."
+          : "Task completed successfully."
+      );
+
+      return;
+    }
+
+    // =========================================
+    // SAVED MONGODB TIMESHEET: OLD API LOGIC
+    // =========================================
     const endpoints = {
       start: `/timesheets/${item._id}/start`,
       end: `/timesheets/${item._id}/end`,
       break: `/timesheets/${item._id}/break/start`,
       resume: `/timesheets/${item._id}/break/resume`,
     };
-    const messages = {
-      start: "Task started.",
-      end: "Task completed.",
-      break: "Break started.",
-      resume: "Break ended. Task resumed.",
-    };
 
-    setActionId(`${item._id}-${action}`);
-    try {
-      await api.patch(endpoints[action]);
-      toast.success(messages[action]);
-      await loadData();
-    } catch (err) {
-      toast.error(err.response?.data?.message || "Unable to update task status.");
-    } finally {
-      setActionId("");
+    if (!item._id || !endpoints[action]) {
+      throw new Error("Invalid timesheet ID or action.");
     }
-  };
+
+    await api.patch(endpoints[action]);
+
+    await loadData();
+
+    toast.success("Timesheet updated successfully.");
+  } catch (error) {
+    console.error("Timesheet action error:", error);
+
+    toast.error(
+      error.response?.data?.message ||
+        error.message ||
+        "Unable to update timesheet."
+    );
+  } finally {
+    setActionId(null);
+  }
+};
+
+const handleDeleteTimesheet = async (item) => {
+  const isDraft = Boolean(item.clientTimesheetId);
+
+  const confirmed = window.confirm(
+    "Are you sure you want to delete this timesheet?"
+  );
+
+  if (!confirmed) return;
+
+  const deleteKey = item._id || item.clientTimesheetId;
+
+  setActionId(`delete-${deleteKey}`);
+
+  try {
+    if (isDraft) {
+      // Redux Draft Delete
+      dispatch(
+        removeTimesheetDraft({
+          scopeKey: employeeScopeKey,
+          clientTimesheetId: item.clientTimesheetId,
+        })
+      );
+    } else {
+      // MongoDB Saved Timesheet Delete
+      await api.delete(`/timesheets/${item._id}`);
+
+      setTimesheets((prev) =>
+        prev.filter((record) => record._id !== item._id)
+      );
+    }
+
+    toast.success("Timesheet deleted successfully.");
+  } catch (error) {
+    toast.error(
+      error.response?.data?.message ||
+      "Failed to delete timesheet."
+    );
+  } finally {
+    setActionId("");
+  }
+};
 
   /* ---------- edit estimated / idle ---------- */
 const startEdit = (item, field) => {
@@ -559,19 +1031,12 @@ const saveEdit = async (item) => {
 
 const startRejectedUpdate = (item) => {
   const estimatedMinutes = Number(item.estimatedTime || 0);
-  const idleMinutes = Number(item.idleTime || 0);
-
   setRejectedDrafts((prev) => ({
     ...prev,
     [item._id]: {
       estimatedTime: String(item.estimatedTime ?? ""),
       estimatedHours: String(Math.floor(estimatedMinutes / 60)),
       estimatedMinutes: String(estimatedMinutes % 60),
-
-      idleTime: String(item.idleTime ?? 0),
-      idleHours: String(Math.floor(idleMinutes / 60)),
-      idleMinutes: String(idleMinutes % 60),
-
       description: item.description || "",
     },
   }));
@@ -605,37 +1070,12 @@ if (
     Number(draft.estimatedHours) * 60 +
     Number(draft.estimatedMinutes);
 
-if (
-  draft.idleHours === "" ||
-  draft.idleMinutes === "" ||
-  !Number.isInteger(Number(draft.idleHours)) ||
-  Number(draft.idleHours) < 0 ||
-  Number(draft.idleHours) > 12 ||
-  !Number.isInteger(Number(draft.idleMinutes)) ||
-  Number(draft.idleMinutes) < 0 ||
-  Number(draft.idleMinutes) > 59
-) {
-  toast.error("Please select valid Idle Time.");
-  return;
-}
-
-const newIdleTime =
-  Number(draft.idleHours) * 60 +
-  Number(draft.idleMinutes);
-
   const changes = [];
 
   if (newEstimatedTime !== Number(item.estimatedTime ?? 0)) {
     changes.push({
       field: "estimatedTime",
       value: newEstimatedTime,
-    });
-  }
-
-  if (newIdleTime !== Number(item.idleTime ?? 0)) {
-    changes.push({
-      field: "idleTime",
-      value: newIdleTime,
     });
   }
 
@@ -757,27 +1197,21 @@ const newIdleTime =
 }, [timesheets]);
 
 const displayedInlineRows = useMemo(() => {
-  if (inlineRows.length > 0) {
-    return inlineRows;
-  }
-
-  if (
-    latestTimesheet?.taskStatus === "Completed" &&
-    !hideAutoInlineRow
-  ) {
-    return [
-      {
-        id: "auto-inline-row",
-        form: { ...blankInline },
-        dateTime: new Date().toLocaleString("en-IN", {
-          timeZone: IST,
-        }),
-      },
-    ];
-  }
-
-  return [];
-}, [inlineRows, latestTimesheet, hideAutoInlineRow]);
+  return [
+    ...inlineRows,
+    ...(!hideAutoInlineRow
+      ? [
+          {
+            id: "auto-inline-row",
+            form: { ...blankInline },
+            dateTime: new Date().toLocaleString("en-IN", {
+              timeZone: IST,
+            }),
+          },
+        ]
+      : []),
+  ];
+}, [inlineRows, hideAutoInlineRow]);
 
   /* ---------- derived ---------- */
 const filteredTimesheets = useMemo(() => {
@@ -868,10 +1302,11 @@ const exportAllTimesheetsToExcel = () => {
   }
 
   const exportData = allTimesheetRecords.map((item) => {
-    const project =
-      typeof item.projectId === "object"
-        ? item.projectId?.projectName
-        : "—";
+    const project = getProjectName(
+  item.projectId,
+  projects,
+  item.projectName
+);
 
     return {
       Date: formatDateTime(item.date),
@@ -883,9 +1318,7 @@ const exportAllTimesheetsToExcel = () => {
       "Start Time": formatTime(item.startTime),
       "End Time": formatTime(item.endTime),
       "Working Time": formatMinutes(item.totalCompletionTime),
-      "Idle Time": formatMinutes(item.idleTime),
-      Efficiency:
-        item.efficiency == null ? "—" : `${item.efficiency}%`,
+      Efficiency: item.efficiency == null ? "—" : `${item.efficiency}%`,
       "Task Status": item.taskStatus || "Not Started",
       "Approval Status": item.approvalStatus || "Pending",
     };
@@ -999,7 +1432,15 @@ const visibleTimesheets = useMemo(
     ),
   [filteredTimesheets]
 );
+const combinedVisibleTimesheets = useMemo(() => {
+  const drafts = timesheetDrafts.filter(
+    (item) => item.taskStatus !== "Rejected"
+  );
 
+  return [...visibleTimesheets, ...drafts].sort(
+    (a, b) => new Date(b.date) - new Date(a.date)
+  );
+}, [visibleTimesheets, timesheetDrafts]);
   const stats = useMemo(
     () => ({
       total: timesheets.length,
@@ -1137,8 +1578,7 @@ const visibleTimesheets = useMemo(
               </thead>
 
               <tbody className="divide-y divide-slate-200">
-                {visibleTimesheets.length === 0 &&
-  displayedInlineRows.length === 0 && (
+                {combinedVisibleTimesheets.length === 0 && displayedInlineRows.length === 0 && (
                   <tr>
                     <td colSpan={13} className="py-20 text-center text-slate-600">
                       No timesheets found.
@@ -1147,24 +1587,25 @@ const visibleTimesheets = useMemo(
                 )}
 
                 <AnimatePresence initial={false}>
-                  {visibleTimesheets.map((item, index) => {
+                  {combinedVisibleTimesheets.map((item, index) => {
                     const locked = item.approvalStatus === "Approved";
-                    const project = typeof item.projectId === "object" ? item.projectId?.projectName : "—";
-                    const activeBreak =
-                      item.taskStatus === "On Break" && item.breakTime && !item.breakTime.endTime;
-                    const isBusy = (action) => actionId === `${item._id}-${action}`;
-                    const isEditing = (field) =>
-                      editing?.id === item._id && editing?.field === field;
-
+                    const project = getProjectName(
+                      item.projectId,
+                      projects,
+                      item.projectName
+                    );
+                    const activeBreak = item.taskStatus === "On Break" && item.breakTime && !item.breakTime.endTime;
+                    const isBusy = (action) => actionId === `${item._id || item.clientTimesheetId}-${action}`;
+                    const isEditing = (field) => editing?.id === item._id && editing?.field === field;
                     return (
                       <motion.tr
-                        key={item._id}
+                        key={item._id || item.clientTimesheetId}
                         layout="position"
                         initial={reduce ? false : { opacity: 0, x: -16 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.35, delay: Math.min(index, 12) * 0.04 }}
-                        className={`align-top transition-colors ${getApprovalRowClass(item)}`}
+                        className={`align-middle transition-colors ${getApprovalRowClass(item)}`}
                       >
                         <td className={`whitespace-nowrap px-4 py-4 font-medium ${getAccent(item)}`}>
                           {formatDateTime(item.date)}
@@ -1200,7 +1641,7 @@ const visibleTimesheets = useMemo(
                         </td>
 
                         <td className="whitespace-nowrap px-4 py-4">
-                          {item.breakTime?.startTime ? formatTime(item.breakTime.startTime) : "—"}
+                          {item.breakTime?.startTime ? formatTime(item.breakTime.startTime) : ""}
                           {!locked && item.taskStatus === "In Progress" && !item.breakTime && (
                             <ActionButton label="Break" icon={<Coffee size={13} />} tone="amber" busy={isBusy("break")} onClick={() => handleTaskAction(item, "break")} />
                           )}
@@ -1220,24 +1661,6 @@ const visibleTimesheets = useMemo(
                           {formatMinutes(item.totalCompletionTime)}
                         </td>
 
-                        <td className="whitespace-nowrap px-4 py-4">
-                          <EditableMinutes
-  editing={isEditing("idleTime")}
-  value={editing || {}}
-  onChange={(key, value) =>
-    setEditing((prev) => ({ ...prev, [key]: value }))
-  }
-  display={formatMinutes(item.idleTime)}
-  min="0"
-  saving={savingEdit}
-  canEdit={!locked}
-  label="idle time"
-  onEdit={() => startEdit(item, "idleTime")}
-  onSave={() => saveEdit(item)}
-  onCancel={() => setEditing(null)}
-/>
-                        </td>
-
                         <td className="px-4 py-4 font-semibold">
                           {item.efficiency == null ? "—" : `${item.efficiency}%`}
                         </td>
@@ -1247,6 +1670,22 @@ const visibleTimesheets = useMemo(
                             {item.taskStatus || "Not Started"}
                           </Chip>
                         </td>
+                        {/* Action */}
+<td className="whitespace-nowrap px-4 py-4 align-middle">
+  <button
+    type="button"
+    onClick={() => handleDeleteTimesheet(item)}
+    disabled={actionId === `delete-${item._id || item.clientTimesheetId}`}
+    className="inline-flex items-center justify-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    {actionId === `delete-${item._id || item.clientTimesheetId}` ? (
+      <RefreshCw size={15} className="animate-spin" />
+    ) : (
+      <Trash2 size={15} />
+    )}
+    Delete
+  </button>
+</td>
                       </motion.tr>
                     );
                   })}
@@ -1269,21 +1708,18 @@ const visibleTimesheets = useMemo(
     {row.dateTime}
   </div>
 
-  <div className="text-xs font-medium text-sky-700">
-    New Entry
-  </div>
-
+{isAutoRow && (
   <motion.button
     type="button"
     whileHover={{ y: -1 }}
     whileTap={{ scale: 0.95 }}
-    onClick={() => addInlineRow(row)}
-    disabled={isSaving}
-    className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-sky-700 to-sky-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:from-sky-800 hover:to-sky-600 disabled:opacity-50"
+    onClick={() => addInlineRow()}
+    className="mt-2 inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-sky-700 to-sky-500 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:from-sky-800 hover:to-sky-600"
   >
-    <Plus size={14} />
-    Add
+    <Plus size={16} />
+    Add Task
   </motion.button>
+)}
 </td>
 
 {/* Task Type */}
@@ -1293,7 +1729,7 @@ const visibleTimesheets = useMemo(
     onChange={(e) =>
       updateInlineRow(row.id, "taskType", e.target.value)
     }
-    onKeyDown={(e) => handleInlineEnter(e, row)}
+    
     className={`${inputCls} w-full min-w-[160px]`}
   >
     <option value="Project">Project</option>
@@ -1309,7 +1745,7 @@ const visibleTimesheets = useMemo(
     onChange={(e) =>
       updateInlineRow(row.id, "projectId", e.target.value)
     }
-    onKeyDown={(e) => handleInlineEnter(e, row)}
+    
     className={`${inputCls} w-full min-w-[260px]`}
   >
     <option value="">Select Project</option>
@@ -1329,7 +1765,7 @@ const visibleTimesheets = useMemo(
     onChange={(e) =>
       updateInlineRow(row.id, "task", e.target.value)
     }
-    onKeyDown={(e) => handleInlineEnter(e, row)}
+    
     className={`${inputCls} w-full min-w-[180px]`}
   >
     {[
@@ -1355,7 +1791,7 @@ const visibleTimesheets = useMemo(
     onChange={(e) =>
       updateInlineRow(row.id, "description", e.target.value)
     }
-    onKeyDown={(e) => handleInlineEnter(e, row)}
+    
     placeholder="Enter description"
     className={`${inputCls} w-full min-w-[300px]`}
   />
@@ -1374,7 +1810,7 @@ const visibleTimesheets = useMemo(
     row
   )
 }
-      onKeyDown={(e) => handleInlineEnter(e, row)}
+      
       className={`${inputCls} w-full`}
     >
 <option value="">Hour</option>
@@ -1395,7 +1831,7 @@ const visibleTimesheets = useMemo(
     row
   )
 }
-      onKeyDown={(e) => handleInlineEnter(e, row)}
+      
       className={`${inputCls} w-full`}
     >
       <option value="">Minute</option>
@@ -1409,92 +1845,117 @@ const visibleTimesheets = useMemo(
 </td>
 
 
-{/* Start, Break, End, Working Time */}
-<td colSpan={4} className="px-4 py-3">
-  <div className="flex flex-wrap items-center gap-2">
-    {isSaving && (
-      <span className="inline-flex items-center gap-2 text-sm font-medium text-sky-700">
-        <RefreshCw size={15} className="animate-spin" />
-        Saving...
-      </span>
+
+{/* Start */}
+<td className="whitespace-nowrap px-4 py-3">
+  <div>{formatTime(row.startTime)}</div>
+
+  {!isAutoRow &&
+    (!row.taskStatus || row.taskStatus === "Not Started") &&
+    !row.startTime && (
+      <ActionButton
+        label="Start"
+        icon={<Play size={13} />}
+        tone="emerald"
+        onClick={() => handleInlineTaskAction(row, "start")}
+      />
+    )}
+</td>
+
+{/* Break */}
+<td className="whitespace-nowrap px-4 py-3">
+  {row.breakTime?.startTime
+    ? formatTime(row.breakTime.startTime)
+    : ""}
+
+  {!isAutoRow &&
+    row.taskStatus === "In Progress" &&
+    !row.breakTime?.startTime && (
+      <ActionButton
+        label="Break"
+        icon={<Coffee size={13} />}
+        tone="amber"
+        onClick={() => handleInlineTaskAction(row, "break")}
+      />
     )}
 
-    <motion.button
-      type="button"
-      whileHover={{ y: -1 }}
-      whileTap={{ scale: 0.95 }}
-      onClick={() => removeInlineRow(row.id)}
-      disabled={isSaving}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
-    >
-      <Trash2 size={15} />
-      Delete
-    </motion.button>
-  </div>
+  {!isAutoRow &&
+    row.taskStatus === "On Break" &&
+    row.breakTime?.startTime &&
+    !row.breakTime?.endTime && (
+      <ActionButton
+        label="Resume"
+        icon={<RotateCcw size={13} />}
+        tone="sky"
+        onClick={() => handleInlineTaskAction(row, "resume")}
+      />
+    )}
 </td>
 
-{/* Idle Time */}
-<td className="px-4 py-3">
-  <div className="flex min-w-[220px] items-center gap-2">
-    <select
-      value={row.form.idleHours}
-      disabled={isSaving}
-      onChange={(e) =>
-        updateInlineIdleTime(row.id, "idleHours", e.target.value, row)
-      }
-      onKeyDown={(e) => handleInlineEnter(e, row)}
-      className={`${inputCls} w-full`}
-    >
-      {Array.from({ length: 13 }, (_, i) => i).map((hour) => (
-        <option key={hour} value={hour}>
-          {hour} hr
-        </option>
-      ))}
-    </select>
+{/* End */}
+<td className="whitespace-nowrap px-4 py-3">
+  <div>{formatTime(row.endTime)}</div>
 
-    <select
-      value={row.form.idleMinutes}
-      disabled={isSaving}
-      onChange={(e) =>
-        updateInlineIdleTime(row.id, "idleMinutes", e.target.value, row)
-      }
-      onKeyDown={(e) => handleInlineEnter(e, row)}
-      className={`${inputCls} w-full`}
-    >
-      {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
-        <option key={minute} value={minute}>
-          {minute} min
-        </option>
-      ))}
-    </select>
-  </div>
+  {!isAutoRow &&
+    row.taskStatus === "In Progress" &&
+    !row.endTime && (
+      <ActionButton
+        label="End"
+        icon={<Square size={13} />}
+        tone="rose"
+        onClick={() => handleInlineTaskAction(row, "end")}
+      />
+    )}
 </td>
 
-{/* Efficiency and Task Status */}
-<td colSpan={2} className="px-4 py-3" />
+{/* Working Time */}
+<td className="whitespace-nowrap px-4 py-3 font-medium">
+  {formatMinutes(row.totalCompletionTime)}
+</td>
+
+{/* Efficiency */}
+<td className="whitespace-nowrap px-4 py-3 font-semibold">
+  {row.efficiency == null ? "—" : `${row.efficiency}%`}
+</td>
+
+{/* Task Status */}
+<td className="whitespace-nowrap px-4 py-3">
+  <Chip className={getTaskStatusClass(row.taskStatus)}>
+    {row.taskStatus || "Not Started"}
+  </Chip>
+</td>
+
+{/* Action */}
+<td className="whitespace-nowrap px-4 py-3">
+  {!isAutoRow && (
+    <div className="flex flex-col items-start gap-2">
+
+      <button
+        type="button"
+        onClick={() => handleInlineSave(row.form, row.id, row)}
+        className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
+      >
+        <Check size={15} />
+        Save
+      </button>
+
+      <button
+        type="button"
+        onClick={() => removeInlineRow(row.id)}
+        className="inline-flex items-center justify-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+      >
+        <Trash2 size={15} />
+        Delete
+      </button>
+
+    </div>
+  )}
+</td>
 
     </motion.tr>
   );
 })}
                 </AnimatePresence>
-                {displayedInlineRows.length === 0 && (
-  <tr>
-    <td colSpan={13} className="px-4 py-4">
-      <div className="flex justify-start">
-        <motion.button
-          type="button"
-          whileHover={{ y: -1 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={() => addInlineRow()}
-          className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-700 to-sky-500 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:from-sky-800 hover:to-sky-600"
-        >
-          <Plus size={17} />
-          Add Timesheet
-        </motion.button>
-      </div>
-    </td>
-  </tr>
-)}
               </tbody>
             </table>
           </div>
@@ -1596,14 +2057,15 @@ const visibleTimesheets = useMemo(
               item.rejectionReason ||
               "No rejection reason available.";
 
-            const project =
-              typeof item.projectId === "object"
-                ? item.projectId?.projectName
-                : "—";
+            const project = getProjectName(
+  item.projectId,
+  projects,
+  item.projectName
+);
 
             return (
               <motion.tr
-                key={item._id}
+                key={item._id || item.clientTimesheetId}
                 layout="position"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -1731,59 +2193,6 @@ const visibleTimesheets = useMemo(
                   {formatMinutes(item.totalCompletionTime)}
                 </td>
 
-                {/* Idle Time */}
-<td className="whitespace-nowrap px-4 py-4">
-  {isEditingRejected ? (
-    <div className="flex min-w-[220px] items-center gap-2">
-      <select
-        value={draft.idleHours}
-        disabled={isSubmitting}
-        onChange={(e) =>
-          setRejectedDrafts((prev) => ({
-            ...prev,
-            [item._id]: {
-              ...draft,
-              idleHours: e.target.value,
-            },
-          }))
-        }
-        className={`${inputCls} w-full`}
-      >
-        {Array.from({ length: 13 }, (_, i) => i).map((hour) => (
-          <option key={hour} value={hour}>
-            {hour} hr
-          </option>
-        ))}
-      </select>
-
-      <select
-        value={draft.idleMinutes}
-        disabled={isSubmitting}
-        onChange={(e) =>
-          setRejectedDrafts((prev) => ({
-            ...prev,
-            [item._id]: {
-              ...draft,
-              idleMinutes: e.target.value,
-            },
-          }))
-        }
-        className={`${inputCls} w-full`}
-      >
-        {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
-          <option key={minute} value={minute}>
-            {minute} min
-          </option>
-        ))}
-      </select>
-    </div>
-  ) : (
-    <span className="font-semibold">
-      {formatMinutes(item.idleTime)}
-    </span>
-  )}
-</td>
-
                 {/* Efficiency */}
                 <td className="whitespace-nowrap px-4 py-4 font-semibold">
                   {item.efficiency == null
@@ -1855,7 +2264,7 @@ const visibleTimesheets = useMemo(
 
                   {isEditingRejected && (
                     <p className="mt-2 max-w-[190px] whitespace-normal text-xs text-slate-500">
-                      Update Estimated Time, Idle Time or Description, then click Accept.
+                      Update Estimated Time or Description, then click Accept.
                     </p>
                   )}
                 </td>
@@ -2017,7 +2426,6 @@ const visibleTimesheets = useMemo(
                   "Start Time",
                   "End Time",
                   "Working Time",
-                  "Idle Time",
                   "Efficiency",
                   "Task Status",
                   "Approval Status",
@@ -2038,7 +2446,7 @@ const visibleTimesheets = useMemo(
               {allTimesheetRecords.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={13}
+                    colSpan={12}
                     className="py-20 text-center text-slate-500"
                   >
                     No timesheet records found for the selected date range.
@@ -2047,17 +2455,18 @@ const visibleTimesheets = useMemo(
               ) : (
                 allTimesheetRecords.map((item, index) => {
 
-                  const project =
-                    typeof item.projectId === "object"
-                      ? item.projectId?.projectName
-                      : "—";
+                  const project = getProjectName(
+  item.projectId,
+  projects,
+  item.projectName
+);
 
                   const approvalStatus =
                     item.approvalStatus || "Pending";
 
                   return (
                     <motion.tr
-                      key={item._id}
+                      key={item._id || item.clientTimesheetId}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{
@@ -2103,10 +2512,6 @@ const visibleTimesheets = useMemo(
 
                       <td className="whitespace-nowrap px-4 py-4 font-medium">
                         {formatMinutes(item.totalCompletionTime)}
-                      </td>
-
-                      <td className="whitespace-nowrap px-4 py-4">
-                        {formatMinutes(item.idleTime)}
                       </td>
 
                       <td className="whitespace-nowrap px-4 py-4 font-semibold">
@@ -2325,14 +2730,27 @@ function ActionButton({ label, icon, busy, onClick, tone = "sky" }) {
   return (
     <motion.button
       type="button"
-      whileHover={{ y: -1 }}
-      whileTap={{ scale: 0.94 }}
+      whileHover={{ y: -2 }}
+      whileTap={{ scale: 0.96 }}
       onClick={onClick}
       disabled={busy}
-      className={`mt-2 inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-sm disabled:opacity-60 ${toneMap[tone]}`}
+      className={`
+        mt-2 inline-flex min-h-10 min-w-[105px]
+        items-center justify-center gap-2
+        rounded-lg px-4 py-2.5
+        text-sm font-bold shadow-md
+        transition-all duration-200
+        disabled:cursor-not-allowed disabled:opacity-60
+        ${toneMap[tone]}
+      `}
     >
-      {busy ? <RefreshCw size={13} className="animate-spin" /> : icon}
-      {busy ? "Saving" : label}
+      {busy ? (
+        <RefreshCw size={16} className="animate-spin" />
+      ) : (
+        icon
+      )}
+
+      {busy ? "Saving..." : label}
     </motion.button>
   );
 }
