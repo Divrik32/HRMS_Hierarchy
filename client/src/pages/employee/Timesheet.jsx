@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import api from "../../api/axios";
 import { toast } from "react-toastify";
+import * as XLSX from "xlsx-js-style";
+import { FileSpreadsheet, Eye } from "lucide-react";
 
 /* =========================================================
    Helpers
@@ -206,7 +208,10 @@ export default function Timesheet() {
   const [rejectedDrafts, setRejectedDrafts] = useState({});
   const [rejectionComments, setRejectionComments] = useState({});
   const [rejectionSubmittingId, setRejectionSubmittingId] = useState("");
-  
+  const [showRecordsModal, setShowRecordsModal] = useState(false);
+  const [recordsDateFrom, setRecordsDateFrom] = useState("");
+  const [recordsDateTo, setRecordsDateTo] = useState("");
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -827,6 +832,166 @@ const rejectedTimesheets = useMemo(() => {
     .sort((a, b) => new Date(a.date) - new Date(b.date));
 }, [timesheets, rejectedDateFrom, rejectedDateTo]);
 
+const allTimesheetRecords = useMemo(() => {
+  return timesheets
+    .filter((item) => {
+      if (!item.date) return false;
+
+      const itemDate = new Date(item.date);
+
+      if (Number.isNaN(itemDate.getTime())) return false;
+
+      const recordDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: IST,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(itemDate);
+
+      if (recordsDateFrom && recordDate < recordsDateFrom) {
+        return false;
+      }
+
+      if (recordsDateTo && recordDate > recordsDateTo) {
+        return false;
+      }
+
+      return true;
+    })
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+}, [timesheets, recordsDateFrom, recordsDateTo]);
+
+const exportAllTimesheetsToExcel = () => {
+  if (!allTimesheetRecords.length) {
+    toast.warning("No timesheet records available to export.");
+    return;
+  }
+
+  const exportData = allTimesheetRecords.map((item) => {
+    const project =
+      typeof item.projectId === "object"
+        ? item.projectId?.projectName
+        : "—";
+
+    return {
+      Date: formatDateTime(item.date),
+      "Task Type": item.taskType || "—",
+      Project: project || "—",
+      "Task / Module": item.task || "—",
+      Description: item.description || "—",
+      Estimated: formatMinutes(item.estimatedTime),
+      "Start Time": formatTime(item.startTime),
+      "End Time": formatTime(item.endTime),
+      "Working Time": formatMinutes(item.totalCompletionTime),
+      "Idle Time": formatMinutes(item.idleTime),
+      Efficiency:
+        item.efficiency == null ? "—" : `${item.efficiency}%`,
+      "Task Status": item.taskStatus || "Not Started",
+      "Approval Status": item.approvalStatus || "Pending",
+    };
+  });
+
+  
+const worksheet = XLSX.utils.json_to_sheet(exportData);
+
+// Header styling
+const headerRange = XLSX.utils.decode_range(worksheet["!ref"]);
+
+for (let col = headerRange.s.c; col <= headerRange.e.c; col++) {
+  const cellAddress = XLSX.utils.encode_cell({
+    r: 0,
+    c: col,
+  });
+
+  if (worksheet[cellAddress]) {
+    worksheet[cellAddress].s = {
+      font: {
+        bold: true,
+        color: { rgb: "FFFFFF" },
+      },
+      fill: {
+        patternType: "solid",
+        fgColor: { rgb: "14506F" },
+      },
+      alignment: {
+        horizontal: "center",
+        vertical: "center",
+      },
+    };
+  }
+}
+
+// Approval status based row colors
+allTimesheetRecords.forEach((item, index) => {
+  const status = item.approvalStatus || "Pending";
+
+  let backgroundColor = "FEF3C7"; // Pending - Yellow
+
+  if (status === "Approved") {
+    backgroundColor = "DCFCE7"; // Green
+  } else if (status === "Rejected") {
+    backgroundColor = "FEE2E2"; // Red
+  }
+
+  const excelRow = index + 1;
+
+  for (let col = 0; col <= headerRange.e.c; col++) {
+    const cellAddress = XLSX.utils.encode_cell({
+      r: excelRow,
+      c: col,
+    });
+
+    if (worksheet[cellAddress]) {
+      worksheet[cellAddress].s = {
+        fill: {
+          patternType: "solid",
+          fgColor: {
+            rgb: backgroundColor,
+          },
+        },
+        alignment: {
+          vertical: "center",
+        },
+      };
+    }
+  }
+});
+
+
+  worksheet["!cols"] = [
+    { wch: 22 },
+    { wch: 15 },
+    { wch: 25 },
+    { wch: 20 },
+    { wch: 40 },
+    { wch: 15 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 15 },
+    { wch: 15 },
+    { wch: 18 },
+    { wch: 18 },
+  ];
+
+  const workbook = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    worksheet,
+    "Show Records"
+  );
+
+  const fileName =
+    recordsDateFrom || recordsDateTo
+      ? `My_Timesheets_${recordsDateFrom || "All"}_to_${recordsDateTo || "All"}.xlsx`
+      : "My_All_Timesheets.xlsx";
+
+  XLSX.writeFile(workbook, fileName);
+
+  toast.success("Timesheet Excel exported successfully.");
+};
+
 const visibleTimesheets = useMemo(
   () =>
     filteredTimesheets.filter(
@@ -882,6 +1047,16 @@ const visibleTimesheets = useMemo(
                 Create tasks and track your working time.
               </p>
             </div>
+            <motion.button
+  type="button"
+  whileHover={{ y: -2 }}
+  whileTap={{ scale: 0.96 }}
+  onClick={() => setShowRecordsModal(true)}
+  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-white/30 bg-white/15 px-5 py-3 text-sm font-bold text-white shadow-lg backdrop-blur-md transition hover:bg-white/25"
+>
+  <Eye size={18} />
+  Show Records
+</motion.button>
           </div>
 
           <div
@@ -1729,6 +1904,266 @@ const visibleTimesheets = useMemo(
   )}
 
 </section>
+
+{/* ================= ALL TIMESHEET RECORDS MODAL ================= */}
+
+<AnimatePresence>
+  {showRecordsModal && (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm sm:p-6"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) {
+          setShowRecordsModal(false);
+        }
+      }}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.94, y: 20 }}
+        transition={{ duration: 0.25 }}
+        className="flex max-h-[92vh] w-full max-w-[1600px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+      >
+
+        {/* Header */}
+
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-gradient-to-r from-[#0b2f45] to-[#14506f] p-5 text-white">
+
+          <div>
+            <h2 className="text-xl font-bold">
+              Show Records
+            </h2>
+
+            <p className="mt-1 text-sm text-sky-100">
+              {allTimesheetRecords.length} record(s)
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowRecordsModal(false)}
+            className="rounded-lg bg-white/15 p-2 text-white transition hover:bg-white/25"
+            title="Close"
+          >
+            <X size={21} />
+          </button>
+
+        </div>
+
+        {/* Filters and Export */}
+<div className="flex flex-col justify-end gap-4 border-b border-slate-200 bg-slate-50 p-5 xl:flex-row xl:items-end">
+
+  <div className="flex flex-wrap items-end justify-end gap-3">
+
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+        From Date
+      </label>
+      <input
+        type="date"
+        value={recordsDateFrom}
+        max={recordsDateTo || undefined}
+        onChange={(e) => setRecordsDateFrom(e.target.value)}
+        className={`${inputCls} w-full sm:w-48`}
+      />
+    </div>
+
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+        To Date
+      </label>
+      <input
+        type="date"
+        value={recordsDateTo}
+        min={recordsDateFrom || undefined}
+        onChange={(e) => setRecordsDateTo(e.target.value)}
+        className={`${inputCls} w-full sm:w-48`}
+      />
+    </div>
+
+    <button
+      type="button"
+      onClick={exportAllTimesheetsToExcel}
+      disabled={!allTimesheetRecords.length}
+      className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <FileSpreadsheet size={18} />
+      Export Excel
+    </button>
+
+  </div>
+</div>
+
+
+        {/* Records Table */}
+
+        <div className="min-h-0 flex-1 overflow-auto">
+
+          <table className="w-full min-w-[2300px] text-left text-sm text-slate-800">
+
+            <thead className="sticky top-0 z-20 bg-gradient-to-r from-[#0b2f45] to-[#14506f] text-xs uppercase tracking-wide text-white">
+
+              <tr>
+                {[
+                  "Date",
+                  "Task Type",
+                  "Project",
+                  "Task / Module",
+                  "Description",
+                  "Estimated",
+                  "Start Time",
+                  "End Time",
+                  "Working Time",
+                  "Idle Time",
+                  "Efficiency",
+                  "Task Status",
+                  "Approval Status",
+                ].map((heading) => (
+                  <th
+                    key={heading}
+                    className="whitespace-nowrap px-4 py-4 font-semibold"
+                  >
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+
+            </thead>
+
+            <tbody className="divide-y divide-slate-200">
+
+              {allTimesheetRecords.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={13}
+                    className="py-20 text-center text-slate-500"
+                  >
+                    No timesheet records found for the selected date range.
+                  </td>
+                </tr>
+              ) : (
+                allTimesheetRecords.map((item, index) => {
+
+                  const project =
+                    typeof item.projectId === "object"
+                      ? item.projectId?.projectName
+                      : "—";
+
+                  const approvalStatus =
+                    item.approvalStatus || "Pending";
+
+                  return (
+                    <motion.tr
+                      key={item._id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{
+                        duration: 0.2,
+                        delay: Math.min(index, 15) * 0.015,
+                      }}
+                      className={`align-top transition-colors ${
+                        getApprovalRowClass(item)
+                      }`}
+                    >
+
+                      <td className="whitespace-nowrap px-4 py-4 font-medium">
+                        {formatDateTime(item.date)}
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-4">
+                        {item.taskType || "—"}
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-4">
+                        {project || "—"}
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-4 font-semibold text-[#0b2f45]">
+                        {item.task || "—"}
+                      </td>
+
+                      <td className="max-w-[350px] whitespace-normal px-4 py-4">
+                        {item.description || "—"}
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-4">
+                        {formatMinutes(item.estimatedTime)}
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-4">
+                        {formatTime(item.startTime)}
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-4">
+                        {formatTime(item.endTime)}
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-4 font-medium">
+                        {formatMinutes(item.totalCompletionTime)}
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-4">
+                        {formatMinutes(item.idleTime)}
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-4 font-semibold">
+                        {item.efficiency == null
+                          ? "—"
+                          : `${item.efficiency}%`}
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-4">
+                        <Chip
+                          className={getTaskStatusClass(item.taskStatus)}
+                        >
+                          {item.taskStatus || "Not Started"}
+                        </Chip>
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-4">
+                        <Chip
+                          className={getStatusClass(approvalStatus)}
+                        >
+                          {approvalStatus}
+                        </Chip>
+                      </td>
+
+                    </motion.tr>
+                  );
+                })
+              )}
+
+            </tbody>
+
+          </table>
+
+        </div>
+
+        {/* Footer */}
+
+        <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3">
+
+          <p className="text-xs text-slate-500">
+            Showing {allTimesheetRecords.length} timesheet record(s)
+          </p>
+
+          <button
+            type="button"
+            onClick={() => setShowRecordsModal(false)}
+            className="rounded-lg bg-[#0b2f45] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[#14506f]"
+          >
+            Close
+          </button>
+
+        </div>
+
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
 
       </motion.div>
     </div>
