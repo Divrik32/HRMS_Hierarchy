@@ -2248,7 +2248,6 @@ export const getMyTimesheetWeeklyStatus = async (req, res) => {
   }
 };
 
-
 export const respondToRejection = async (req, res) => {
   try {
     const { id } = req.params;
@@ -2453,6 +2452,265 @@ export const respondToRejection = async (req, res) => {
       success: false,
       message: "Failed to submit response.",
       error: error.message,
+    });
+  }
+};
+
+export const syncCompletedDrafts = async (req, res) => {
+  try {
+    if (!isEmployee(req)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only employees can sync timesheet drafts.",
+      });
+    }
+
+    const companyId = req.user?.companyId;
+    const employeeId = getEmployeeId(req);
+
+    if (
+      !isValidObjectId(companyId) ||
+      !isValidObjectId(employeeId)
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: "Employee authentication details are missing.",
+      });
+    }
+
+    const { drafts } = req.body;
+    
+    if (!Array.isArray(drafts)) {
+      return res.status(400).json({
+        success: false,
+        message: "Drafts must be provided as an array.",
+      });
+    }
+
+    const employee = await Employee.findOne({
+      _id: employeeId,
+      companyId,
+    });
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "Employee not found.",
+      });
+    }
+
+    const savedClientTimesheetIds = [];
+    const failedDrafts = [];
+
+    for (const draft of drafts) {
+      const clientTimesheetId = draft?.clientTimesheetId;
+
+      try {
+        if (
+          !clientTimesheetId ||
+          typeof clientTimesheetId !== "string"
+        ) {
+          throw new Error("Invalid clientTimesheetId.");
+        }
+
+        if (draft.taskStatus !== "Completed") {
+          throw new Error("Only completed tasks can be synced.");
+        }
+
+        // Check whether this draft was already saved.
+        const existing = await Timesheet.findOne({
+          companyId,
+          employeeId: employee._id,
+          clientTimesheetId,
+        });
+
+        if (existing) {
+          savedClientTimesheetIds.push(clientTimesheetId);
+          continue;
+        }
+
+        if (
+          !isValidObjectId(draft.projectId) ||
+          !draft.task ||
+          !draft.description?.trim()
+        ) {
+          throw new Error("Required task details are missing.");
+        }
+
+        const project = await Project.findOne({
+          _id: draft.projectId,
+          companyId,
+        });
+
+        if (!project) {
+          throw new Error("Project not found in this company.");
+        }
+
+        const allowedTaskTypes = [
+          "Project",
+          "Learning",
+          "Training",
+        ];
+
+        const allowedTasks = [
+          "Testing",
+          "Development",
+          "Learning",
+          "Graphics",
+          "Management",
+          "Meeting",
+        ];
+
+        if (!allowedTaskTypes.includes(draft.taskType)) {
+          throw new Error("Invalid task type.");
+        }
+
+        if (!allowedTasks.includes(draft.task)) {
+          throw new Error("Invalid task.");
+        }
+
+        const estimatedTime = Number(draft.estimatedTime);
+        const idleTime = Number(draft.idleTime ?? 0);
+        const totalCompletionTime = Number(
+          draft.totalCompletionTime
+        );
+
+        if (
+          !Number.isFinite(estimatedTime) ||
+          estimatedTime <= 0 ||
+          !Number.isFinite(idleTime) ||
+          idleTime < 0 ||
+          !Number.isFinite(totalCompletionTime) ||
+          totalCompletionTime < 0
+        ) {
+          throw new Error("Invalid task time values.");
+        }
+
+        const startTime = new Date(draft.startTime);
+        const endTime = new Date(draft.endTime);
+        const date = new Date(draft.date);
+
+        if (
+          !draft.startTime ||
+          !draft.endTime ||
+          Number.isNaN(startTime.getTime()) ||
+          Number.isNaN(endTime.getTime()) ||
+          Number.isNaN(date.getTime()) ||
+          endTime < startTime
+        ) {
+          throw new Error("Invalid task date or time.");
+        }
+
+        let breakTime = null;
+
+        if (draft.breakTime) {
+          const breakStart = new Date(
+            draft.breakTime.startTime
+          );
+
+          const breakEnd = draft.breakTime.endTime
+            ? new Date(draft.breakTime.endTime)
+            : null;
+
+          if (
+            Number.isNaN(breakStart.getTime()) ||
+            (breakEnd && Number.isNaN(breakEnd.getTime()))
+          ) {
+            throw new Error("Invalid break time.");
+          }
+
+          breakTime = {
+            startTime: breakStart,
+            endTime: breakEnd,
+            duration:
+              draft.breakTime.duration == null
+                ? null
+                : Number(draft.breakTime.duration),
+          };
+        }
+
+        const estimatedError =
+          draft.estimatedError == null
+            ? null
+            : Number(draft.estimatedError);
+
+        const efficiency =
+          draft.efficiency == null
+            ? null
+            : Number(draft.efficiency);
+
+        if (
+          (estimatedError !== null &&
+            !Number.isFinite(estimatedError)) ||
+          (efficiency !== null &&
+            (!Number.isFinite(efficiency) || efficiency < 0))
+        ) {
+          throw new Error("Invalid efficiency or error value.");
+        }
+
+        await Timesheet.create({
+          companyId,
+          employeeId: employee._id,
+          clientTimesheetId,
+
+          taskType: draft.taskType,
+          projectId: project._id,
+          task: draft.task,
+          description: draft.description.trim(),
+
+          date,
+          estimatedTime,
+          totalCompletionTime,
+          idleTime,
+          estimatedError,
+
+          startTime,
+          endTime,
+          breakTime,
+
+          efficiency,
+          taskStatus: "Completed",
+          approvalStatus: "Pending",
+        });
+
+        savedClientTimesheetIds.push(clientTimesheetId);
+      } catch (error) {
+        // A duplicate-key error can happen if two sync requests
+        // arrive at nearly the same time.
+        if (error.code === 11000 && clientTimesheetId) {
+          const existing = await Timesheet.findOne({
+            companyId,
+            employeeId: employee._id,
+            clientTimesheetId,
+          });
+
+          if (existing) {
+            savedClientTimesheetIds.push(clientTimesheetId);
+            continue;
+          }
+        }
+
+        failedDrafts.push({
+          clientTimesheetId,
+          message: error.message,
+        });
+      }
+    }
+
+    return res.status(failedDrafts.length ? 207 : 200).json({
+      success: failedDrafts.length === 0,
+      message: failedDrafts.length
+        ? "Some completed drafts could not be synced."
+        : "Completed drafts synced successfully.",
+      savedClientTimesheetIds,
+      failedDrafts,
+    });
+  } catch (error) {
+    console.error("Sync Completed Drafts Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to sync completed timesheet drafts.",
     });
   }
 };

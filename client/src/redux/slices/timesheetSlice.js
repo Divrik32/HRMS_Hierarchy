@@ -32,7 +32,7 @@ const timesheetSlice = createSlice({
 
   reducers: {
     // =====================================
-    // EXISTING TIMESHEET DRAFT REDUCERS
+    // TIMESHEET DRAFT REDUCERS
     // =====================================
 
     addTimesheetDraft: (state, action) => {
@@ -42,24 +42,32 @@ const timesheetSlice = createSlice({
 
       const stack = getDrafts(state, scopeKey);
 
-      const alreadyExists = stack.some(
-        (item) => item.clientTimesheetId === draft.clientTimesheetId
+      const index = stack.findIndex(
+        (item) =>
+          item.clientTimesheetId === draft.clientTimesheetId
       );
 
-      if (!alreadyExists) {
+      if (index === -1) {
         stack.push(draft);
+      } else {
+        stack[index] = {
+          ...stack[index],
+          ...draft,
+        };
       }
     },
 
     updateTimesheetDraft: (state, action) => {
-      const { scopeKey, clientTimesheetId, updates } = action.payload;
+      const { scopeKey, clientTimesheetId, updates } =
+        action.payload;
 
-      if (!scopeKey || !clientTimesheetId) return;
+      if (!scopeKey || !clientTimesheetId || !updates) return;
 
       const stack = getDrafts(state, scopeKey);
 
       const index = stack.findIndex(
-        (item) => item.clientTimesheetId === clientTimesheetId
+        (item) =>
+          item.clientTimesheetId === clientTimesheetId
       );
 
       if (index !== -1) {
@@ -75,10 +83,12 @@ const timesheetSlice = createSlice({
 
       if (!scopeKey || !clientTimesheetId) return;
 
-      const stack = getDrafts(state, scopeKey);
-
-      state.draftsByScope[scopeKey] = stack.filter(
-        (item) => item.clientTimesheetId !== clientTimesheetId
+      state.draftsByScope[scopeKey] = getDrafts(
+        state,
+        scopeKey
+      ).filter(
+        (item) =>
+          item.clientTimesheetId !== clientTimesheetId
       );
     },
 
@@ -89,15 +99,17 @@ const timesheetSlice = createSlice({
 
       const savedIds = new Set(clientTimesheetIds);
 
-      const stack = getDrafts(state, scopeKey);
-
-      state.draftsByScope[scopeKey] = stack.filter(
-        (item) => !savedIds.has(item.clientTimesheetId)
+      state.draftsByScope[scopeKey] = getDrafts(
+        state,
+        scopeKey
+      ).filter(
+        (item) =>
+          !savedIds.has(item.clientTimesheetId)
       );
     },
 
     // =====================================
-    // NEW INLINE ROW REDUCERS
+    // INLINE ROW REDUCERS
     // =====================================
 
     addInlineRowDraft: (state, action) => {
@@ -107,12 +119,17 @@ const timesheetSlice = createSlice({
 
       const rows = getInlineRows(state, scopeKey);
 
-      const alreadyExists = rows.some(
+      const index = rows.findIndex(
         (item) => item.id === row.id
       );
 
-      if (!alreadyExists) {
+      if (index === -1) {
         rows.push(row);
+      } else {
+        rows[index] = {
+          ...rows[index],
+          ...row,
+        };
       }
     },
 
@@ -140,11 +157,10 @@ const timesheetSlice = createSlice({
 
       if (!scopeKey || !rowId) return;
 
-      const rows = getInlineRows(state, scopeKey);
-
-      state.inlineRowsByScope[scopeKey] = rows.filter(
-        (item) => item.id !== rowId
-      );
+      state.inlineRowsByScope[scopeKey] = getInlineRows(
+        state,
+        scopeKey
+      ).filter((item) => item.id !== rowId);
     },
 
     removeAllInlineRows: (state, action) => {
@@ -154,6 +170,55 @@ const timesheetSlice = createSlice({
 
       state.inlineRowsByScope[scopeKey] = [];
     },
+
+    // =====================================
+    // REMOVE SAVED INLINE ROWS
+    // =====================================
+
+    removeSavedInlineRows: (state, action) => {
+      const { scopeKey, rowIds } = action.payload;
+
+      if (!scopeKey || !Array.isArray(rowIds)) return;
+
+      const savedIds = new Set(rowIds);
+
+      state.inlineRowsByScope[scopeKey] = getInlineRows(
+        state,
+        scopeKey
+      ).filter((row) => !savedIds.has(row.id));
+    },
+
+    // =====================================
+    // REMOVE SAVED DATA FROM BOTH STORES
+    // =====================================
+
+    removeSavedCompletedTimesheets: (state, action) => {
+      const {
+        scopeKey,
+        clientTimesheetIds = [],
+        inlineRowIds = [],
+      } = action.payload;
+
+      if (!scopeKey) return;
+
+      const savedDraftIds = new Set(clientTimesheetIds);
+      const savedInlineIds = new Set(inlineRowIds);
+
+      state.draftsByScope[scopeKey] = getDrafts(
+        state,
+        scopeKey
+      ).filter(
+        (draft) =>
+          !savedDraftIds.has(draft.clientTimesheetId)
+      );
+
+      state.inlineRowsByScope[scopeKey] = getInlineRows(
+        state,
+        scopeKey
+      ).filter(
+        (row) => !savedInlineIds.has(row.id)
+      );
+    },
   },
 });
 
@@ -162,36 +227,58 @@ const timesheetSlice = createSlice({
 // =====================================
 
 export const {
-  // Existing actions
   addTimesheetDraft,
   updateTimesheetDraft,
   removeTimesheetDraft,
   removeSavedTimesheetDrafts,
 
-  // New inline row actions
   addInlineRowDraft,
   updateInlineRowDraft,
   removeInlineRowDraft,
   removeAllInlineRows,
+  removeSavedInlineRows,
+
+  removeSavedCompletedTimesheets,
 } = timesheetSlice.actions;
 
 // =====================================
-// EXISTING SELECTORS
+// SELECTORS
 // =====================================
 
 export const selectTimesheetDrafts = (state, scopeKey) =>
-  state.timesheets.draftsByScope?.[scopeKey] || [];
+  state.timesheets?.draftsByScope?.[scopeKey] || [];
 
-export const selectCompletedTimesheetDrafts = (state, scopeKey) =>
+export const selectCompletedTimesheetDrafts = (
+  state,
+  scopeKey
+) =>
   selectTimesheetDrafts(state, scopeKey).filter(
     (item) => item.taskStatus === "Completed"
   );
 
-// =====================================
-// NEW INLINE ROW SELECTOR
-// =====================================
-
 export const selectInlineRows = (state, scopeKey) =>
   state.timesheets?.inlineRowsByScope?.[scopeKey] || [];
+
+export const selectCompletedInlineRows = (
+  state,
+  scopeKey
+) =>
+  selectInlineRows(state, scopeKey).filter(
+    (item) =>
+      item.taskStatus === "Completed" ||
+      item.status === "Completed"
+  );
+
+// =====================================
+// COMBINED COMPLETED SELECTOR
+// =====================================
+
+export const selectAllCompletedTimesheetData = (
+  state,
+  scopeKey
+) => ({
+  drafts: selectCompletedTimesheetDrafts(state, scopeKey),
+  inlineRows: selectCompletedInlineRows(state, scopeKey),
+});
 
 export default timesheetSlice.reducer;

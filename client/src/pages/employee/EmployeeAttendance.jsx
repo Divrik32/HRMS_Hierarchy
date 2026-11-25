@@ -1,4 +1,3 @@
-
 import {
   useCallback,
   useEffect,
@@ -23,6 +22,13 @@ import {
   Save,
   Download,
 } from "lucide-react";
+
+import { useDispatch, useSelector } from "react-redux";
+
+import {
+  selectCompletedTimesheetDrafts,
+  removeSavedTimesheetDrafts,
+} from "../../redux/slices/timesheetSlice";
 
 import { toast } from "react-toastify";
 import api from "../../api/axios";
@@ -620,9 +626,18 @@ const AttendanceEditModal = ({
 // =========================================
 
 const EmployeeAttendance = () => {
+  const dispatch = useDispatch();
+  const [timesheetScopeKey, setTimesheetScopeKey] = useState("");
+const completedTimesheetDrafts = useSelector((state) =>
+  selectCompletedTimesheetDrafts(
+    state,
+    timesheetScopeKey
+  )
+);
+
+const checkOutInProgressRef = useRef(false);
   const today = getTodayDate();
   const currentMonth = getCurrentMonth();
-
   // =========================================
   // VIEW STATES
   // =========================================
@@ -664,11 +679,10 @@ const EmployeeAttendance = () => {
   // =========================================
 
   const [isHRViewer, setIsHRViewer] = useState(false);
-
   // Key format: employeeMongoId_YYYY-MM-DD
   // Value: "Full Day" / "Half Day"
   const [approvedLeaveDates, setApprovedLeaveDates] = useState({});
-
+  
   const [companyHolidayDates, setCompanyHolidayDates] = useState([]);
 
   // =========================================
@@ -685,35 +699,45 @@ const EmployeeAttendance = () => {
   // =========================================
 
   const loadViewerProfile = useCallback(async () => {
-    try {
-      const response = await api.get("/employees/profile/me");
+  try {
+    const response = await api.get("/employees/profile/me");
 
-      const profile =
-        response.data?.employee ||
-        response.data?.profile ||
-        response.data?.data ||
-        response.data;
+    const profile =
+      response.data?.employee ||
+      response.data?.profile ||
+      response.data?.data ||
+      response.data;
 
-      const roleName = String(
-        profile?.roleId?.roleName ||
-        profile?.role?.roleName ||
-        profile?.roleName ||
-        ""
-      )
-        .trim()
-        .toLowerCase();
+    const roleName = String(
+      profile?.roleId?.roleName ||
+      profile?.role?.roleName ||
+      profile?.roleName ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
 
-      const isHR = ["hr", "head recruiter"].includes(roleName);
+    const isHR = ["hr", "head recruiter"].includes(roleName);
 
-      setIsHRViewer(isHR);
+    const employeeId = getEmployeeMongoId(profile);
+    const companyId = getEmployeeMongoId(profile?.companyId);
 
-      return isHR;
-    } catch (error) {
-      // Super Admin may not have an employee profile.
-      setIsHRViewer(false);
-      return false;
+    if (employeeId && companyId) {
+      setTimesheetScopeKey(`${companyId}:${employeeId}`);
+    } else {
+      setTimesheetScopeKey("");
     }
-  }, []);
+
+    setIsHRViewer(isHR);
+
+    return isHR;
+  } catch (error) {
+    setTimesheetScopeKey("");
+    setIsHRViewer(false);
+
+    return false;
+  }
+}, []);
 
   // =========================================
   // LOAD MY ATTENDANCE
@@ -1078,70 +1102,148 @@ const handleCheckIn = async () => {
   // =========================================
 
   const handleCheckOut = () => {
-    toast.info(
-      ({ closeToast }) => (
-        <div>
-          <p className="mb-3 text-sm font-medium text-slate-800">
-            You don't need to check out for lunch or any other break.
-            Please check out only when your shift ends.
-          </p>
+  toast.info(
+    ({ closeToast }) => (
+      <div>
+        <p className="mb-3 text-sm font-medium text-slate-800">
+          You don't need to check out for lunch or any other break.
+          Please check out only when your shift ends.
+        </p>
 
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={closeToast}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-            >
-              Cancel
-            </button>
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={closeToast}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            Cancel
+          </button>
 
-            <button
-              type="button"
-              onClick={async () => {
-                closeToast();
-                setActionLoading("check-out");
+          <button
+            type="button"
+            disabled={actionLoading === "check-out"}
+            onClick={async () => {
+              closeToast();
 
-                try {
-                  const response = await api.patch(
-  "/attendance/check-out"
-);
+              if (checkOutInProgressRef.current) return;
 
-toast.success(
-  response.data?.message ||
-    "Checked out successfully."
-);
+              checkOutInProgressRef.current = true;
+              setActionLoading("check-out");
 
-await loadAttendance();
-
-// Sync Employee Dashboard
-window.dispatchEvent(
-  new Event("employee-attendance-updated")
-);
-                } catch (error) {
-                  toast.error(
-                    error.response?.data?.message ||
-                      "Unable to check out."
+              try {
+                if (!timesheetScopeKey) {
+                  throw new Error(
+                    "Employee information is not ready. Please refresh and try again."
                   );
-                } finally {
-                  setActionLoading("");
                 }
-              }}
-              className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
-            >
-              OK
-            </button>
-          </div>
+
+                // =====================================
+                // STEP 1: GET COMPLETED REDUX DRAFTS
+                // =====================================
+
+                const draftsToSync = completedTimesheetDrafts.map(
+                  (draft) => ({ ...draft })
+                );
+
+                // =====================================
+                // STEP 2: SAVE COMPLETED DRAFTS
+                // =====================================
+
+                if (draftsToSync.length > 0) {
+                  const syncResponse = await api.post(
+                    "/timesheets/sync-completed-drafts",
+                    {
+                      drafts: draftsToSync,
+                    }
+                  );
+
+                  const savedClientTimesheetIds = Array.isArray(
+                    syncResponse.data?.savedClientTimesheetIds
+                  )
+                    ? syncResponse.data.savedClientTimesheetIds
+                    : [];
+
+                  // =====================================
+                  // STEP 3: REMOVE ONLY CONFIRMED SAVED DRAFTS
+                  // =====================================
+
+                  if (savedClientTimesheetIds.length > 0) {
+                    dispatch(
+                      removeSavedTimesheetDrafts({
+                        scopeKey: timesheetScopeKey,
+                        clientTimesheetIds:
+                          savedClientTimesheetIds,
+                      })
+                    );
+                  }
+
+                  // =====================================
+                  // STEP 4: CHECK WHETHER ALL DRAFTS SAVED
+                  // =====================================
+
+                  const unsavedDrafts = draftsToSync.filter(
+                    (draft) =>
+                      !savedClientTimesheetIds.includes(
+                        draft.clientTimesheetId
+                      )
+                  );
+
+                  if (
+                    unsavedDrafts.length > 0 ||
+                    syncResponse.data?.failedDrafts?.length > 0
+                  ) {
+                    throw new Error(
+                      `${unsavedDrafts.length} completed timesheet(s) could not be saved. Please try checkout again.`
+                    );
+                  }
+                }
+
+                // =====================================
+                // STEP 5: ATTENDANCE CHECK OUT
+                // Only after successful timesheet sync
+                // =====================================
+
+                const response = await api.patch(
+                  "/attendance/check-out"
+                );
+
+                toast.success(
+                  response.data?.message ||
+                    "Checked out successfully."
+                );
+
+                await loadAttendance();
+
+                window.dispatchEvent(
+                  new Event("employee-attendance-updated")
+                );
+              } catch (error) {
+                toast.error(
+                  error.response?.data?.message ||
+                    error.message ||
+                    "Unable to check out."
+                );
+              } finally {
+                checkOutInProgressRef.current = false;
+                setActionLoading("");
+              }
+            }}
+            className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            OK
+          </button>
         </div>
-      ),
-      {
-        position: "top-right",
-        autoClose: false,
-        closeOnClick: false,
-        pauseOnHover: true,
-        closeButton: false,
-      }
-    );
-  };
+      </div>
+    ),
+    {
+      position: "top-right",
+      autoClose: false,
+      closeOnClick: false,
+      pauseOnHover: true,
+      closeButton: false,
+    }
+  );
+};
 
   // =========================================
   // OPEN EDIT MODAL

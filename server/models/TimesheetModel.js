@@ -47,6 +47,10 @@ const timesheetSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    clientTimesheetId: {
+  type: String,
+  default: null,
+},
 
     // =================================================
     // TASK TYPE
@@ -324,6 +328,19 @@ timesheetSchema.index({
   projectId: 1,
   employeeId: 1,
 });
+timesheetSchema.index(
+  {
+    companyId: 1,
+    employeeId: 1,
+    clientTimesheetId: 1,
+  },
+  {
+    unique: true,
+    partialFilterExpression: {
+      clientTimesheetId: { $type: "string" },
+    },
+  }
+);
 
 const Timesheet = mongoose.model("Timesheet", timesheetSchema);
 

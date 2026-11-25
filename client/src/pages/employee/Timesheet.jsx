@@ -1,23 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import gsap from "gsap";
-import {
-  Clock3,
-  Plus,
-  RefreshCw,
-  Search,
-  Play,
-  Square,
-  Coffee,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Trash2,
-  RotateCcw,
-  Pencil,
-  Check,
-  X,
-} from "lucide-react";
+import {Clock3, Plus, RefreshCw, Search, Play, Square, Coffee, CheckCircle2, XCircle, Clock, Trash2, RotateCcw, Pencil, Check, X,} from "lucide-react";
 import api from "../../api/axios";
 import { toast } from "react-toastify";
 import * as XLSX from "xlsx-js-style";
@@ -310,15 +294,21 @@ setEmployeeScopeKey(scopeKey);
   /* ---------- create ---------- */
   /* ---------- Inline Rows ---------- */
 
+
 const createInlineRow = () => ({
   id:
     globalThis.crypto?.randomUUID?.() ||
     `inline-${Date.now()}-${Math.random()}`,
+
   form: { ...blankInline },
+
+  date: new Date().toISOString(),
+
   dateTime: new Date().toLocaleString("en-IN", {
     timeZone: IST,
   }),
 });
+
 
 const addInlineRow = () => {
   if (!employeeScopeKey) {
@@ -496,28 +486,29 @@ const removeInlineRow = (rowId) => {
   );
 };
 
+
 const handleInlineSave = (form, rowId, row) => {
   if (!employeeScopeKey) {
     toast.error("Employee information not loaded.");
     return;
   }
 
-  if (!form.taskType) {
+  if (!form?.taskType) {
     toast.error("Please select task type.");
     return;
   }
 
-  if (!form.projectId) {
+  if (!form?.projectId) {
     toast.error("Please select project.");
     return;
   }
 
-  if (!form.task) {
+  if (!form?.task) {
     toast.error("Please select task.");
     return;
   }
 
-  if (!form.description?.trim()) {
+  if (!form?.description?.trim()) {
     toast.error("Please enter description.");
     return;
   }
@@ -542,11 +533,16 @@ const handleInlineSave = (form, rowId, row) => {
     (project) => project._id === form.projectId
   );
 
-  const draft = {
-    clientTimesheetId:
-      globalThis.crypto?.randomUUID?.() ||
-      `draft-${Date.now()}-${Math.random()}`,
+  // Keep the same ID for retries and duplicate protection.
+  const clientTimesheetId =
+    row?.clientTimesheetId ||
+    (row?.id && row.id !== "auto-inline-row"
+      ? row.id
+      : globalThis.crypto?.randomUUID?.() ||
+        `draft-${Date.now()}-${Math.random()}`);
 
+  const draft = {
+    clientTimesheetId,
     companyId,
     employeeId,
 
@@ -560,23 +556,26 @@ const handleInlineSave = (form, rowId, row) => {
     task: form.task,
     description: form.description.trim(),
 
-    date: new Date().toISOString(),
+    date: row?.date || new Date().toISOString(),
 
     estimatedTime,
     idleTime,
 
     startTime: row?.startTime || null,
-endTime: row?.endTime || null,
-breakTime: row?.breakTime || null,
-totalCompletionTime: row?.totalCompletionTime ?? null,
-efficiency: row?.efficiency ?? null,
-estimatedError: row?.estimatedError ?? null,
+    endTime: row?.endTime || null,
+    breakTime: row?.breakTime || null,
 
-taskStatus: row?.taskStatus || "Not Started",
+    totalCompletionTime:
+      row?.totalCompletionTime ?? null,
+
+    efficiency: row?.efficiency ?? null,
+    estimatedError: row?.estimatedError ?? null,
+
+    taskStatus: row?.taskStatus || "Not Started",
     approvalStatus: "Pending",
   };
 
-  // Completed form-টি Timesheet draft stack-এ যাবে
+  // Save into Redux Draft Stack.
   dispatch(
     addTimesheetDraft({
       scopeKey: employeeScopeKey,
@@ -584,22 +583,30 @@ taskStatus: row?.taskStatus || "Not Started",
     })
   );
 
-  // যে incomplete row থেকে draft তৈরি হয়েছে সেটি সরবে
-  dispatch(
-    removeInlineRowDraft({
-      scopeKey: employeeScopeKey,
-      rowId,
-    })
-  );
+  // Remove the original Inline Row.
+  if (rowId && rowId !== "auto-inline-row") {
+    dispatch(
+      removeInlineRowDraft({
+        scopeKey: employeeScopeKey,
+        rowId,
+      })
+    );
+  }
 
-  toast.success("Timesheet added to stack.");
+  toast.success(
+    draft.taskStatus === "Completed"
+      ? "Completed timesheet saved locally."
+      : "Timesheet draft saved locally."
+  );
 };
+
+
 const handleInlineTaskAction = (row, action) => {
   if (!employeeScopeKey) return;
 
   let targetRow = row;
 
-  // Auto row-তে Action click করলে সেটিকে Redux Inline Row বানাবে
+  // Auto row-তে Action click করলে Redux Inline Row বানাবে
   if (row.id === "auto-inline-row") {
     targetRow = createInlineRow();
 
@@ -735,6 +742,7 @@ const handleInlineTaskAction = (row, action) => {
     updates.taskStatus = "Completed";
   }
 
+  // Inline row update
   dispatch(
     updateInlineRowDraft({
       scopeKey: employeeScopeKey,
@@ -743,16 +751,33 @@ const handleInlineTaskAction = (row, action) => {
     })
   );
 
+  // IMPORTANT:
+  // End করার সঙ্গে সঙ্গেই completed row-টি
+  // Timesheet Draft Stack-এ পাঠাবে।
+  if (action === "end") {
+    const completedRow = {
+      ...targetRow,
+      ...updates,
+    };
+
+    handleInlineSave(
+      completedRow.form,
+      completedRow.id,
+      completedRow
+    );
+
+    return;
+  }
+
   toast.success(
     action === "start"
       ? "Task started successfully."
       : action === "break"
       ? "Break started."
-      : action === "resume"
-      ? "Task resumed."
-      : "Task completed successfully."
+      : "Task resumed."
   );
 };
+
 
 const handleTaskAction = async (item, action) => {
   const isDraft = Boolean(item.clientTimesheetId);
@@ -974,9 +999,7 @@ const startEdit = (item, field) => {
 
 const saveEdit = async (item) => {
   const { field, hours, minutes } = editing;
-
   const isEstimated = field === "estimatedTime";
-
   if (
     hours === "" ||
     minutes === "" ||
@@ -1438,7 +1461,7 @@ const combinedVisibleTimesheets = useMemo(() => {
   );
 
   return [...visibleTimesheets, ...drafts].sort(
-    (a, b) => new Date(b.date) - new Date(a.date)
+    (a, b) => new Date(a.date) - new Date(b.date)
   );
 }, [visibleTimesheets, timesheetDrafts]);
   const stats = useMemo(
@@ -1588,6 +1611,7 @@ const combinedVisibleTimesheets = useMemo(() => {
 
                 <AnimatePresence initial={false}>
                   {combinedVisibleTimesheets.map((item, index) => {
+                    console.log("MY RECORD DATE:", item.date);
                     const locked = item.approvalStatus === "Approved";
                     const project = getProjectName(
                       item.projectId,
@@ -1850,8 +1874,7 @@ const combinedVisibleTimesheets = useMemo(() => {
 <td className="whitespace-nowrap px-4 py-3">
   <div>{formatTime(row.startTime)}</div>
 
-  {!isAutoRow &&
-    (!row.taskStatus || row.taskStatus === "Not Started") &&
+  {(!row.taskStatus || row.taskStatus === "Not Started") &&
     !row.startTime && (
       <ActionButton
         label="Start"
@@ -1929,7 +1952,7 @@ const combinedVisibleTimesheets = useMemo(() => {
 <td className="whitespace-nowrap px-4 py-3">
   {!isAutoRow && (
     <div className="flex flex-col items-start gap-2">
-
+{/* 
       <button
         type="button"
         onClick={() => handleInlineSave(row.form, row.id, row)}
@@ -1937,7 +1960,7 @@ const combinedVisibleTimesheets = useMemo(() => {
       >
         <Check size={15} />
         Save
-      </button>
+      </button> */}
 
       <button
         type="button"

@@ -2,6 +2,7 @@ import express from "express";
 
 import {
   createTimesheet,
+  syncCompletedDrafts,
   auditTimesheet,
   getDailyEfficiencyGraph,
   getMyTimesheets,
@@ -41,7 +42,12 @@ router.get(
   employeeAuth,
   getProjectsForTimesheet
 );
-
+// Employee: Sync completed Redux drafts during attendance checkout
+router.post(
+  "/sync-completed-drafts",
+  employeeAuth,
+  syncCompletedDrafts
+);
 // =========================================
 // TIMESHEET CRUD
 // =========================================
