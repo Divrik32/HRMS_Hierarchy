@@ -7,6 +7,11 @@ import {
   LockKeyhole,
   Eye,
   EyeOff,
+  FileText,
+  Upload,
+  Download,
+  Trash2,
+  Plus,
 } from "lucide-react";
 import { toast } from "react-toastify";
 import api from "../../api/axios";
@@ -24,13 +29,19 @@ const EmployeeProfile = () => {
   const [profilePic, setProfilePic] = useState(null);
   const [removeProfilePic, setRemoveProfilePic] = useState(false);
   const [preview, setPreview] = useState("");
-const [form, setForm] = useState({
-  name: "",
-  email: "",
-  phone: "",
-  presentAddress: "",
-  gender: "Other",
-});
+  // Employee Documents
+  const [documents, setDocuments] = useState([]);
+  const [documentName, setDocumentName] = useState("");
+  const [documentFiles, setDocumentFiles] = useState([]);
+  const [uploadingDocuments, setUploadingDocuments] = useState(false);
+  const documentInputRef = useRef(null);
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    presentAddress: "",
+    gender: "Other",
+  });
 
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
@@ -65,6 +76,7 @@ const [confirmPassword, setConfirmPassword] = useState("");
         if (cancelled) return;
 
         setEmployee(data);
+        setDocuments(data.documents || []);
         setForm({
           name: data.name ?? "",
           email: data.email ?? "",
@@ -194,6 +206,137 @@ const handleProfileImageCrop = (croppedFile) => {
   setPreview(URL.createObjectURL(croppedFile));
   setRemoveProfilePic(false);
   setCropFile(null);
+};
+// Select Documents
+const handleDocumentSelect = (event) => {
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
+  const allowedTypes = [
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "image/bmp",
+    "image/tiff",
+  ];
+
+  const validFiles = files.filter((file) => {
+    const extension = file.name.split(".").pop().toLowerCase();
+
+    const allowedExtensions = [
+      "pdf",
+      "jpg",
+      "jpeg",
+      "png",
+      "webp",
+      "gif",
+      "bmp",
+      "tif",
+      "tiff",
+    ];
+    return (
+      allowedTypes.includes(file.type) &&
+      allowedExtensions.includes(extension) &&
+      file.size <= 5 * 1024 * 1024
+    );
+  });
+  if (validFiles.length !== files.length) {
+    toast.error(
+      "Only PDF and supported image files up to 5MB are allowed."
+    );
+  }
+  setDocumentFiles((previous) => [ ...previous, ...validFiles, ]);
+  event.target.value = "";
+};
+
+// Remove Selected Document Before Upload
+const removeSelectedDocument = (index) => {
+  setDocumentFiles((previous) =>
+    previous.filter((_, i) => i !== index)
+  );
+};
+
+// Upload Documents
+const handleDocumentUpload = async (event) => {
+  event.preventDefault();
+
+  if (uploadingDocuments) return;
+
+  if (!documentName.trim()) {
+    toast.error("Please enter a document name.");
+    return;
+  }
+
+  if (!documentFiles.length) {
+    toast.error("Please select at least one document.");
+    return;
+  }
+
+  if (documents.length + documentFiles.length > 20) {
+    toast.error("You can upload a maximum of 20 documents.");
+    return;
+  }
+
+  setUploadingDocuments(true);
+
+  const toastId = toast.loading("Uploading documents...");
+
+  try {
+    const formData = new FormData();
+
+    documentFiles.forEach((file) => {
+      formData.append("documentNames", documentName.trim());
+      formData.append("documents", file);
+    });
+
+    const response = await api.put(
+      "/employees/profile/me",
+      formData,
+      { withCredentials: true }
+    );
+
+    const updatedDocuments =
+      response.data.employee?.documents || [];
+
+    setEmployee(response.data.employee);
+    setDocuments(updatedDocuments);
+
+    setDocumentName("");
+    setDocumentFiles([]);
+
+    toast.update(toastId, {
+      render: response.data.message || "Documents uploaded successfully.",
+      type: "success",
+      isLoading: false,
+      autoClose: 3000,
+    });
+  } catch (err) {
+    console.error("Document Upload Error:", err.response?.data || err);
+
+    toast.update(toastId, {
+      render:
+        err.response?.data?.message ||
+        "Failed to upload documents.",
+      type: "error",
+      isLoading: false,
+      autoClose: 4000,
+    });
+  } finally {
+    setUploadingDocuments(false);
+  }
+};
+
+// Delete Uploaded Document
+const handleDeleteDocument = async (documentId) => {
+  if (!window.confirm("Are you sure you want to delete this document?")) { return; }
+  try {
+    const response = await api.delete( `/employees/profile/me/documents/${documentId}`, { withCredentials: true });
+    setDocuments((previous) => previous.filter((doc) => doc._id !== documentId));
+    toast.success(response.data.message || "Document deleted successfully.");
+  } catch (err) {
+    toast.error( err.response?.data?.message || "Failed to delete document.");
+  }
 };
 
 const handleSubmit = async (event) => {
@@ -540,8 +683,206 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
             </button>
           </div>
         </form>
+            </section>
+
+      {/* Employee Documents */}
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:p-7">
+        <div className="mb-5">
+          <h2 className="text-lg font-semibold text-black-900">
+            Employee Documents
+          </h2>
+
+          <p className="mt-1 text-sm text-black-500">
+            Upload and manage your Aadhaar, PAN, certificates and other documents.
+          </p>
+        </div>
+
+        {/* Upload Form */}
+        <form onSubmit={handleDocumentUpload} className="space-y-4">
+          <div>
+            <label className="text-sm font-medium text-black-700">
+              Document Name
+            </label>
+
+            <input
+              type="text"
+              value={documentName}
+              onChange={(event) =>
+                setDocumentName(event.target.value)
+              }
+              placeholder="e.g. Aadhaar Card, PAN Card, Passport"
+              className={fieldClass}
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-black-700">
+              Select Documents
+            </label>
+
+            <input
+              ref={documentInputRef}
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tif,.tiff"
+              multiple
+              onChange={handleDocumentSelect}
+              className="hidden"
+            />
+
+            <button
+              type="button"
+              onClick={() => documentInputRef.current?.click()}
+              className="mt-1 flex w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 p-6 text-slate-600 transition hover:border-indigo-400 hover:bg-indigo-50"
+            >
+              <Upload size={25} className="mb-2 text-indigo-600" />
+
+              <span className="text-sm font-semibold">
+                Click to select documents
+              </span>
+
+              <span className="mt-1 text-xs text-slate-500">
+                PDF and Images · Maximum 5MB per file
+              </span>
+            </button>
+          </div>
+
+          {/* Selected Files */}
+          {documentFiles.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-slate-700">
+                Selected Files ({documentFiles.length})
+              </p>
+
+              {documentFiles.map((file, index) => (
+                <div
+                  key={`${file.name}-${index}`}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <FileText
+                      size={19}
+                      className="shrink-0 text-indigo-600"
+                    />
+
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-700">
+                        {file.name}
+                      </p>
+
+                      <p className="text-xs text-slate-500">
+                        {(file.size / 1024).toFixed(1)} KB
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => removeSelectedDocument(index)}
+                    className="shrink-0 text-red-500 hover:text-red-700"
+                    aria-label="Remove selected document"
+                  >
+                    <Trash2 size={17} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              disabled={uploadingDocuments}
+              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+            >
+              <Plus size={17} />
+
+              {uploadingDocuments
+                ? "Uploading..."
+                : "Upload Documents"}
+            </button>
+          </div>
+        </form>
+
+        {/* Existing Documents */}
+        <div className="mt-7 border-t border-slate-200 pt-5">
+          <h3 className="mb-3 text-sm font-semibold text-slate-800">
+            Uploaded Documents ({documents.length})
+          </h3>
+
+          {documents.length === 0 ? (
+            <div className="rounded-lg bg-slate-50 p-6 text-center">
+              <FileText
+                size={30}
+                className="mx-auto mb-2 text-slate-400"
+              />
+
+              <p className="text-sm text-slate-500">
+                No documents uploaded yet.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {documents.map((doc) => {
+                const documentUrl = doc.filePath?.startsWith("http")
+                  ? doc.filePath
+                  : `${serverUrl}/uploads/${doc.filePath}`;
+
+                return (
+                  <div
+                    key={doc._id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="rounded-lg bg-indigo-50 p-2 text-indigo-600">
+                        <FileText size={21} />
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-800">
+                          {doc.documentName || doc.originalName}
+                        </p>
+
+                        <p className="truncate text-xs text-slate-500">
+                          {doc.originalName}
+                        </p>
+
+                        <p className="text-xs text-slate-400">
+                          {doc.uploadedAt
+                            ? new Date(doc.uploadedAt).toLocaleDateString()
+                            : ""}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-3">
+                      <a
+                        href={documentUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-indigo-600 hover:text-indigo-800"
+                        title="Download / View"
+                      >
+                        <Download size={19} />
+                      </a>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteDocument(doc._id)}
+                        className="text-red-500 hover:text-red-700"
+                        title="Delete Document"
+                      >
+                        <Trash2 size={19} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </section>
 
+      {/* Change Password */}
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:p-7">
         <div className="mb-5 flex items-center gap-3">
           <div className="rounded-lg bg-indigo-50 p-2 text-indigo-600">

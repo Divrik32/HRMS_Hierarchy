@@ -137,6 +137,35 @@ const employeeSchema = new mongoose.Schema(
       default: "",
     },
 
+documents: [
+  {
+    documentName: {
+      type: String,
+      required: true,
+    },
+    fileName: {
+      type: String,
+      required: true,
+    },
+    originalName: {
+      type: String,
+      required: true,
+    },
+    fileType: {
+      type: String,
+      required: true,
+    },
+    filePath: {
+      type: String,
+      required: true,
+    },
+    uploadedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+],
+
 phone: {
   type: String,
   required: true,

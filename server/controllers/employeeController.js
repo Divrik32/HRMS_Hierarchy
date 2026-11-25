@@ -138,7 +138,14 @@ if (existingEmail) {
     const employee = await Employee.create({
       name: name.trim(),
       empId: normalizedEmpId,
-      profilePic: req.file ? req.file.filename : "",
+      profilePic: req.files?.profilePic?.[0]?.filename || "",
+      documents: (req.files?.documents || []).map((file) => ({
+        fileName: file.filename,
+        originalName: file.originalname,
+        fileType: file.mimetype,
+        filePath: file.filename,
+        uploadedAt: new Date(),
+      })),
       phone: phone.trim(),
       presentAddress: presentAddress.trim(),
       gender,
@@ -621,8 +628,10 @@ export const updateEmployee = async (req, res) => {
     }
 
     // Update profile picture only when a new file is uploaded
-    if (req.file) {
-      employee.profilePic = req.file.filename;
+    const profilePicFile = req.files?.profilePic?.[0];
+    
+    if (profilePicFile) {
+      employee.profilePic = profilePicFile.filename;
     }
 
     // Update phone
@@ -693,9 +702,20 @@ export const updateEmployee = async (req, res) => {
     employee.companyId = finalCompanyId;
     employee.departmentId = finalDepartmentId;
     employee.roleId = finalRoleId;
-
+    // Add new employee documents
+    const uploadedDocuments = req.files?.documents || [];  
+    if (uploadedDocuments.length > 0) {
+      employee.documents.push(
+        ...uploadedDocuments.map((file) => ({
+          fileName: file.filename,
+          originalName: file.originalname,
+          fileType: file.mimetype,
+          filePath: file.filename,
+          uploadedAt: new Date(),
+        }))
+      );
+    }
     await employee.save();
-
     const employeeResponse = await Employee.findById(employee._id)
       .select("-password -resetOtp -resetOtpExpire")
       .populate("companyId", "companyName")
@@ -972,8 +992,6 @@ export const getMyEmployeeProfile = async (req, res) => {
 };
 
 // Update My Employee Profile
-
-// Update My Employee Profile
 export const updateMyEmployeeProfile = async (req, res) => {
   try {
     const {
@@ -999,7 +1017,11 @@ export const updateMyEmployeeProfile = async (req, res) => {
 
     // Keep previous profile picture for file deletion
     const oldProfilePic = employee.profilePic;
-
+    // Get uploaded profile picture
+    const profilePicFile = req.files?.profilePic?.[0];
+    
+    // Get uploaded documents
+    const uploadedDocuments = req.files?.documents || [];
     // Update name
     if (name !== undefined) {
       if (typeof name !== "string" || !name.trim()) {
@@ -1017,8 +1039,8 @@ export const updateMyEmployeeProfile = async (req, res) => {
       employee.profilePic = null;
     }
     // Update profile picture from Multer
-    else if (req.file) {
-      employee.profilePic = req.file.filename;
+    else if (profilePicFile) {
+      employee.profilePic = profilePicFile.filename;
     }
 
     // Update phone
@@ -1086,6 +1108,49 @@ export const updateMyEmployeeProfile = async (req, res) => {
       employee.email = normalizedEmail;
     }
 
+    // =========================================
+// ADD MULTIPLE EMPLOYEE DOCUMENTS
+// =========================================
+
+if (uploadedDocuments.length > 0) {
+  let documentNames = req.body.documentNames || [];
+
+  if (!Array.isArray(documentNames)) {
+    documentNames = [documentNames];
+  }
+
+  // Validate document names count
+  if (documentNames.length !== uploadedDocuments.length) {
+    return res.status(400).json({
+      success: false,
+      message: "Each document must have a document name.",
+    });
+  }
+
+  // Validate document names
+  const validDocumentNames = documentNames.map((name) =>
+    typeof name === "string" ? name.trim() : ""
+  );
+
+  if (validDocumentNames.some((name) => !name)) {
+    return res.status(400).json({
+      success: false,
+      message: "Document name cannot be empty.",
+    });
+  }
+
+const newDocuments = uploadedDocuments.map((file, index) => ({
+  documentName: validDocumentNames[index],
+  fileName: file.filename,
+  originalName: file.originalname,
+  fileType: file.mimetype,
+  filePath: file.filename,
+  uploadedAt: new Date(),
+}));
+
+  employee.documents.push(...newDocuments);
+}
+
     // Save updated employee
     await employee.save();
 
@@ -1093,7 +1158,7 @@ export const updateMyEmployeeProfile = async (req, res) => {
     const profilePicChanged =
       oldProfilePic &&
       oldProfilePic !== employee.profilePic &&
-      (removeProfilePic === "true" || !!req.file);
+      (removeProfilePic === "true" || !!profilePicFile);
 
     if (profilePicChanged) {
       try {
@@ -1473,6 +1538,75 @@ export const getAllCompanyEmployees = async (req, res) => {
       success: false,
       message: "Failed to fetch company employees.",
       error: error.message,
+    });
+  }
+};
+
+export const deleteMyEmployeeDocument = async (req, res) => {
+  try {
+    const employee = await Employee.findOne({
+      _id: req.user.id,
+      status: "active",
+    });
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "Employee not found.",
+      });
+    }
+
+    // Find document by its MongoDB subdocument ID
+    const document = employee.documents.id(req.params.documentId);
+
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        message: "Document not found.",
+      });
+    }
+
+    // Get uploaded file path
+    const fileName = path.basename(
+      document.filePath || document.fileName
+    );
+
+    // Remove document from employee record
+    await Employee.updateOne(
+      { _id: employee._id },
+      {
+        $pull: {
+          documents: { _id: document._id },
+        },
+      }
+    );
+
+    // Delete physical file from uploads folder
+    const filePath = path.resolve(
+      process.cwd(),
+      "uploads",
+      fileName
+    );
+
+    try {
+      await fs.promises.unlink(filePath);
+    } catch (fileError) {
+      if (fileError.code !== "ENOENT") {
+        console.error("Document File Delete Error:", fileError);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Document deleted successfully.",
+    });
+
+  } catch (error) {
+    console.error("Delete Employee Document Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete document.",
     });
   }
 };

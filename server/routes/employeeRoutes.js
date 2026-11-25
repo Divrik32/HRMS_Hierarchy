@@ -24,6 +24,7 @@ import {
   resetPassword,
   resendOtp,
   getAllCompanyEmployees,
+  deleteMyEmployeeDocument,
 } from "../controllers/employeeController.js";
 
 import superAdminAuth from "../middleware/superAdminAuth.js";
@@ -58,29 +59,72 @@ const storage = multer.diskStorage({
 // Multer configuration
 const upload = multer({
   storage,
+
   limits: {
     fileSize: 5 * 1024 * 1024,
+    files: 21,
   },
-fileFilter: (req, file, cb) => {
-  const allowedMimeTypes = [
-    "image/jpeg",
-    "image/png",
-    "image/webp"
-  ];
 
-  const allowedExtensions = [".jpg", ".jpeg", ".png", ".webp"];
-  const extension = path.extname(file.originalname).toLowerCase();
+  fileFilter: (req, file, cb) => {
+    const extension = path.extname(file.originalname).toLowerCase();
 
-  if (
-    allowedMimeTypes.includes(file.mimetype) &&
-    allowedExtensions.includes(extension)
-  ) {
-    return cb(null, true);
-  }
+    const allowedImageTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+      "image/bmp",
+      "image/tiff",
+    ];
 
-  cb(new Error("Only JPG, JPEG, and PNG image files are allowed."));
-},
+    const allowedImageExtensions = [
+      ".jpg",
+      ".jpeg",
+      ".png",
+      ".webp",
+      ".gif",
+      ".bmp",
+      ".tif",
+      ".tiff",
+    ];
+
+    const isImage =
+      allowedImageTypes.includes(file.mimetype) &&
+      allowedImageExtensions.includes(extension);
+
+    const isPdf =
+      file.mimetype === "application/pdf" &&
+      extension === ".pdf";
+
+    // Profile picture only accepts images
+    if (file.fieldname === "profilePic") {
+      if (isImage) {
+        return cb(null, true);
+      }
+
+      return cb(
+        new Error("Profile picture must be a valid image.")
+      );
+    }
+
+    // Documents accept PDF and images
+    if (file.fieldname === "documents") {
+      if (isImage || isPdf) {
+        return cb(null, true);
+      }
+
+      return cb(
+        new Error("Only PDF and image documents are allowed.")
+      );
+    }
+
+    cb(new Error("Invalid file field."));
+  },
 });
+const uploadEmployeeFiles = upload.fields([
+  { name: "profilePic", maxCount: 1 },
+  { name: "documents", maxCount: 20 },
+]);
 
 // Public Authentication Routes
 router.post("/login", loginEmployee);
@@ -97,15 +141,20 @@ router.get("/profile/me", employeeAuth, getMyEmployeeProfile);
 router.put(
   "/profile/me",
   employeeAuth,
-  upload.single("profilePic"),
+  uploadEmployeeFiles,
   updateMyEmployeeProfile
+);
+router.delete(
+  "/profile/me/documents/:documentId",
+  employeeAuth,
+  deleteMyEmployeeDocument
 );
 
 // Super Admin Protected Routes
 router.post(
   "/",
   superAdminAuth,
-  upload.single("profilePic"),
+  uploadEmployeeFiles,
   createEmployee
 );
 
@@ -138,7 +187,7 @@ router.get("/:employeeId", superAdminAuth, getEmployeeById);
 router.put(
   "/:employeeId",
   superAdminAuth,
-  upload.single("profilePic"),
+  uploadEmployeeFiles,
   updateEmployee
 );
 
