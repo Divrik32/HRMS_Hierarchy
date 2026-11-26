@@ -87,7 +87,7 @@ const burstGlitter = (el) => {
 
 const headings = [
   "Employee", "Role", "Date", "Task Type", "Project", "Task / Module", "Description",
-  "Estimated", "Start Time", "End Time", "Working Time", "Idle Time",
+  "Estimated", "Start Time", "End Time", "Working Time", 
   "Employee Justification", "Efficiency", "Action",
 ];
 
@@ -259,15 +259,6 @@ export default function TimesheetApprovals() {
                 Review completed timesheets submitted by your child and grandchild role employees.
               </p>
             </div>
-
-            <motion.button
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.96 }}
-              onClick={loadApprovals}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/40 bg-[#0b2f45]/60 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur transition hover:bg-[#0b2f45]"
-            >
-              <RefreshCw size={16} /> Refresh
-            </motion.button>
           </div>
 
           <div
@@ -379,7 +370,7 @@ export default function TimesheetApprovals() {
                           <td className="whitespace-nowrap px-4 py-4">{formatDateTime(item.startTime)}</td>
                           <td className="whitespace-nowrap px-4 py-4">{formatDateTime(item.endTime)}</td>
                           <td className="whitespace-nowrap px-4 py-4 font-medium">{formatMinutes(item.totalCompletionTime)}</td>
-                          <td className="whitespace-nowrap px-4 py-4">{formatMinutes(item.idleTime)}</td>
+                          {/* <td className="whitespace-nowrap px-4 py-4">{formatMinutes(item.idleTime)}</td> */}
                           <td className="min-w-[250px] whitespace-normal px-4 py-4 text-slate-700">
                             {item.employeeResponseHistory?.length > 0
                               ? item.employeeResponseHistory[item.employeeResponseHistory.length - 1]?.reason || "—"

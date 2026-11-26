@@ -585,6 +585,7 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
                 onChange={handleChange}
                 required
                 className={fieldClass}
+                disabled
               />
             </div>
 
@@ -598,6 +599,7 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
                 onChange={handleChange}
                 required
                 className={fieldClass}
+                disabled
               />
             </div>
 
@@ -610,6 +612,7 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
                 value={form.gender}
                 onChange={handleChange}
                 className={fieldClass}
+                disabled
               >
                 <option value="Male">Male</option>
                 <option value="Female">Female</option>
@@ -668,6 +671,7 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
                 rows={3}
                 required
                 className={fieldClass}
+                disabled
               />
             </div>
           </div>
@@ -803,83 +807,105 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
           </div>
         </form>
 
-        {/* Existing Documents */}
-        <div className="mt-7 border-t border-slate-200 pt-5">
-          <h3 className="mb-3 text-sm font-semibold text-slate-800">
-            Uploaded Documents ({documents.length})
-          </h3>
+        
+{/* Existing Documents */}
+<div className="mt-7 border-t border-slate-200 pt-5">
+  <h3 className="mb-3 text-sm font-semibold text-slate-800">
+    Uploaded Documents ({documents.length})
+  </h3>
 
-          {documents.length === 0 ? (
-            <div className="rounded-lg bg-slate-50 p-6 text-center">
-              <FileText
-                size={30}
-                className="mx-auto mb-2 text-slate-400"
-              />
+  {documents.length === 0 ? (
+    <div className="rounded-lg bg-slate-50 p-6 text-center">
+      <FileText
+        size={30}
+        className="mx-auto mb-2 text-slate-400"
+      />
+      <p className="text-sm text-slate-500">
+        No documents uploaded yet.
+      </p>
+    </div>
+  ) : (
+    <div className="space-y-3">
+      {documents.map((doc) => {
+        const documentUrl = doc.filePath?.startsWith("http")
+          ? doc.filePath
+          : `${serverUrl}/uploads/${doc.filePath}`;
 
-              <p className="text-sm text-slate-500">
-                No documents uploaded yet.
-              </p>
+        const isPdf =
+          doc.originalName?.toLowerCase().endsWith(".pdf") ||
+          doc.filePath?.toLowerCase().endsWith(".pdf");
+
+        return (
+          <div
+            key={doc._id}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3"
+          >
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div className="rounded-lg bg-indigo-50 p-2 text-indigo-600">
+                <FileText size={21} />
+              </div>
+
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-800">
+                  {doc.documentName || doc.originalName}
+                </p>
+
+                <p className="truncate text-xs text-slate-500">
+                  {doc.originalName}
+                </p>
+
+                <p className="text-xs text-slate-400">
+                  {doc.uploadedAt
+                    ? new Date(doc.uploadedAt).toLocaleDateString()
+                    : ""}
+                </p>
+              </div>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {documents.map((doc) => {
-                const documentUrl = doc.filePath?.startsWith("http")
-                  ? doc.filePath
-                  : `${serverUrl}/uploads/${doc.filePath}`;
 
-                return (
-                  <div
-                    key={doc._id}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3"
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="rounded-lg bg-indigo-50 p-2 text-indigo-600">
-                        <FileText size={21} />
-                      </div>
+            <div className="flex shrink-0 items-center gap-4">
+              {/* View Document */}
+              <a
+                href={documentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-800"
+                title="View Document"
+              >
+                <Eye size={19} />
+                <span>View</span>
+              </a>
 
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-800">
-                          {doc.documentName || doc.originalName}
-                        </p>
+              {/* Download Document */}
+              <a
+                href={documentUrl}
+                download={doc.originalName || "document"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-800"
+                title="Download Document"
+              >
+                <Download size={19} />
+                <span>Download</span>
+              </a>
 
-                        <p className="truncate text-xs text-slate-500">
-                          {doc.originalName}
-                        </p>
-
-                        <p className="text-xs text-slate-400">
-                          {doc.uploadedAt
-                            ? new Date(doc.uploadedAt).toLocaleDateString()
-                            : ""}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex shrink-0 items-center gap-3">
-                      <a
-                        href={documentUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-indigo-600 hover:text-indigo-800"
-                        title="Download / View"
-                      >
-                        <Download size={19} />
-                      </a>
-
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteDocument(doc._id)}
-                        className="text-red-500 hover:text-red-700"
-                        title="Delete Document"
-                      >
-                        <Trash2 size={19} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+              {/* Delete Document */}
+              <button
+                type="button"
+                onClick={() => handleDeleteDocument(doc._id)}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-red-500 hover:text-red-700"
+                title="Delete Document"
+              >
+                <Trash2 size={19} />
+                <span>Delete</span>
+              </button>
             </div>
-          )}
-        </div>
+          </div>
+        );
+      })}
+    </div>
+  )}
+</div>
+
       </section>
 
       {/* Change Password */}
