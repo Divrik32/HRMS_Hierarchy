@@ -272,12 +272,12 @@ const EmployeeSidebar = ({ open, employee, onLogout }) => {
           icon: CalendarDays,
           end: true,
         },
-        {
-          label: "Apply Leave",
-          path: `${basePath}/leaves/apply`,
-          icon: FilePlus2,
-          end: true,
-        },
+        // {
+        //   label: "Apply Leave",
+        //   path: `${basePath}/leaves/apply`,
+        //   icon: FilePlus2,
+        //   end: true,
+        // },
         // Leave Approvals
         ...(hasChildRoles === true || isHR
           ? [

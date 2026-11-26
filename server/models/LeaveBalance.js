@@ -34,6 +34,12 @@ const leaveBalanceSchema = new mongoose.Schema(
       min: 0,
     },
 
+    compOff: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     // Approved unpaid leave days for payroll calculation.
     extraLeaveTaken: {
       type: Number,

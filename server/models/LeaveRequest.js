@@ -1,128 +1,6 @@
 
 import mongoose from "mongoose";
 
-// =====================================================
-// LEAVE TYPE BREAKDOWN
-// =====================================================
-
-const leaveBreakdownSchema = new mongoose.Schema(
-  {
-    leaveType: {
-      type: String,
-      enum: [
-        "Casual Leave",
-        "Sick Leave",
-        "Paid Leave",
-        "Unpaid Leave",
-        "Comp-Off",
-      ],
-      required: true,
-    },
-
-    days: {
-      type: Number,
-      required: true,
-      min: 0.5,
-    },
-  },
-  { _id: false }
-);
-
-// =====================================================
-// COMP-OFF ALLOCATION
-// Tracks which earning records provide the Comp-Off days.
-// =====================================================
-
-const compOffAllocationSchema = new mongoose.Schema(
-  {
-    compOffId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "CompOff",
-      required: true,
-    },
-
-    days: {
-      type: Number,
-      required: true,
-      min: 0.5,
-    },
-  },
-  { _id: false }
-);
-
-// =====================================================
-// DAILY BREAKDOWN
-// =====================================================
-
-const dailyBreakdownSchema = new mongoose.Schema(
-  {
-    date: {
-      type: Date,
-      required: true,
-    },
-
-    dayType: {
-      type: String,
-      enum: ["Full Day", "Half Day"],
-      required: true,
-    },
-
-    days: {
-      type: Number,
-      enum: [0.5, 1],
-      required: true,
-    },
-  },
-  { _id: false }
-);
-
-// =====================================================
-// ACTION HISTORY
-// =====================================================
-
-const actionHistorySchema = new mongoose.Schema(
-  {
-    action: {
-      type: String,
-      enum: [
-        "Submitted",
-        "Approved",
-        "Rejected",
-        "Withdrawn",
-      ],
-      required: true,
-    },
-
-    performedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Employee",
-      default: null,
-    },
-
-    performedBySuperAdmin: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "SuperAdmin",
-      default: null,
-    },
-
-    remarks: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
-    performedAt: {
-      type: Date,
-      default: Date.now,
-    },
-  },
-  { _id: false }
-);
-
-// =====================================================
-// MAIN LEAVE REQUEST MODEL
-// =====================================================
-
 const leaveRequestSchema = new mongoose.Schema(
   {
     // =================================================
@@ -144,22 +22,7 @@ const leaveRequestSchema = new mongoose.Schema(
     },
 
     // =================================================
-    // LEAVE CATEGORY
-    // =================================================
-
-    leaveCategory: {
-      type: String,
-      enum: [
-        "Paid Leave",
-        "Unpaid Leave",
-        "Mixed Leave",
-        "Comp-Off",
-      ],
-      required: true,
-    },
-
-    // =================================================
-    // LEGACY LEAVE TYPE
+    // LEAVE TYPE
     // =================================================
 
     leaveType: {
@@ -168,62 +31,54 @@ const leaveRequestSchema = new mongoose.Schema(
         "Casual Leave",
         "Sick Leave",
         "Paid Leave",
-        "Unpaid Leave",
         "Comp-Off",
       ],
-      default: undefined,
-    },
-
-    // =================================================
-    // MULTIPLE LEAVE TYPES
-    // =================================================
-
-    leaveBreakdown: {
-      type: [leaveBreakdownSchema],
-      default: [],
-    },
-
-    // =================================================
-    // COMP-OFF ALLOCATION
-    // Each allocation references an approved earning record.
-    // =================================================
-
-    compOffAllocations: {
-      type: [compOffAllocationSchema],
-      default: [],
-    },
-
-    // =================================================
-    // DATE RANGE
-    // =================================================
-
-    startDate: {
-      type: Date,
-      required: true,
-    },
-
-    endDate: {
-      type: Date,
       required: true,
     },
 
     // =================================================
-    // DAILY BREAKDOWN
+    // SELECTED DATES
+    // Each date can be Full Day or Half Day
     // =================================================
 
-    dailyBreakdown: {
-      type: [dailyBreakdownSchema],
-      default: [],
-    },
+    leaveDates: [
+      {
+        date: {
+          type: Date,
+          required: true,
+        },
+
+        dayType: {
+          type: String,
+          enum: ["Full Day", "Half Day"],
+          required: true,
+        },
+      },
+    ],
 
     // =================================================
-    // TOTAL LEAVE DAYS
+    // LEAVE DAYS
     // =================================================
 
     totalDays: {
       type: Number,
       required: true,
       min: 0.5,
+    },
+
+    // Days deducted from selected leave balance
+    leaveDays: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
+    },
+
+    // Remaining days treated as Unpaid Leave
+    unpaidDays: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
 
     // =================================================
@@ -253,26 +108,10 @@ const leaveRequestSchema = new mongoose.Schema(
     },
 
     // =================================================
-    // PAYMENT INFORMATION
+    // BALANCE TRACKING
     // =================================================
-
-    isUnpaid: {
-      type: Boolean,
-      default: false,
-    },
 
     balanceDeducted: {
-      type: Boolean,
-      default: false,
-    },
-
-    // =================================================
-    // COMP-OFF RESERVATION TRACKING
-    // True when Comp-Off days have been reserved
-    // for this pending Leave Request.
-    // =================================================
-
-    compOffBalanceDeducted: {
       type: Boolean,
       default: false,
     },
@@ -293,13 +132,15 @@ const leaveRequestSchema = new mongoose.Schema(
 
     // =================================================
     // APPROVAL INFORMATION
+    // Multiple employees can approve
     // =================================================
 
-    approvedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Employee",
-      default: null,
-    },
+    approvedBy: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Employee",
+      },
+    ],
 
     approvedBySuperAdmin: {
       type: mongoose.Schema.Types.ObjectId,
@@ -343,10 +184,43 @@ const leaveRequestSchema = new mongoose.Schema(
     // ACTION HISTORY
     // =================================================
 
-    actionHistory: {
-      type: [actionHistorySchema],
-      default: [],
-    },
+    actionHistory: [
+      {
+        action: {
+          type: String,
+          enum: [
+            "Submitted",
+            "Approved",
+            "Rejected",
+            "Withdrawn",
+          ],
+          required: true,
+        },
+
+        performedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Employee",
+          default: null,
+        },
+
+        performedBySuperAdmin: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "SuperAdmin",
+          default: null,
+        },
+
+        remarks: {
+          type: String,
+          default: "",
+          trim: true,
+        },
+
+        performedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
   },
   {
     timestamps: true,
@@ -360,21 +234,20 @@ const leaveRequestSchema = new mongoose.Schema(
 leaveRequestSchema.index({
   companyId: 1,
   employeeId: 1,
-  startDate: 1,
-  endDate: 1,
+  status: 1,
+  createdAt: -1,
 });
 
 leaveRequestSchema.index({
   companyId: 1,
   status: 1,
-  startDate: 1,
+  "leaveDates.date": 1,
 });
 
 leaveRequestSchema.index({
   companyId: 1,
   employeeId: 1,
-  status: 1,
-  createdAt: -1,
+  "leaveDates.date": 1,
 });
 
 // =====================================================
