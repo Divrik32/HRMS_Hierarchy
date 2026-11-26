@@ -74,11 +74,23 @@ const formatTime = (value) => {
 
 const formatMinutes = (value) => {
   if (value == null) return "—";
+
   const minutes = Number(value);
+
   if (!Number.isFinite(minutes)) return "—";
+
   const hours = Math.floor(minutes / 60);
   const remaining = minutes % 60;
-  return hours ? `${hours}h ${remaining}m` : `${remaining}m`;
+
+  if (hours > 0 && remaining > 0) {
+    return `${hours} hr ${remaining} min`;
+  }
+
+  if (hours > 0) {
+    return `${hours} hr`;
+  }
+
+  return `${remaining} min`;
 };
 
 const getStatusClass = (status) => {
@@ -248,44 +260,47 @@ export default function Timesheet() {
   const [recordsDateFrom, setRecordsDateFrom] = useState("");
   const [recordsDateTo, setRecordsDateTo] = useState("");
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-const [profileResponse, timesheetRes, projectRes] = await Promise.all([
-  api.get("/employees/profile/me"),
-  api.get("/timesheets"),
-  api.get("/timesheets/projects"),
-]);
+const loadData = useCallback(async () => {
+  setLoading(true);
+  setError("");
 
-const currentEmployee = profileResponse.data?.employee;
+  try {
+    const [profileResponse, timesheetRes, projectRes] = await Promise.all([
+      api.get("/employees/profile/me"),
+      api.get("/timesheets"),
+      api.get("/projects/timesheet-projects"),
+    ]);
 
-if (!currentEmployee?._id) {
-  throw new Error("Employee profile not found");
-}
+    const currentEmployee = profileResponse.data?.employee;
 
-const companyId =
-  currentEmployee.companyId?._id ||
-  currentEmployee.companyId;
-
-if (!companyId) {
-  throw new Error("Employee company not found");
-}
-
-const scopeKey = `${companyId}:${currentEmployee._id}`;
-
-setEmployeeScopeKey(scopeKey);
-      setTimesheets(timesheetRes.data?.timesheets || []);
-      setHideAutoInlineRow(false);
-      setProjects(projectRes.data?.projects || []);
-    } catch (err) {
-      setError(
-        err.response?.data?.message || err.message || "Failed to load timesheet data."
-      );
-    } finally {
-      setLoading(false);
+    if (!currentEmployee?._id) {
+      throw new Error("Employee profile not found");
     }
-  }, []);
+
+    const companyId =
+      currentEmployee.companyId?._id ||
+      currentEmployee.companyId;
+
+    if (!companyId) {
+      throw new Error("Employee company not found");
+    }
+
+    const scopeKey = `${companyId}:${currentEmployee._id}`;
+
+    setEmployeeScopeKey(scopeKey);
+    setTimesheets(timesheetRes.data?.timesheets || []);
+    setHideAutoInlineRow(false);
+    setProjects(projectRes.data?.projects || []);
+  } catch (err) {
+    setError(
+      err.response?.data?.message ||
+        err.message ||
+        "Failed to load timesheet data."
+    );
+  } finally {
+    setLoading(false);
+  }
+}, []);
 
   useEffect(() => {
     loadData();
@@ -1731,19 +1746,6 @@ const combinedVisibleTimesheets = useMemo(() => {
   <div className="text-sm font-semibold text-slate-800">
     {row.dateTime}
   </div>
-
-{isAutoRow && (
-  <motion.button
-    type="button"
-    whileHover={{ y: -1 }}
-    whileTap={{ scale: 0.95 }}
-    onClick={() => addInlineRow()}
-    className="mt-2 inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-sky-700 to-sky-500 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:from-sky-800 hover:to-sky-600"
-  >
-    <Plus size={16} />
-    Add Task
-  </motion.button>
-)}
 </td>
 
 {/* Task Type */}
@@ -1809,15 +1811,23 @@ const combinedVisibleTimesheets = useMemo(() => {
 
 {/* Description */}
 <td className="px-4 py-3">
-  <input
-    type="text"
+  <textarea
+    rows={2}
     value={row.form.description}
     onChange={(e) =>
       updateInlineRow(row.id, "description", e.target.value)
     }
-    
     placeholder="Enter description"
-    className={`${inputCls} w-full min-w-[300px]`}
+    className={`${inputCls} w-full`}
+    style={{
+      resize: "both",
+      overflow: "auto",
+      minWidth: "300px",
+      minHeight: "60px",
+      height: "60px",
+      maxWidth: "none",
+      boxSizing: "border-box",
+    }}
   />
 </td>
 
@@ -1950,34 +1960,42 @@ const combinedVisibleTimesheets = useMemo(() => {
 
 {/* Action */}
 <td className="whitespace-nowrap px-4 py-3">
-  {!isAutoRow && (
-    <div className="flex flex-col items-start gap-2">
-{/* 
-      <button
-        type="button"
-        onClick={() => handleInlineSave(row.form, row.id, row)}
-        className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
-      >
-        <Check size={15} />
-        Save
-      </button> */}
-
-      <button
-        type="button"
-        onClick={() => removeInlineRow(row.id)}
-        className="inline-flex items-center justify-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
-      >
-        <Trash2 size={15} />
-        Delete
-      </button>
-
-    </div>
-  )}
+  <div className="flex flex-col items-start gap-2">
+    <button
+      type="button"
+      onClick={() => removeInlineRow(row.id)}
+      className="inline-flex items-center justify-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100"
+    >
+      <Trash2 size={15} />
+      Delete
+    </button>
+  </div>
 </td>
 
     </motion.tr>
   );
 })}
+{/* Add Task Button - Separate Row */}
+<motion.tr
+  initial={{ opacity: 0, y: -8 }}
+  animate={{ opacity: 1, y: 0 }}
+  exit={{ opacity: 0, y: -8 }}
+>
+  <td className="px-4 py-3">
+    <motion.button
+      type="button"
+      whileHover={{ y: -1 }}
+      whileTap={{ scale: 0.96 }}
+      onClick={addInlineRow}
+      className="inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-sky-700 to-sky-500 px-4 py-2.5 text-sm font-bold text-white shadow-md transition hover:from-sky-800 hover:to-sky-600"
+    >
+      <Plus size={16} />
+      Add Task
+    </motion.button>
+  </td>
+
+  <td colSpan={12} className="bg-white/60" />
+</motion.tr>
                 </AnimatePresence>
               </tbody>
             </table>

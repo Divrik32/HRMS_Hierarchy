@@ -1657,7 +1657,44 @@ export const getMyAccessibleProjects = async (req, res) => {
     });
   }
 };
+export const getTimesheetProjects = async (req, res) => {
+  try {
+    const employee = req.user;
+    const employeeId = getEmployeeId(employee);
 
+    if (!isValidId(employeeId) || !isValidId(employee.companyId)) {
+      return res.status(403).json({
+        success: false,
+        message: "Valid employee and company information is required",
+      });
+    }
+
+    const projects = await Project.find({
+      companyId: employee.companyId,
+      status: "active",
+      $or: [
+        { employeeAccess: employeeId },
+        { projectName: /^Personal$/i },
+      ],
+    })
+      .populate("companyId", "companyName")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: projects.length,
+      projects,
+    });
+  } catch (error) {
+    console.error("Get Timesheet Projects Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get timesheet projects",
+      error: error.message,
+    });
+  }
+};
 
 // =====================================================
 // REVOKE PROJECT ACCESS — SUPER ADMIN

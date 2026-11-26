@@ -30,6 +30,7 @@ import {
   getMyCreatedProjects,
   removeEmployeeFromProjectModule,
   getSuperAdminProjectOverview,
+  getTimesheetProjects,
 } from "../controllers/projectController.js";
 
 import superAdminAuth from "../middleware/superAdminAuth.js";
@@ -160,6 +161,11 @@ router.get(
   "/my-accessible-projects",
   employeeAuth,
   getMyAccessibleProjects
+);
+router.get(
+  "/timesheet-projects",
+  employeeAuth,
+  getTimesheetProjects
 );
 
 // Role access details — accessible to Employee and Super Admin

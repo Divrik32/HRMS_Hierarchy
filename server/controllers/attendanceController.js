@@ -270,11 +270,6 @@ export const checkOut = async (req, res) => {
 // HR / HEAD RECRUITER / SUPER ADMIN = COMPANY-WIDE
 // ORDINARY EMPLOYEE = OWN ATTENDANCE ONLY
 // =====================================================
-// =====================================================
-// GET ATTENDANCE BY DATE
-// HR / HEAD RECRUITER / SUPER ADMIN = COMPANY-WIDE
-// ORDINARY EMPLOYEE = OWN ATTENDANCE ONLY
-// =====================================================
 export const getAttendanceByDate = async (req, res) => {
   try {
     const { date } = req.query;
@@ -1157,6 +1152,143 @@ else if (
       message:
         error.message ||
         "Failed to fetch last 18 days working report.",
+    });
+  }
+};
+
+
+// =====================================================
+// REQUEST FOR HR ATTENDANCE
+// EMPLOYEE CAN SEND MULTIPLE REQUESTS PER DAY
+// The request is saved against the attendance date sent
+// in req.body.date (YYYY-MM-DD). If no date is sent, today's
+// date (India timezone) is used.
+// =====================================================
+
+// Accepts only a real calendar date in YYYY-MM-DD format.
+const isValidDateKey = (value) => {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const parsed = new Date(`${value}T00:00:00Z`);
+
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
+};
+
+export const requestForHRAttendance = async (req, res) => {
+  try {
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid company information is required.",
+      });
+    }
+
+    // Only logged-in employee can send a request.
+    if (req.user?.role !== "employee" || !req.user?.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Only employees can send HR attendance requests.",
+      });
+    }
+
+    const comment =
+      typeof req.body.comment === "string"
+        ? req.body.comment.trim()
+        : "";
+
+    if (!comment) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a comment for HR.",
+      });
+    }
+
+    // Attendance date: use the selected row's date, otherwise today.
+    const todayDate = getTodayDate();
+    const requestedDate = req.body.date;
+
+    let attendanceDate = todayDate;
+
+    if (requestedDate !== undefined && requestedDate !== null && requestedDate !== "") {
+      if (!isValidDateKey(requestedDate)) {
+        return res.status(400).json({
+          success: false,
+          message: "Please provide a valid attendance date (YYYY-MM-DD).",
+        });
+      }
+
+      // YYYY-MM-DD strings compare correctly as plain strings.
+      if (requestedDate > todayDate) {
+        return res.status(400).json({
+          success: false,
+          message: "HR attendance request cannot be sent for a future date.",
+        });
+      }
+
+      attendanceDate = requestedDate;
+    }
+
+    // Verify active employee.
+    const employee = await Employee.findOne({
+      _id: req.user.id,
+      companyId,
+      status: "active",
+    }).select("_id companyId");
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "Active employee not found in this company.",
+      });
+    }
+
+    // Create attendance if it doesn't exist for that date.
+    // Otherwise, update the existing attendance.
+    // Previous requests will remain unchanged.
+    const attendance = await Attendance.findOneAndUpdate(
+      {
+        employeeId: employee._id,
+        companyId,
+        attendanceDate,
+      },
+      {
+        $setOnInsert: {
+          employeeId: employee._id,
+          companyId,
+          attendanceDate,
+        },
+        $push: {
+          requestForHRAttendance: comment,
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Attendance request sent to HR successfully.",
+      attendance,
+    });
+
+  } catch (error) {
+    console.error("Request For HR Attendance Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message || "Failed to send HR attendance request.",
     });
   }
 };

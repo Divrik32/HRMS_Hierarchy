@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -11,7 +11,7 @@ import {
   Activity,
   CalendarCheck,
   ClipboardList,
-  ChevronRight,
+  ChevronDown,
   LogOut,
   BriefcaseBusiness,
 } from "lucide-react";
@@ -20,7 +20,7 @@ import api from "../../api/axios";
 // =========================================
 // COLOR TOKENS (WCAG AA contrast on navy)
 // Rail bg      #0b1f3a
-// Flyout bg    #10294d
+// Sub-menu bg  #10294d
 // Main text    slate-100 / white      (~15:1)
 // Muted text   slate-300              (~10:1)
 // Accent       teal-300 on navy       (~10:1)
@@ -39,8 +39,6 @@ const CompanySidebar = ({ open, onLogout }) => {
   const { companyId } = useParams();
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const sidebarRef = useRef(null);
-  const closeTimer = useRef(null);
 
   const [overview, setOverview] = useState({
     employees: 0,
@@ -50,50 +48,8 @@ const CompanySidebar = ({ open, onLogout }) => {
 
   const [overviewLoading, setOverviewLoading] = useState(true);
 
-  // Which main menu's flyout is open (null = none)
-  const [openGroupId, setOpenGroupId] = useState(null);
-  const [flyoutPos, setFlyoutPos] = useState({
-    top: 0,
-    left: 0,
-    bridge: 12,
-    arrowTop: 16,
-  });
-
-  const cancelClose = () => {
-    if (closeTimer.current) {
-      clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
-  };
-
-  const scheduleClose = () => {
-    cancelClose();
-    closeTimer.current = setTimeout(() => setOpenGroupId(null), 120);
-  };
-
-  // Flyout is position: fixed, so the scrolling sidebar never clips it
-  const openFlyout = (groupId, itemEl, childCount) => {
-    cancelClose();
-
-    if (itemEl && sidebarRef.current) {
-      const itemRect = itemEl.getBoundingClientRect();
-      const asideRect = sidebarRef.current.getBoundingClientRect();
-      const estimatedHeight = childCount * 44 + 16;
-      const top = Math.max(
-        8,
-        Math.min(itemRect.top, window.innerHeight - estimatedHeight - 8)
-      );
-
-      setFlyoutPos({
-        top,
-        left: itemRect.right,
-        bridge: asideRect.right - itemRect.right + 12,
-        arrowTop: Math.max(12, itemRect.top - top + 14),
-      });
-    }
-
-    setOpenGroupId(groupId);
-  };
+  // Which dropdown groups are expanded (multiple can be open together)
+  const [expandedGroups, setExpandedGroups] = useState({});
 
   // =========================================
   // COMPANY OVERVIEW
@@ -121,8 +77,7 @@ const CompanySidebar = ({ open, onLogout }) => {
           employees: employeesRes.data.count ?? employees.length,
           departments: departmentsRes.data.count ?? departments.length,
           activeProjects: projects.filter(
-            (project) =>
-              String(project.status).toLowerCase() === "active"
+            (project) => String(project.status).toLowerCase() === "active"
           ).length,
         });
       } catch (error) {
@@ -138,52 +93,6 @@ const CompanySidebar = ({ open, onLogout }) => {
 
     fetchOverview();
   }, [companyId]);
-
-  // =========================================
-  // FLYOUT CLOSE BEHAVIOUR
-  // =========================================
-
-  // Close on route change
-  useEffect(() => {
-    setOpenGroupId(null);
-  }, [pathname]);
-
-  // Clear pending timer on unmount
-  useEffect(() => cancelClose, []);
-
-  // Close on window resize (fixed position would be stale)
-  useEffect(() => {
-    if (!openGroupId) return undefined;
-    const close = () => setOpenGroupId(null);
-    window.addEventListener("resize", close);
-    return () => window.removeEventListener("resize", close);
-  }, [openGroupId]);
-
-  // Close on outside click and Escape
-  useEffect(() => {
-    if (!openGroupId) return undefined;
-
-    const handlePointerDown = (event) => {
-      if (
-        sidebarRef.current &&
-        !sidebarRef.current.contains(event.target)
-      ) {
-        setOpenGroupId(null);
-      }
-    };
-
-    const handleKeyDown = (event) => {
-      if (event.key === "Escape") setOpenGroupId(null);
-    };
-
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [openGroupId]);
 
   if (!open) return null;
 
@@ -297,8 +206,7 @@ const CompanySidebar = ({ open, onLogout }) => {
 
   const activeStyle =
     "bg-teal-300/15 text-teal-200 ring-1 ring-inset ring-teal-300/40";
-  const idleStyle =
-    "text-slate-100 hover:bg-white/10 hover:text-white";
+  const idleStyle = "text-slate-100 hover:bg-white/10 hover:text-white";
 
   const overviewRows = [
     { label: "Employees", value: overview.employees },
@@ -307,11 +215,7 @@ const CompanySidebar = ({ open, onLogout }) => {
   ];
 
   return (
-    <aside
-      ref={sidebarRef}
-      onScroll={() => setOpenGroupId(null)}
-      className="sticky top-16 z-40 flex h-[calc(100vh-64px)] w-64 shrink-0 flex-col self-start overflow-y-auto overflow-x-hidden bg-[#0b1f3a] p-4 [scrollbar-color:#64748b_transparent] [scrollbar-width:thin]"
-    >
+    <aside className="sticky top-16 z-40 flex h-[calc(100vh-64px)] w-64 shrink-0 flex-col self-start overflow-y-auto overflow-x-hidden bg-[#0b1f3a] p-4 [scrollbar-color:#64748b_transparent] [scrollbar-width:thin]">
       {/* Workspace Header */}
       <div className="mb-5 px-1">
         <div className="flex items-center gap-3">
@@ -345,7 +249,6 @@ const CompanySidebar = ({ open, onLogout }) => {
                 key={item.id}
                 to={item.path}
                 end={item.end}
-                onClick={() => setOpenGroupId(null)}
                 className={({ isActive }) =>
                   [
                     railItemBase,
@@ -359,9 +262,7 @@ const CompanySidebar = ({ open, onLogout }) => {
                     <Icon
                       size={20}
                       aria-hidden="true"
-                      className={
-                        isActive ? "text-teal-300" : "text-slate-300"
-                      }
+                      className={isActive ? "text-teal-300" : "text-slate-300"}
                     />
                     <span className="flex-1">{item.label}</span>
                   </>
@@ -370,42 +271,36 @@ const CompanySidebar = ({ open, onLogout }) => {
             );
           }
 
-          // ---------- Group (hover / click opens small flyout) ----------
-          const isOpen = openGroupId === item.id;
+          // ---------- Group (click toggles dropdown below) ----------
           const ownsRoute = item.children.some((child) =>
             isPathActive(child, pathname)
           );
 
+          // Open if user toggled it, or if the current route is inside it
+          // (explicit toggle wins once the user has clicked)
+          const isExpanded =
+            expandedGroups[item.id] !== undefined
+              ? expandedGroups[item.id]
+              : ownsRoute;
+
           return (
-            <div
-              key={item.id}
-              onMouseEnter={(e) =>
-                openFlyout(
-                  item.id,
-                  e.currentTarget.firstElementChild,
-                  item.children.length
-                )
-              }
-              onMouseLeave={scheduleClose}
-            >
+            <div key={item.id}>
               <button
                 type="button"
-                onClick={(e) =>
-                  openFlyout(
-                    item.id,
-                    e.currentTarget,
-                    item.children.length
-                  )
+                onClick={() =>
+                  setExpandedGroups((prev) => ({
+                    ...prev,
+                    [item.id]: !isExpanded,
+                  }))
                 }
-                aria-expanded={isOpen}
-                aria-haspopup="true"
-                aria-controls={`flyout-${item.id}`}
+                aria-expanded={isExpanded}
+                aria-controls={`submenu-${item.id}`}
                 className={[
                   railItemBase,
                   focusRing,
                   ownsRoute
                     ? activeStyle
-                    : isOpen
+                    : isExpanded
                     ? "bg-white/10 text-white"
                     : idleStyle,
                 ].join(" ")}
@@ -413,78 +308,57 @@ const CompanySidebar = ({ open, onLogout }) => {
                 <Icon
                   size={20}
                   aria-hidden="true"
-                  className={
-                    ownsRoute ? "text-teal-300" : "text-slate-300"
-                  }
+                  className={ownsRoute ? "text-teal-300" : "text-slate-300"}
                 />
                 <span className="flex-1">{item.label}</span>
-                <ChevronRight
+                <ChevronDown
                   size={16}
                   aria-hidden="true"
-                  className={isOpen ? "text-white" : "text-slate-300"}
+                  className={[
+                    "transition-transform duration-200",
+                    isExpanded ? "rotate-180" : "rotate-0",
+                    isExpanded ? "text-white" : "text-slate-300",
+                  ].join(" ")}
                 />
               </button>
 
-              {/* Small floating card: opens on hover (or click / keyboard) */}
-              {isOpen && (
+              {/* Sub-menu: opens right below the main item */}
+              {isExpanded && (
                 <div
-                  id={`flyout-${item.id}`}
-                  style={{
-                    position: "fixed",
-                    top: flyoutPos.top,
-                    left: flyoutPos.left,
-                    paddingLeft: flyoutPos.bridge,
-                  }}
-                  className="z-50 w-auto"
+                  id={`submenu-${item.id}`}
+                  className="ml-5 mt-1 space-y-1 border-l border-white/15 pl-3"
                 >
-                  <div className="relative w-60 rounded-xl border border-white/15 bg-[#10294d] p-2 shadow-xl shadow-black/30">
-                    {/* pointer arrow toward the hovered item */}
-                    <span
-                      aria-hidden="true"
-                      style={{ top: flyoutPos.arrowTop }}
-                      className="absolute -left-1.5 h-3 w-3 rotate-45 border-b border-l border-white/15 bg-[#10294d]"
-                    />
+                  {item.children.map((child) => {
+                    const ChildIcon = child.icon;
 
-                    <nav
-                      aria-label={`${item.label} submenu`}
-                      className="relative space-y-1"
-                    >
-                      {item.children.map((child) => {
-                        const ChildIcon = child.icon;
-
-                        return (
-                          <NavLink
-                            key={child.path}
-                            to={child.path}
-                            end={child.end}
-                            onClick={() => setOpenGroupId(null)}
-                            className={({ isActive }) =>
-                              [
-                                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300",
-                                isActive ? activeStyle : idleStyle,
-                              ].join(" ")
-                            }
-                          >
-                            {({ isActive }) => (
-                              <>
-                                <ChildIcon
-                                  size={18}
-                                  aria-hidden="true"
-                                  className={
-                                    isActive
-                                      ? "text-teal-300"
-                                      : "text-slate-300"
-                                  }
-                                />
-                                <span>{child.label}</span>
-                              </>
-                            )}
-                          </NavLink>
-                        );
-                      })}
-                    </nav>
-                  </div>
+                    return (
+                      <NavLink
+                        key={child.path}
+                        to={child.path}
+                        end={child.end}
+                        className={({ isActive }) =>
+                          [
+                            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                            focusRing,
+                            isActive ? activeStyle : idleStyle,
+                          ].join(" ")
+                        }
+                      >
+                        {({ isActive }) => (
+                          <>
+                            <ChildIcon
+                              size={16}
+                              aria-hidden="true"
+                              className={
+                                isActive ? "text-teal-300" : "text-slate-300"
+                              }
+                            />
+                            <span>{child.label}</span>
+                          </>
+                        )}
+                      </NavLink>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -495,9 +369,7 @@ const CompanySidebar = ({ open, onLogout }) => {
       {/* Quick Overview + Logout (bottom) */}
       <div className="mt-auto space-y-3 pt-6">
         <div className="rounded-xl border border-white/15 bg-white/5 p-3">
-          <h3 className="text-sm font-semibold text-white">
-            Quick Overview
-          </h3>
+          <h3 className="text-sm font-semibold text-white">Quick Overview</h3>
 
           <div className="mt-3 space-y-2 text-sm text-slate-300">
             {overviewRows.map((row) => (

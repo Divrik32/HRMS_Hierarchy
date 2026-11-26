@@ -570,6 +570,7 @@ const imageUrl = preview ? preview : employee.profilePic ? employee.profilePic.s
     value={form.email}
     onChange={handleChange}
     required
+    disabled
     className={fieldClass}
     placeholder="Enter email address"
   />

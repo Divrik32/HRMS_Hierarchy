@@ -1426,15 +1426,38 @@ const EmployeeProjects = () => {
   const completedAssignments = projectAssignmentCounts.Completed;
   const inProgressAssignments = projectAssignmentCounts["In Progress"];
 
-  const teamMembers = useMemo(() => {
-    const fromAccess = (selectedProject?.employeeAccess || []).filter(
-      (item) => item && typeof item === "object"
-    );
+ const teamMembers = useMemo(() => {
+  const fromAccess = (selectedProject?.employeeAccess || [])
+    .filter((item) => item && typeof item === "object")
+    .map((item) => item.employee || item);
 
-    if (fromAccess.length) return fromAccess;
+  const source = fromAccess.length
+    ? fromAccess
+    : grantedEmployees.map((item) => item.employee || item);
 
-    return grantedEmployees.map((item) => item.employee || item);
-  }, [selectedProject, grantedEmployees]);
+  // Same employee যেন একবারই থাকে
+  return [
+    ...new Map(
+      source
+        .filter((person) => getId(person))
+        .map((person) => [String(getId(person)), person])
+    ).values(),
+  ];
+}, [selectedProject, grantedEmployees]);
+
+  const groupedTeamMembers = useMemo(() => {
+  return teamMembers.reduce((groups, person) => {
+    const role = getRoleName(person) || "Other";
+
+    if (!groups[role]) {
+      groups[role] = [];
+    }
+
+    groups[role].push(person);
+
+    return groups;
+  }, {});
+}, [teamMembers]);
 
   const projectAccessIds = new Set(
     (selectedProject?.employeeAccess || []).map(getId)
@@ -1788,64 +1811,83 @@ const EmployeeProjects = () => {
 
                     {/* TEAM MEMBERS + ACCESS */}
 
-                    <Card
-                      title="Team Members"
-                      action={
-                        <CardAction
-                          icon={Settings2}
-                          onClick={() =>
-                            setShowAccessPanel((previous) => !previous)
-                          }
-                        >
-                          {showAccessPanel ? "Hide access" : "Manage access"}
-                        </CardAction>
-                      }
-                    >
+<Card
+  title="Team Members"
+  action={
+    ["vice president", "project manager","team lead"].includes(roleName) && (
+      <CardAction
+        icon={Settings2}
+        onClick={() =>
+          setShowAccessPanel((previous) => !previous)
+        }
+      >
+        {showAccessPanel ? "Hide access" : "Manage access"}
+      </CardAction>
+    )
+  }
+>
                       {employeesLoading && teamMembers.length === 0 ? (
-                        <p className="text-sm text-slate-500">
-                          Loading employees...
-                        </p>
-                      ) : (
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          {teamMembers.map((person) => (
-                            <div
-                              key={getId(person)}
-                              className="flex items-center gap-3 rounded-xl border border-slate-200 p-3"
-                            >
-                              <Avatar text={getEmployeeName(person)} />
+  <p className="text-sm text-slate-500">
+    Loading employees...
+  </p>
+) : (
+  <div className="space-y-5">
+    {Object.entries(groupedTeamMembers).map(
+      ([roleName, employees]) => (
+        <div key={roleName}>
+          {/* ROLE HEADING */}
 
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-semibold text-slate-900">
-                                  {getEmployeeName(person)}
-                                </p>
+          <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-2">
+            <h3 className="text-sm font-bold text-slate-800">
+              {roleName}
+            </h3>
 
-                                <p className="truncate text-xs text-slate-500">
-                                  {[
-                                    getEmployeeCode(person),
-                                    getDepartmentName(person),
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" · ") ||
-                                    person.email ||
-                                    ""}
-                                </p>
-                              </div>
+            <span className="rounded-full bg-[#e8f3f0] px-2.5 py-1 text-xs font-semibold text-[#2d7f6b]">
+              {employees.length}{" "}
+              {employees.length === 1 ? "Employee" : "Employees"}
+            </span>
+          </div>
 
-                              {getRoleName(person) && (
-                                <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
-                                  {getRoleName(person)}
-                                </span>
-                              )}
-                            </div>
-                          ))}
+          {/* ROLE EMPLOYEES */}
 
-                          {teamMembers.length === 0 && !isOwner && (
-                            <p className="text-sm text-slate-500 sm:col-span-2">
-                              No team members to show.
-                            </p>
-                          )}
-                        </div>
-                      )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {employees.map((person) => (
+              <div
+                key={getId(person)}
+                className="flex items-center gap-3 rounded-xl border border-slate-200 p-3"
+              >
+                <Avatar text={getEmployeeName(person)} />
+
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-900">
+                    {getEmployeeName(person)}
+                  </p>
+
+                  <p className="truncate text-xs text-slate-500">
+                    {[
+                      getEmployeeCode(person),
+                      getDepartmentName(person),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") ||
+                      person.email ||
+                      ""}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    )}
+
+    {teamMembers.length === 0 && !isOwner && (
+      <p className="text-sm text-slate-500">
+        No team members to show.
+      </p>
+    )}
+  </div>
+)}
 
                       {/* MANAGE ACCESS PANEL */}
 

@@ -34,6 +34,11 @@ const attendanceSchema = new mongoose.Schema(
       enum: ["Present", "Incomplete"],
       default: "Incomplete",
     },
+
+requestForHRAttendance: {
+  type: [String],
+  default: [],
+},
   },
   {
     timestamps: true,

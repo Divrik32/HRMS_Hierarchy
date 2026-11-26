@@ -8,6 +8,7 @@ import {
   getAttendanceByMonth,
   getLast18DaysWorkingReport,
   getMyAttendance,
+  requestForHRAttendance,
   updateEmployeeAttendanceTime,
 } from "../controllers/attendanceController.js";
 
@@ -36,7 +37,11 @@ router.get(
   employeeAuth,
   getAttendanceByMonth
 );
-
+router.post(
+  "/request-hr",
+  employeeAuth,
+  requestForHRAttendance
+);
 
 // =========================================
 // SUPER ADMIN + COMPANY ROUTES
