@@ -236,6 +236,68 @@ const getDisplayStatus = (attendance) => {
 };
 
 // =========================================
+// MY APPROVED LEAVE HELPERS (NORMAL EMPLOYEE)
+// =========================================
+
+const roundHalf = (value) => Math.round(Number(value || 0) * 100) / 100;
+
+// Builds { "YYYY-MM-DD": { dayType, leaveType, paidDays, unpaidDays } }
+// from the employee's APPROVED leave requests.
+// Paid / unpaid split follows the backend: dates are processed in
+// ascending order and `leaveDays` (paid balance) is consumed first.
+const buildMyLeaveMap = (requests) => {
+  const map = {};
+
+  (requests || []).forEach((request) => {
+    if (request?.status !== "Approved") return;
+
+    const dates = (request.leaveDates || [])
+      .filter((item) => item?.date)
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    const isUnpaidOnly =
+      !request.leaveType || request.leaveType === "Unpaid Leave";
+
+    let remainingPaid = isUnpaidOnly ? 0 : roundHalf(request.leaveDays);
+
+    dates.forEach((item) => {
+      const dateKey = getAttendanceDateKey(item.date);
+
+      if (!dateKey) return;
+
+      const dayValue = item.dayType === "Half Day" ? 0.5 : 1;
+      const paidDays = Math.min(dayValue, remainingPaid);
+
+      remainingPaid = roundHalf(remainingPaid - paidDays);
+
+      map[dateKey] = {
+        dayType: item.dayType === "Half Day" ? "Half Day" : "Full Day",
+        leaveType: isUnpaidOnly ? "Unpaid Leave" : request.leaveType,
+        paidDays: roundHalf(paidDays),
+        unpaidDays: roundHalf(dayValue - paidDays),
+      };
+    });
+  });
+
+  return map;
+};
+
+// Returns the badge title
+// e.g. "Full Day Casual Leave"
+//      "Half Day Unpaid Leave"
+//      "Full Day Casual Leave + Unpaid"
+const getLeaveLabel = (leave) => {
+  if (!leave) return "";
+
+  const { dayType, leaveType, paidDays, unpaidDays } = leave;
+
+  if (unpaidDays === 0) return `${dayType} ${leaveType}`;
+  if (paidDays === 0) return `${dayType} Unpaid Leave`;
+
+  return `${dayType} ${leaveType} + Unpaid`;
+};
+
+// =========================================
 // EXCEL EXPORT HELPERS
 // =========================================
 
@@ -489,6 +551,14 @@ const StatusBadge = ({ status }) => {
     </span>
   );
 };
+
+// Approved leave badge (normal employee section)
+const LeaveBadge = ({ leave }) => (
+  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800 ring-1 ring-inset ring-emerald-300">
+    <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+    {getLeaveLabel(leave)}
+  </span>
+);
 
 const EditTimeButton = ({ onClick, label }) => (
   <button
@@ -833,7 +903,12 @@ const checkOutInProgressRef = useRef(false);
   // Key format: employeeMongoId_YYYY-MM-DD
   // Value: "Full Day" / "Half Day"
   const [approvedLeaveDates, setApprovedLeaveDates] = useState({});
-  
+
+  // Normal employee: own approved leaves
+  // Key format: YYYY-MM-DD
+  // Value: { dayType, leaveType, paidDays, unpaidDays }
+  const [myLeaveByDate, setMyLeaveByDate] = useState({});
+
   const [companyHolidayDates, setCompanyHolidayDates] = useState([]);
 
   // =========================================
@@ -913,6 +988,27 @@ const checkOutInProgressRef = useRef(false);
     );
 
     setMyAttendance(todayRecord || null);
+  }, []);
+
+  // =========================================
+  // LOAD MY APPROVED LEAVES
+  // NORMAL EMPLOYEE ONLY
+  // GET /leaves/my-requests
+  // =========================================
+
+  const loadMyApprovedLeaves = useCallback(async () => {
+    try {
+      const response = await api.get("/leaves/my-requests");
+
+      setMyLeaveByDate(buildMyLeaveMap(response.data?.requests || []));
+    } catch (error) {
+      setMyLeaveByDate({});
+
+      toast.error(
+        error.response?.data?.message ||
+          "Failed to load your approved leaves."
+      );
+    }
   }, []);
 
   // =========================================
@@ -1198,6 +1294,13 @@ const checkOutInProgressRef = useRef(false);
       } else {
         setApprovedLeaveDates({});
       }
+
+      // Normal employee: load own approved leaves
+      if (!companyWide) {
+        await loadMyApprovedLeaves();
+      } else {
+        setMyLeaveByDate({});
+      }
     } catch (error) {
       toast.error(
         error.response?.data?.message ||
@@ -1212,6 +1315,7 @@ const checkOutInProgressRef = useRef(false);
     loadAttendanceData,
     loadMyAttendance,
     loadApprovedLeaves,
+    loadMyApprovedLeaves,
   ]);
 
   useEffect(() => {
@@ -1609,8 +1713,11 @@ const handleCheckIn = async () => {
 
   // =========================================
   // NORMAL EMPLOYEE: ROWS FOR THE SELECTED RANGE
-  // One row per date (earliest first), built from the
+  // One row per date (latest first), built from the
   // same /attendance/date-range response.
+  //
+  // Colour priority (same as HR matrix):
+  //   Sunday > Company Holiday > Approved Leave > normal day
   // =========================================
 
   const myEmployee = companyAttendanceGroups[0]?.employee || null;
@@ -1635,6 +1742,10 @@ const handleCheckIn = async () => {
         const sunday = isSunday(dateKey);
         const holiday = companyHolidayDates.includes(dateKey);
 
+        // Approved leave counts only on a normal working day
+        const leave =
+          !sunday && !holiday ? myLeaveByDate[dateKey] || null : null;
+
         let status = getDisplayStatus(attendance);
 
         if (!attendance?.checkIn && !attendance?.checkOut) {
@@ -1647,6 +1758,7 @@ const handleCheckIn = async () => {
           attendance,
           sunday,
           holiday,
+          leave,
           status,
           duration: getDuration(
             attendance?.checkIn,
@@ -1659,6 +1771,7 @@ const handleCheckIn = async () => {
     attendanceView,
     companyAttendanceGroups,
     companyHolidayDates,
+    myLeaveByDate,
     startDate,
     endDate,
     today,
@@ -1675,9 +1788,13 @@ const handleCheckIn = async () => {
       checkedOut: myAttendanceRows.filter(
         (row) => row.attendance?.checkOut
       ).length,
+      // Sunday, holiday and full-day approved leave are not "not checked in"
       notCheckedIn: myAttendanceRows.filter(
         (row) =>
-          !row.sunday && !row.holiday && !row.attendance?.checkIn
+          !row.sunday &&
+          !row.holiday &&
+          row.leave?.dayType !== "Full Day" &&
+          !row.attendance?.checkIn
       ).length,
     }),
     [myAttendanceRows]
@@ -1708,6 +1825,18 @@ const handleCheckIn = async () => {
 
         if (row.sunday) background = "#fee2e2";
         else if (row.holiday) background = "#fef3c7";
+        else if (row.leave) background = "#d1fae5";
+
+        let statusText = row.status;
+
+        if (row.leave) {
+          const leaveText = getLeaveLabel(row.leave);
+
+          statusText =
+            row.attendance?.checkIn || row.attendance?.checkOut
+              ? `${row.status} | ${leaveText}`
+              : leaveText;
+        }
 
         return `
           <tr>
@@ -1716,7 +1845,7 @@ const handleCheckIn = async () => {
             <td style="${cellStyle}background-color:${background};">${escapeHTML(formatTime(row.attendance?.checkIn))}</td>
             <td style="${cellStyle}background-color:${background};">${escapeHTML(formatTime(row.attendance?.checkOut))}</td>
             <td style="${cellStyle}background-color:${background};">${escapeHTML(row.duration)}</td>
-            <td style="${cellStyle}background-color:${background};">${escapeHTML(row.status)}</td>
+            <td style="${cellStyle}background-color:${background};">${escapeHTML(statusText)}</td>
           </tr>
         `;
       })
@@ -3002,6 +3131,11 @@ const handleCheckIn = async () => {
               <span className="h-3 w-3 rounded-sm bg-amber-200 ring-1 ring-amber-300" />
               Company Holiday
             </span>
+
+            <span className="inline-flex items-center gap-2">
+              <span className="h-3 w-3 rounded-sm bg-emerald-200 ring-1 ring-emerald-300" />
+              Approved Leave
+            </span>
           </div>
 
           {/* EMPLOYEE SUMMARY */}
@@ -3125,7 +3259,14 @@ const handleCheckIn = async () => {
                         ? "bg-rose-50/70"
                         : row.holiday
                           ? "bg-amber-50/70"
-                          : "bg-white";
+                          : row.leave
+                            ? "bg-emerald-50"
+                            : "bg-white";
+
+                      const hasAttendance = Boolean(
+                        row.attendance?.checkIn ||
+                          row.attendance?.checkOut
+                      );
 
                       return (
                         <tr key={row.dateKey} className="group">
@@ -3175,9 +3316,22 @@ const handleCheckIn = async () => {
                             )}
                           </td>
 
-                          {/* STATUS */}
+                          {/* STATUS
+                              Approved leave (no attendance) -> leave badge
+                              Approved leave + attendance    -> both
+                              Otherwise                      -> normal status */}
                           <td className={`border-b border-slate-100 px-5 py-3.5 group-hover:bg-blue-50/60 ${rowBg}`}>
-                            <StatusBadge status={row.status} />
+                            {row.leave && !hasAttendance ? (
+                              <LeaveBadge leave={row.leave} />
+                            ) : (
+                              <div className="flex flex-col items-start gap-1.5">
+                                <StatusBadge status={row.status} />
+
+                                {row.leave && (
+                                  <LeaveBadge leave={row.leave} />
+                                )}
+                              </div>
+                            )}
                           </td>
 
                           {/* HR ATTENDANCE REQUEST */}

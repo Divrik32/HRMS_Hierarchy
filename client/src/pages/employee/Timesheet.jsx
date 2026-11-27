@@ -222,6 +222,7 @@ export default function Timesheet() {
   const reduce = useReducedMotion();
   const dispatch = useDispatch();
   const [employeeScopeKey, setEmployeeScopeKey] = useState(null);
+  const autoInlineRowRef = useRef(null);
   const timesheetDrafts = useSelector((state) =>
     employeeScopeKey
       ? selectTimesheetDrafts(state, employeeScopeKey)
@@ -290,6 +291,7 @@ const loadData = useCallback(async () => {
 
     setEmployeeScopeKey(scopeKey);
     setTimesheets(timesheetRes.data?.timesheets || []);
+    autoInlineRowRef.current = null;
     setHideAutoInlineRow(false);
     setProjects(projectRes.data?.projects || []);
   } catch (err) {
@@ -343,32 +345,63 @@ const addInlineRow = () => {
 const updateInlineRow = (rowId, key, value) => {
   if (!employeeScopeKey) return;
 
-  // Auto-generated row-তে প্রথমবার কিছু লিখলে Redux-এ নিয়ে আসবে
+  // Auto-generated row
   if (rowId === "auto-inline-row") {
-    const newRow = {
-      id:
-        globalThis.crypto?.randomUUID?.() ||
-        `inline-${Date.now()}-${Math.random()}`,
-      form: {
-        ...blankInline,
-        [key]: value,
-      },
-      dateTime: new Date().toLocaleString("en-IN", {
-        timeZone: IST,
-      }),
+    // First character: create a new row only once
+    if (!autoInlineRowRef.current) {
+      const newRow = {
+        id:
+          globalThis.crypto?.randomUUID?.() ||
+          `inline-${Date.now()}-${Math.random()}`,
+        form: {
+          ...blankInline,
+          [key]: value,
+        },
+        dateTime: new Date().toLocaleString("en-IN", {
+          timeZone: IST,
+        }),
+      };
+
+      autoInlineRowRef.current = newRow;
+
+      dispatch(
+        addInlineRowDraft({
+          scopeKey: employeeScopeKey,
+          row: newRow,
+        })
+      );
+
+      setHideAutoInlineRow(true);
+      return;
+    }
+
+    // Subsequent characters: update the same row
+    const existingRow = autoInlineRowRef.current;
+
+    const updatedForm = {
+      ...existingRow.form,
+      [key]: value,
+    };
+
+    autoInlineRowRef.current = {
+      ...existingRow,
+      form: updatedForm,
     };
 
     dispatch(
-      addInlineRowDraft({
+      updateInlineRowDraft({
         scopeKey: employeeScopeKey,
-        row: newRow,
+        rowId: existingRow.id,
+        updates: {
+          form: updatedForm,
+        },
       })
     );
 
-    setHideAutoInlineRow(true);
     return;
   }
 
+  // Existing Redux row
   const existingRow = inlineRows.find((row) => row.id === rowId);
 
   if (!existingRow) return;
@@ -390,28 +423,32 @@ const updateInlineRow = (rowId, key, value) => {
 const updateInlineEstimatedTime = (rowId, key, value, row) => {
   if (!employeeScopeKey) return;
 
-  const hours =
+  const hours = Number(
     key === "estimatedHours"
-      ? value
-      : row.form.estimatedHours;
+      ? value || 0
+      : row.form.estimatedHours || 0
+  );
 
-  const minutes =
+  const minutes = Number(
     key === "estimatedMinutes"
-      ? value
-      : row.form.estimatedMinutes;
+      ? value || 0
+      : row.form.estimatedMinutes || 0
+  );
 
-  const estimatedTime =
-    hours !== "" && minutes !== ""
-      ? String(Number(hours) * 60 + Number(minutes))
-      : "";
+  // Hour select না করলেও default 0
+  const estimatedTime = String(hours * 60 + minutes);
 
   const updatedForm = {
     ...row.form,
+    estimatedHours: String(hours),
+    estimatedMinutes:
+      key === "estimatedMinutes"
+        ? value
+        : row.form.estimatedMinutes || "",
     [key]: value,
     estimatedTime,
   };
 
-  // Auto-generated row
   if (rowId === "auto-inline-row") {
     const newRow = {
       id:
@@ -630,7 +667,6 @@ const handleInlineSave = (form, rowId, row) => {
   );
 };
 
-
 const handleInlineTaskAction = (row, action) => {
   if (!employeeScopeKey) return;
 
@@ -653,40 +689,57 @@ const handleInlineTaskAction = (row, action) => {
   const now = new Date().toISOString();
   const updates = {};
 
-if (action === "start") {
-  if (
-    !targetRow.form?.taskType ||
-    !targetRow.form?.projectId ||
-    !targetRow.form?.taskName ||
-    !targetRow.form?.description ||
-    !targetRow.form?.estimatedTime
-  ) {
-    toast.error(
-      "Please fill Task Type, Project, Task / Module, Description and Estimated Time before starting."
-    );
-    return;
-  }
+  if (action === "start") {
+    const form = targetRow.form || {};
 
-  if (targetRow.taskStatus && targetRow.taskStatus !== "Not Started") {
-    toast.error("This task cannot be started.");
-    return;
-  }
+    // Hour select না করলে default 0 ধরা হবে
+    const estimatedHours = Number(form.estimatedHours || 0);
+    const estimatedMinutes = Number(form.estimatedMinutes || 0);
 
-  if (targetRow.startTime) {
-    toast.error("Task has already started.");
-    return;
-  }
+    const totalEstimatedMinutes =
+      estimatedHours * 60 + estimatedMinutes;
 
-  if (hasAnotherRunningTask(targetRow.id)) {
-    toast.error(
-      "Another task is already in progress. Complete it before starting a new task."
-    );
-    return;
-  }
+    if (
+      !form.taskType ||
+      !form.projectId ||
+      !form.task?.trim() ||
+      !form.description?.trim()
+    ) {
+      toast.error(
+        "Please fill Task Type, Project, Task / Module and Description before starting."
+      );
+      return;
+    }
 
-  updates.startTime = now;
-  updates.taskStatus = "In Progress";
-}
+    // Estimated Time validation
+    if (totalEstimatedMinutes <= 0) {
+      toast.error("Please enter estimated time.");
+      return;
+    }
+
+    if (
+      targetRow.taskStatus &&
+      targetRow.taskStatus !== "Not Started"
+    ) {
+      toast.error("This task cannot be started.");
+      return;
+    }
+
+    if (targetRow.startTime) {
+      toast.error("Task has already started.");
+      return;
+    }
+
+    if (hasAnotherRunningTask(targetRow.id)) {
+      toast.error(
+        "Another task is already in progress. Complete it before starting a new task."
+      );
+      return;
+    }
+
+    updates.startTime = now;
+    updates.taskStatus = "In Progress";
+  }
 
   if (action === "break") {
     if (
@@ -771,9 +824,9 @@ if (action === "start") {
       elapsedMinutes - breakMinutes
     );
 
-    const estimatedTime = Number(
-      targetRow.form?.estimatedTime || 0
-    );
+    const estimatedTime =
+      Number(targetRow.form?.estimatedHours || 0) * 60 +
+      Number(targetRow.form?.estimatedMinutes || 0);
 
     const efficiency =
       totalCompletionTime > 0
@@ -801,7 +854,6 @@ if (action === "start") {
     })
   );
 
-  // IMPORTANT:
   // End করার সঙ্গে সঙ্গেই completed row-টি
   // Timesheet Draft Stack-এ পাঠাবে।
   if (action === "end") {
@@ -827,7 +879,6 @@ if (action === "start") {
       : "Task resumed."
   );
 };
-
 
 const handleTaskAction = async (item, action) => {
   const isDraft = Boolean(item.clientTimesheetId);
@@ -1280,20 +1331,25 @@ if (
 }, [timesheets]);
 
 const displayedInlineRows = useMemo(() => {
-  return [
-    ...inlineRows,
-    ...(!hideAutoInlineRow
-      ? [
-          {
-            id: "auto-inline-row",
-            form: { ...blankInline },
-            dateTime: new Date().toLocaleString("en-IN", {
-              timeZone: IST,
-            }),
-          },
-        ]
-      : []),
-  ];
+  // Inline row থাকলে শুধু existing rows দেখাবে
+  if (inlineRows.length > 0) {
+    return inlineRows;
+  }
+
+  // কোনো inline row না থাকলে একটি blank row দেখাবে
+  if (!hideAutoInlineRow) {
+    return [
+      {
+        id: "auto-inline-row",
+        form: { ...blankInline },
+        dateTime: new Date().toLocaleString("en-IN", {
+          timeZone: IST,
+        }),
+      },
+    ];
+  }
+
+  return [];
 }, [inlineRows, hideAutoInlineRow]);
 
   /* ---------- derived ---------- */
@@ -1778,14 +1834,20 @@ const combinedVisibleTimesheets = useMemo(() => {
   const isSaving = savingRowId === row.id;
 
   return (
-    <motion.tr
-      key={row.id}
-      initial={{ opacity: 0, y: -12 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -12 }}
-      transition={{ duration: 0.3 }}
-      className="bg-gradient-to-r from-sky-50 to-amber-50"
-    >
+
+<motion.tr
+  key={
+    row.id === autoInlineRowRef.current?.id
+      ? "auto-inline-row"
+      : row.id
+  }
+  initial={{ opacity: 0, y: -12 }}
+  animate={{ opacity: 1, y: 0 }}
+  exit={{ opacity: 0, y: -12 }}
+  transition={{ duration: 0.3 }}
+  className="bg-gradient-to-r from-sky-50 to-amber-50"
+>
+
 {/* Date */}
 <td className="whitespace-nowrap px-4 py-3 shadow-[inset_4px_0_0_0_#f59e0b]">
   <div className="text-sm font-semibold text-slate-800">

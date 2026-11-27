@@ -2,17 +2,13 @@ import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import {
+  Menu,
   LayoutDashboard,
   User,
   FolderKanban,
-  ShieldCheck,
-  Building2,
-  BriefcaseBusiness,
-  Layers3,
   ClipboardList,
   CalendarDays,
   CalendarPlus,
-  FilePlus2,
   CheckCircle2,
   Ticket,
   ChevronDown,
@@ -22,16 +18,19 @@ import {
 import api from "../../api/axios";
 
 // =========================================
-// COLOR TOKENS (WCAG AA contrast on navy)
-// Rail bg      #0b1f3a
-// Sub-menu bg  #10294d
-// Main text    slate-100 / white      (~15:1)
-// Muted text   slate-300              (~10:1)
-// Accent       teal-300 on navy       (~10:1)
+// COLOR TOKENS (high contrast)
+// Rail bg       #0e4a68  (deep teal-blue)
+// Text / icons  #ffffff  (~9:1 on rail)
+// Active pill   white bg + #0b3a52 text (~11:1)
+// Hover         white/15 overlay
+// Want your old #348aaf back? Change RAIL_BG only and
+// swap text-white -> text-[#04121f] (see notes in chat).
 // =========================================
 
+const RAIL_BG = "bg-[#0e4a68]";
+
 const focusRing =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1f3a]";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#0e4a68]";
 
 const isPathActive = (item, pathname) =>
   item.end
@@ -39,135 +38,112 @@ const isPathActive = (item, pathname) =>
     : pathname === item.path || pathname.startsWith(`${item.path}/`);
 
 // onLogout: pass your real logout handler from the parent.
-const EmployeeSidebar = ({ open, employee, onLogout }) => {
+const EmployeeSidebar = ({ open, employee, onLogout, setSidebarOpen }) => {
   const { employeeId: routeEmployeeId } = useParams();
   const { pathname } = useLocation();
   const navigate = useNavigate();
 
-  const [hasChildRoles, setHasChildRoles] = useState(null);
-  const [hasTimesheetApprovalAccess, setHasTimesheetApprovalAccess] = useState(false);
-  const [hasPendingLeaveApprovals, setHasPendingLeaveApprovals] = useState(false);
+  const [hasTimesheetApprovalAccess, setHasTimesheetApprovalAccess] =
+    useState(false);
+  const [hasPendingLeaveApprovals, setHasPendingLeaveApprovals] =
+    useState(false);
   // Which dropdown groups are expanded (multiple can be open together)
   const [expandedGroups, setExpandedGroups] = useState({});
 
   const employeeId = employee?._id || routeEmployeeId;
   const profilePic = employee?.profilePic;
 
-const profilePicUrl = profilePic
-  ? profilePic.startsWith("http")
-    ? profilePic
-    : `${(api.defaults.baseURL || "").replace(/\/api\/?$/, "")}${
-        profilePic.startsWith("/")
-          ? profilePic
-          : `/uploads/${profilePic}`
-      }`
-  : "";
+  const profilePicUrl = profilePic
+    ? profilePic.startsWith("http")
+      ? profilePic
+      : `${(api.defaults.baseURL || "").replace(/\/api\/?$/, "")}${
+          profilePic.startsWith("/") ? profilePic : `/uploads/${profilePic}`
+        }`
+    : "";
 
-const employeeInitials = employee?.name
-  ? employee.name
-      .split(" ")
-      .filter(Boolean)
-      .map((word) => word[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase()
-  : "EM";
+  const employeeInitials = employee?.name
+    ? employee.name
+        .split(" ")
+        .filter(Boolean)
+        .map((word) => word[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase()
+    : "EM";
+
   const basePath = `/employee/${employeeId}`;
 
   // Employee role
   const roleName = employee?.roleId?.roleName?.trim() || "";
   const isHR = ["hr", "head recruiter"].includes(roleName.toLowerCase());
 
-  const normalizedDepartmentName = (
-    employee?.departmentId?.departmentName || ""
-  )
-    .trim()
-    .toLowerCase();
-
-  const normalizedRoleName = roleName.toLowerCase();
-
-  const itDepartments = [
-    "it",
-    "information technology",
-    "accessibility",
-    "functional testing",
-  ];
-
-  const isITDepartment = itDepartments.includes(normalizedDepartmentName);
-
-  const isITVicePresident =
-    isITDepartment && normalizedRoleName.includes("vice president");
-
   // =========================================
   // CHECK TIMESHEET APPROVAL ACCESS
   // =========================================
 
-useEffect(() => {
-  let isMounted = true;
+  useEffect(() => {
+    let isMounted = true;
 
-  const checkTimesheetApprovalAccess = async () => {
-    if (!employeeId || !open) return;
+    const checkTimesheetApprovalAccess = async () => {
+      if (!employeeId) return;
 
-    try {
-      const { data } = await api.get("/timesheets/approval");
+      try {
+        const { data } = await api.get("/timesheets/approval");
 
-      if (isMounted) {
-        setHasTimesheetApprovalAccess(
-          Boolean(data?.hasApprovalAccess && data?.count > 0)
-        );
+        if (isMounted) {
+          setHasTimesheetApprovalAccess(
+            Boolean(data?.hasApprovalAccess && data?.count > 0)
+          );
+        }
+      } catch (error) {
+        console.error("Failed to check timesheet approval access:", error);
+
+        if (isMounted) {
+          setHasTimesheetApprovalAccess(false);
+        }
       }
-    } catch (error) {
-      console.error("Failed to check timesheet approval access:", error);
+    };
 
-      if (isMounted) {
-        setHasTimesheetApprovalAccess(false);
-      }
-    }
-  };
+    checkTimesheetApprovalAccess();
 
-  checkTimesheetApprovalAccess();
-
-  return () => {
-    isMounted = false;
-  };
-}, [employeeId, open]);
+    return () => {
+      isMounted = false;
+    };
+  }, [employeeId]);
 
   // =========================================
   // CHECK LEAVE APPROVAL ACCESS
   // =========================================
 
-useEffect(() => {
-  let isMounted = true;
+  useEffect(() => {
+    let isMounted = true;
 
-  const checkLeaveApprovalAccess = async () => {
-    if (!employeeId || !open) return;
+    const checkLeaveApprovalAccess = async () => {
+      if (!employeeId) return;
 
-    try {
-      const { data } = await api.get("/leaves/pending");
+      try {
+        const { data } = await api.get("/leaves/pending");
 
-      if (isMounted) {
-        setHasPendingLeaveApprovals(
-          Array.isArray(data?.requests) &&
-          data.requests.length > 0
-        );
+        if (isMounted) {
+          setHasPendingLeaveApprovals(
+            Array.isArray(data?.requests) && data.requests.length > 0
+          );
+        }
+      } catch (error) {
+        console.error("Failed to check leave approval access:", error);
+
+        if (isMounted) {
+          setHasPendingLeaveApprovals(false);
+        }
       }
-    } catch (error) {
-      console.error("Failed to check leave approval access:", error);
+    };
 
-      if (isMounted) {
-        setHasPendingLeaveApprovals(false);
-      }
-    }
-  };
+    checkLeaveApprovalAccess();
 
-  checkLeaveApprovalAccess();
-
-  return () => {
-    isMounted = false;
-  };
-}, [employeeId, open]);
-
-  if (!open) return null;
+    return () => {
+      isMounted = false;
+    };
+  }, [employeeId]);
 
   // =========================================
   // LOGOUT
@@ -184,19 +160,6 @@ useEffect(() => {
     localStorage.removeItem("user");
     navigate("/login");
   };
-
-  // Employee information
-  const departmentName =
-    employee?.departmentId?.departmentName ||
-    (typeof employee?.departmentId === "string"
-      ? "Department data unavailable"
-      : "Not assigned");
-
-  const companyName =
-    employee?.companyId?.companyName ||
-    (typeof employee?.companyId === "string"
-      ? "Company data unavailable"
-      : "Not assigned");
 
   // =========================================
   // NAVIGATION (main menu -> sub menu groups)
@@ -226,25 +189,6 @@ useEffect(() => {
           path: `${basePath}/projects`,
           icon: FolderKanban,
         },
-        // ...(isITVicePresident
-        //   ? [
-        //       {
-        //         label: "Project Management",
-        //         path: `${basePath}/project-management`,
-        //         icon: FolderKanban,
-        //       },
-        //     ]
-        //   : []),
-        // {
-        //   label: "Role & Project Access",
-        //   path: `${basePath}/access`,
-        //   icon: ShieldCheck,
-        // },
-        // {
-        //   label: "Modules Assigned",
-        //   path: `${basePath}/modules-assigned`,
-        //   icon: Layers3,
-        // },
       ],
     },
     {
@@ -279,11 +223,6 @@ useEffect(() => {
           path: `${basePath}/attendance`,
           icon: CalendarDays,
         },
-        // {
-        //   label: "See My Holidays",
-        //   path: `${basePath}/holidays`,
-        //   icon: CalendarDays,
-        // },
       ],
     },
     {
@@ -297,22 +236,16 @@ useEffect(() => {
           icon: CalendarDays,
           end: true,
         },
-        // {
-        //   label: "Apply Leave",
-        //   path: `${basePath}/leaves/apply`,
-        //   icon: FilePlus2,
-        //   end: true,
-        // },
         // Leave Approvals
-...(hasPendingLeaveApprovals
-  ? [
-      {
-        label: "Leave Approvals",
-        path: `${basePath}/leave-approvals`,
-        icon: CheckCircle2,
-      },
-    ]
-  : []),
+        ...(hasPendingLeaveApprovals
+          ? [
+              {
+                label: "Leave Approvals",
+                path: `${basePath}/leave-approvals`,
+                icon: CheckCircle2,
+              },
+            ]
+          : []),
       ],
     },
 
@@ -345,40 +278,72 @@ useEffect(() => {
     );
 
   const railItemBase =
-    "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors";
+    "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors";
 
-  const activeStyle =
-    "bg-teal-300/15 text-teal-200 ring-1 ring-inset ring-teal-300/40";
-  const idleStyle = "text-slate-100 hover:bg-white/10 hover:text-white";
+  // "!" forces the colour so global CSS (a, button resets) can't override it
+  const activeStyle = "!bg-white !text-[#0b3a52] shadow-sm";
+  const idleStyle = "!text-white hover:!bg-white/15";
 
   return (
-    <aside className="sticky top-16 z-40 flex h-[calc(100vh-64px)] w-64 shrink-0 flex-col self-start overflow-y-auto overflow-x-hidden bg-[#0b1f3a] p-4 [scrollbar-color:#64748b_transparent] [scrollbar-width:thin]">
-{/* Workspace Header */}
-<div className="mb-5 px-1">
-  <div className="flex items-center gap-3">
-    <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-teal-300 text-[#0b1f3a]">
-      {profilePicUrl ? (
-        <img
-          src={profilePicUrl}
-          alt={employee?.name || "Employee"}
-          className="h-full w-full object-cover"
-        />
-      ) : (
-        <span className="text-sm font-bold">
-          {employeeInitials}
-        </span>
-      )}
-    </div>
+    <div
+      aria-hidden={!open}
+      className={[
+        "sticky top-0 z-40 h-screen shrink-0 self-start overflow-hidden",
+        "transition-[width,visibility] duration-300 ease-in-out motion-reduce:transition-none",
+        open ? "visible w-64" : "invisible w-0",
+      ].join(" ")}
+    >
+    <aside
+      className={[
+        `flex h-screen w-64 flex-col overflow-y-auto overflow-x-hidden rounded-r-2xl ${RAIL_BG} p-4 [scrollbar-color:rgba(255,255,255,0.4)_transparent] [scrollbar-width:thin]`,
+        "transition-transform duration-300 ease-in-out will-change-transform motion-reduce:transition-none",
+        open ? "translate-x-0" : "-translate-x-full",
+      ].join(" ")}
+    >
+      {/* Workspace Header */}
+      <div className="mb-5 px-1">
+        <div className="flex min-w-0 items-center gap-2">
+          {/* Profile Picture */}
+          <NavLink
+            to={`${basePath}/dashboard`}
+            title="Go to Dashboard"
+            className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white text-[#0b3a52] ring-2 ring-white/60"
+          >
+            {profilePicUrl ? (
+              <img
+                src={profilePicUrl}
+                alt={employee?.name || "Employee"}
+                className="h-full w-full rounded-full object-cover"
+              />
+            ) : (
+              <span className="text-sm font-bold">{employeeInitials}</span>
+            )}
+          </NavLink>
 
-    <div className="min-w-0">
-      <h2 className="truncate text-base font-bold text-white">
-        {employee?.name || "Employee"}
-      </h2>
-    </div>
-  </div>
-</div>
+          {/* Employee Name */}
+          <div className="min-w-0 flex-1">
+            <NavLink
+              to={`${basePath}/dashboard`}
+              title="Go to Dashboard"
+              className="block truncate text-base font-bold !text-white hover:underline"
+            >
+              {employee?.name || "Employee"}
+            </NavLink>
+          </div>
 
-      <div className="mb-2 border-t border-white/15 px-3 pt-4 text-xs font-semibold text-slate-300">
+          {/* Hamburger inside sidebar */}
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close sidebar"
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white transition hover:bg-white/15 ${focusRing}`}
+          >
+            <Menu size={23} />
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-2 border-t border-white/25 px-3 pt-4 text-xs font-semibold tracking-wide text-white/80">
         Employee Workspace
       </div>
 
@@ -407,7 +372,7 @@ useEffect(() => {
                     <Icon
                       size={20}
                       aria-hidden="true"
-                      className={isActive ? "text-teal-300" : "text-slate-300"}
+                      className={isActive ? "text-[#0b5f85]" : "text-white"}
                     />
                     <span className="flex-1">{item.label}</span>
                   </>
@@ -422,7 +387,6 @@ useEffect(() => {
           );
 
           // Open if user toggled it, or if the current route is inside it
-          // (explicit toggle wins once the user has clicked)
           const isExpanded =
             expandedGroups[item.id] !== undefined
               ? expandedGroups[item.id]
@@ -446,14 +410,14 @@ useEffect(() => {
                   ownsRoute
                     ? activeStyle
                     : isExpanded
-                    ? "bg-white/10 text-white"
+                    ? "!bg-white/15 !text-white"
                     : idleStyle,
                 ].join(" ")}
               >
                 <Icon
                   size={20}
                   aria-hidden="true"
-                  className={ownsRoute ? "text-teal-300" : "text-slate-300"}
+                  className={ownsRoute ? "text-[#0b5f85]" : "text-white"}
                 />
                 <span className="flex-1">{item.label}</span>
                 <ChevronDown
@@ -462,7 +426,7 @@ useEffect(() => {
                   className={[
                     "transition-transform duration-200",
                     isExpanded ? "rotate-180" : "rotate-0",
-                    isExpanded ? "text-white" : "text-slate-300",
+                    ownsRoute ? "text-[#0b3a52]" : "text-white",
                   ].join(" ")}
                 />
               </button>
@@ -471,7 +435,7 @@ useEffect(() => {
               {isExpanded && (
                 <div
                   id={`submenu-${item.id}`}
-                  className="ml-5 mt-1 space-y-1 border-l border-white/15 pl-3"
+                  className="ml-5 mt-1 space-y-1 border-l border-white/30 pl-3"
                 >
                   {item.children.map((child) => {
                     const ChildIcon = child.icon;
@@ -495,7 +459,7 @@ useEffect(() => {
                               size={16}
                               aria-hidden="true"
                               className={
-                                isActive ? "text-teal-300" : "text-slate-300"
+                                isActive ? "text-[#0b5f85]" : "text-white"
                               }
                             />
                             <span>{child.label}</span>
@@ -511,14 +475,13 @@ useEffect(() => {
         })}
       </nav>
 
-      {/* Employee Summary + Logout (bottom) */}
+      {/* Logout (bottom) */}
       <div className="mt-auto space-y-3 pt-6">
-        {/* Logout */}
         <button
           type="button"
           onClick={handleLogout}
           className={[
-            "flex w-full items-center justify-between rounded-lg border border-white/20 px-3 py-2.5 text-sm font-semibold text-slate-100 transition-colors hover:bg-red-400/15 hover:text-red-200",
+            "flex w-full items-center justify-between rounded-lg border border-white/60 bg-white/10 px-3 py-2.5 text-sm font-semibold !text-white transition-colors hover:border-white hover:!bg-white hover:!text-red-700",
             focusRing,
           ].join(" ")}
         >
@@ -527,6 +490,7 @@ useEffect(() => {
         </button>
       </div>
     </aside>
+    </div>
   );
 };
 

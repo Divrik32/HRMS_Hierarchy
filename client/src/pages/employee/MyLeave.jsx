@@ -187,7 +187,7 @@ const getLeaveCategory = (leave) => {
   const paidDays = toNumber(leave?.leaveDays);
   const unpaidDays = toNumber(leave?.unpaidDays);
 
-  if (paidDays > 0 && unpaidDays > 0) return "Mixed Leave";
+  if (paidDays > 0) return "Mixed Leave";
   if (unpaidDays > 0) return "Unpaid Leave";
   if (leave?.leaveType === "Comp-Off") return "Comp-Off";
 
@@ -865,7 +865,7 @@ const MyLeave = () => {
   );
 
   // Calendar is usable only after a leave type is picked
-  // OR "Add Non-Paid Leaves" is ticked
+  // OR "Add Unpaid Leaves" is ticked
   const calendarEnabled = Boolean(leaveType) || isUnpaidLeave;
 
   // -----------------------------------------------------
@@ -925,7 +925,7 @@ const MyLeave = () => {
 
     // No leave type and no unpaid tick
     if (!leaveType && !isUnpaidLeave) {
-      return 'Please select a leave type, or tick "Add Non-Paid Leaves" to apply for unpaid leave.';
+      return 'Please select a leave type, or tick "Add Unpaid Leaves" to apply for unpaid leave.';
     }
 
     // Unpaid days exist but the person has not ticked the box
@@ -935,10 +935,10 @@ const MyLeave = () => {
             availableBalance
           )} ${leaveType} day(s) are available. Reduce the selected days by ${formatDays(
             unpaidDays
-          )} day(s), or tick "Add Non-Paid Leaves" to take the remaining ${formatDays(
+          )} day(s), or tick "Add Unpaid Leaves" to take the remaining ${formatDays(
             unpaidDays
           )} day(s) as unpaid leave.`
-        : `You do not have enough ${leaveType} balance. Tick "Add Non-Paid Leaves" to apply these ${formatDays(
+        : `You do not have enough ${leaveType} balance. Tick "Add Unpaid Leaves" to apply these ${formatDays(
             unpaidDays
           )} day(s) as unpaid leave, or remove the selected dates.`;
     }
@@ -1335,7 +1335,13 @@ const MyLeave = () => {
                         </td>
 
                         <td className="px-5 py-4">
-                          <LeaveStatusBadge status={leave.status} />
+                          <LeaveStatusBadge
+  status={
+    leave.status === "Pending"
+      ? "Pending for Approval"
+      : leave.status
+  }
+/>
                         </td>
 
                         <td className="px-5 py-4">
@@ -1882,7 +1888,7 @@ const MyLeave = () => {
                 onSubmit={handleSubmitLeave}
                 className="flex-1 space-y-5 overflow-y-auto p-5"
               >
-                {/* LEAVE TYPE + ADD NON-PAID LEAVES */}
+                {/* LEAVE TYPE + ADD Unpaid LEAVES */}
 
                 <div>
                   <label
@@ -1917,7 +1923,7 @@ const MyLeave = () => {
                           : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                       }`}
                     >
-                      <span>Add Non-Paid Leaves</span>
+                      <span>Add Unpaid Leaves</span>
 
                       <input
                         id="isUnpaidLeave"
@@ -1966,7 +1972,7 @@ const MyLeave = () => {
 
                     {!calendarEnabled && (
                       <p className="mt-2 text-xs text-slate-500">
-                        Select a leave type or tick "Add Non-Paid Leaves" to
+                        Select a leave type or tick "Add Unpaid Leaves" to
                         choose dates.
                       </p>
                     )}

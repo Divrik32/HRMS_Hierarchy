@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Outlet, useNavigate, useParams } from "react-router-dom";
+import { Menu } from "lucide-react";
 
 import api from "../api/axios";
-import EmployeeNavbar from "../components/employee/EmployeeNavbar";
 import EmployeeSidebar from "../components/employee/EmployeeSidebar";
 
 const EmployeeLayout = () => {
@@ -24,21 +24,14 @@ const EmployeeLayout = () => {
       });
 
       if (!data?.success || !data?.employee) {
-        throw new Error(
-          data?.message || "Employee profile not found."
-        );
+        throw new Error(data?.message || "Employee profile not found.");
       }
 
       const employeeData = data.employee;
 
       setEmployee(employeeData);
 
-      // URL-এর employeeId logged-in employee-এর সঙ্গে না মিললে
-      // নিজের dashboard-এ redirect করো।
-      if (
-        employeeId &&
-        String(employeeData._id) !== String(employeeId)
-      ) {
+      if (employeeId && String(employeeData._id) !== String(employeeId)) {
         navigate(`/employee/${employeeData._id}/dashboard`, {
           replace: true,
         });
@@ -67,11 +60,7 @@ const EmployeeLayout = () => {
 
   const handleLogout = async () => {
     try {
-      await api.post(
-        "/employees/logout",
-        {},
-        { withCredentials: true }
-      );
+      await api.post("/employees/logout", {}, { withCredentials: true });
     } catch (err) {
       console.error(
         "Logout error:",
@@ -103,11 +92,9 @@ const EmployeeLayout = () => {
           <h2 className="text-xl font-semibold text-slate-800">
             Unable to load profile
           </h2>
-
           <p className="mt-2 text-sm text-red-600">
             {error || "Employee profile not found."}
           </p>
-
           <button
             type="button"
             onClick={fetchEmployeeProfile}
@@ -122,24 +109,51 @@ const EmployeeLayout = () => {
 
   return (
     <div className="min-h-screen bg-slate-100">
-      <EmployeeNavbar
-        sidebarOpen={sidebarOpen}
-        setSidebarOpen={setSidebarOpen}
-        employee={employee}
-        onLogout={handleLogout}
-      />
+      <div className="flex min-h-screen">
+        {/* Sidebar (always mounted; it animates its own width + slide) */}
+        <EmployeeSidebar
+          open={sidebarOpen}
+          employee={employee}
+          onLogout={handleLogout}
+          setSidebarOpen={setSidebarOpen}
+        />
 
-      <div className="flex">
-        <EmployeeSidebar open={sidebarOpen} employee={employee} />
+        {/* Main content. It slides left/right smoothly because the
+            sidebar wrapper animates its width. */}
+        <main className="flex min-h-screen min-w-0 flex-1 items-start gap-3 px-4 pb-4 pt-2 md:px-6 md:pb-6 md:pt-3">
+          {/* Hamburger: always mounted, fades + grows in when the sidebar
+              closes, fades + shrinks out when it opens.
+              Change `top-14` to move it up / down. */}
+          <div
+            aria-hidden={sidebarOpen}
+            className={[
+              "sticky top-14 shrink-0 self-start overflow-hidden",
+              "transition-all duration-300 ease-in-out motion-reduce:transition-none",
+              sidebarOpen
+                ? "invisible -ml-3 w-0 opacity-0"
+                : "visible ml-0 w-10 opacity-100",
+            ].join(" ")}
+          >
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open sidebar"
+              aria-expanded={sidebarOpen}
+              className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-800 shadow-sm transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
+            >
+              <Menu size={22} />
+            </button>
+          </div>
 
-        <main className="min-w-0 flex-1 p-4 md:p-6">
-          <Outlet
-            context={{
-              employee,
-              setEmployee,
-              refreshEmployee: fetchEmployeeProfile,
-            }}
-          />
+          <div className="min-w-0 flex-1">
+            <Outlet
+              context={{
+                employee,
+                setEmployee,
+                refreshEmployee: fetchEmployeeProfile,
+              }}
+            />
+          </div>
         </main>
       </div>
     </div>
