@@ -19,6 +19,7 @@ import {
   updateInlineRowDraft,
   removeInlineRowDraft,
   selectInlineRows,
+  selectInProgressTimesheetData,
 } from "../../redux/slices/timesheetSlice";
 
 /* =========================================================
@@ -501,6 +502,20 @@ const removeInlineRow = (rowId) => {
   );
 };
 
+const inProgressTasks = useSelector((state) =>
+  selectInProgressTimesheetData(state, employeeScopeKey)
+);
+
+const hasAnotherRunningTask = (currentId) => {
+  return inProgressTasks.some((task) => {
+    const taskId =
+      task.clientTimesheetId ||
+      task._id ||
+      task.id;
+
+    return taskId !== currentId;
+  });
+};
 
 const handleInlineSave = (form, rowId, row) => {
   if (!employeeScopeKey) {
@@ -638,20 +653,40 @@ const handleInlineTaskAction = (row, action) => {
   const now = new Date().toISOString();
   const updates = {};
 
-  if (action === "start") {
-    if (targetRow.taskStatus && targetRow.taskStatus !== "Not Started") {
-      toast.error("This task cannot be started.");
-      return;
-    }
-
-    if (targetRow.startTime) {
-      toast.error("Task has already started.");
-      return;
-    }
-
-    updates.startTime = now;
-    updates.taskStatus = "In Progress";
+if (action === "start") {
+  if (
+    !targetRow.form?.taskType ||
+    !targetRow.form?.projectId ||
+    !targetRow.form?.taskName ||
+    !targetRow.form?.description ||
+    !targetRow.form?.estimatedTime
+  ) {
+    toast.error(
+      "Please fill Task Type, Project, Task / Module, Description and Estimated Time before starting."
+    );
+    return;
   }
+
+  if (targetRow.taskStatus && targetRow.taskStatus !== "Not Started") {
+    toast.error("This task cannot be started.");
+    return;
+  }
+
+  if (targetRow.startTime) {
+    toast.error("Task has already started.");
+    return;
+  }
+
+  if (hasAnotherRunningTask(targetRow.id)) {
+    toast.error(
+      "Another task is already in progress. Complete it before starting a new task."
+    );
+    return;
+  }
+
+  updates.startTime = now;
+  updates.taskStatus = "In Progress";
+}
 
   if (action === "break") {
     if (
@@ -810,14 +845,24 @@ const handleTaskAction = async (item, action) => {
 
       const updates = {};
 
-      if (action === "start") {
-        if (item.taskStatus !== "Not Started") {
-          throw new Error("This task cannot be started.");
-        }
+if (action === "start") {
+  if (item.taskStatus !== "Not Started") {
+    throw new Error("This task cannot be started.");
+  }
 
-        updates.startTime = now;
-        updates.taskStatus = "In Progress";
-      }
+  if (item.startTime) {
+    throw new Error("Task has already started.");
+  }
+
+  if (hasAnotherRunningTask(item.clientTimesheetId)) {
+    throw new Error(
+      "Another task is already in progress. Complete it before starting a new task."
+    );
+  }
+
+  updates.startTime = now;
+  updates.taskStatus = "In Progress";
+}
 
       if (action === "break") {
         if (item.taskStatus !== "In Progress") {

@@ -142,12 +142,6 @@ const formatInputDate = (dateString) => {
   );
 };
 
-const sumSelected = (selected) =>
-  Object.values(selected).reduce(
-    (sum, dayType) => sum + (dayType === HALF ? 0.5 : 1),
-    0
-  );
-
 // =====================================================
 // LEAVE RECORD HELPERS (based on LeaveRequest model)
 // =====================================================
@@ -328,27 +322,47 @@ const DailyLeaveBreakdown = ({ leave }) => {
 };
 
 // =====================================================
-// MULTI-DATE CALENDAR
+// APPLY LEAVE — TONES
+// green  = fully paid
+// yellow = part paid / part unpaid
+// red    = fully unpaid
 // =====================================================
 
-const calendarAccent = {
-  emerald: {
-    selected: "bg-emerald-600 text-white hover:bg-emerald-700",
-    ring: "ring-emerald-300",
+const TONE = {
+  green: {
+    cell: "bg-emerald-600 text-white hover:bg-emerald-700",
+    row: "border-emerald-200 bg-emerald-50",
+    badge: "bg-emerald-100 text-emerald-700",
+    active: "bg-emerald-600 text-white",
+    dot: "bg-emerald-600",
   },
-  amber: {
-    selected: "bg-amber-500 text-white hover:bg-amber-600",
-    ring: "ring-amber-300",
+  yellow: {
+    cell: "bg-amber-400 text-white hover:bg-amber-500",
+    row: "border-amber-200 bg-amber-50",
+    badge: "bg-amber-100 text-amber-700",
+    active: "bg-amber-500 text-white",
+    dot: "bg-amber-400",
+  },
+  red: {
+    cell: "bg-red-500 text-white hover:bg-red-600",
+    row: "border-red-200 bg-red-50",
+    badge: "bg-red-100 text-red-700",
+    active: "bg-red-500 text-white",
+    dot: "bg-red-500",
   },
 };
 
+// =====================================================
+// SINGLE CALENDAR
+// =====================================================
+
 const WEEK_DAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
-const MultiDateCalendar = ({
+const LeaveCalendar = ({
   selected,
   onToggle,
   isDateDisabled,
-  accent = "emerald",
+  getTone,
   disabled = false,
   today,
 }) => {
@@ -357,8 +371,6 @@ const MultiDateCalendar = ({
     year: now.getFullYear(),
     month: now.getMonth(),
   });
-
-  const colors = calendarAccent[accent];
 
   const monthLabel = new Date(view.year, view.month, 1).toLocaleDateString(
     "en-IN",
@@ -420,8 +432,10 @@ const MultiDateCalendar = ({
           const isSelected = Boolean(selected[dateString]);
           const isHalf = selected[dateString] === HALF;
           const isPast = dateString < today;
-          const isBlocked = !isSelected && (isPast || isDateDisabled(dateString));
+          const isBlocked =
+            !isSelected && (isPast || isDateDisabled(dateString));
           const isToday = dateString === today;
+          const tone = isSelected ? TONE[getTone(dateString)] : null;
 
           return (
             <button
@@ -431,11 +445,11 @@ const MultiDateCalendar = ({
               onClick={() => onToggle(dateString)}
               className={`relative h-9 rounded-lg text-sm transition ${
                 isSelected
-                  ? colors.selected
+                  ? tone.cell
                   : isBlocked
                     ? "cursor-not-allowed text-slate-300"
                     : "text-slate-700 hover:bg-slate-100"
-              } ${isToday ? `ring-1 ${colors.ring}` : ""}`}
+              } ${isToday ? "ring-1 ring-blue-300" : ""}`}
             >
               {day}
 
@@ -452,61 +466,75 @@ const MultiDateCalendar = ({
   );
 };
 
-// Full / Half toggle list for the dates selected in a calendar
-const SelectedDateList = ({ selected, onChangeType, onRemove, accent }) => {
-  const dates = Object.keys(selected).sort();
-
+// Full / Half toggle list for the dates selected in the calendar
+const SelectedDateList = ({
+  dates,
+  selected,
+  allocation,
+  onChangeType,
+  onRemove,
+}) => {
   if (!dates.length) {
     return (
-      <p className="mt-3 text-xs text-slate-400">No date selected yet.</p>
+      <p className="py-6 text-center text-xs text-slate-400">
+        No date selected yet.
+      </p>
     );
   }
 
-  const activeClass =
-    accent === "amber"
-      ? "bg-amber-500 text-white"
-      : "bg-emerald-600 text-white";
-
   return (
-    <div className="mt-3 space-y-2">
-      {dates.map((date) => (
-        <div
-          key={date}
-          className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
-        >
-          <span className="text-sm font-medium text-slate-700">
-            {formatInputDate(date)}
-          </span>
+    <div className="space-y-2">
+      {dates.map((date) => {
+        const info = allocation[date];
+        const tone = TONE[info.tone];
 
-          <div className="flex items-center gap-2">
-            <div className="flex overflow-hidden rounded-lg border border-slate-200 text-xs font-semibold">
-              {[FULL, HALF].map((type) => (
+        return (
+          <div
+            key={date}
+            className={`rounded-lg border px-3 py-2 ${tone.row}`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium text-slate-700">
+                {formatInputDate(date)}
+              </span>
+
+              <div className="flex items-center gap-2">
+                <div className="flex overflow-hidden rounded-lg border border-slate-200 bg-white text-xs font-semibold">
+                  {[FULL, HALF].map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => onChangeType(date, type)}
+                      className={`px-2.5 py-1.5 ${
+                        selected[date] === type
+                          ? tone.active
+                          : "bg-white text-slate-500 hover:bg-slate-50"
+                      }`}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+
                 <button
-                  key={type}
                   type="button"
-                  onClick={() => onChangeType(date, type)}
-                  className={`px-2.5 py-1.5 ${
-                    selected[date] === type
-                      ? activeClass
-                      : "bg-white text-slate-500 hover:bg-slate-50"
-                  }`}
+                  onClick={() => onRemove(date)}
+                  className="rounded-md p-1.5 text-slate-400 hover:bg-white hover:text-red-600"
+                  title="Remove date"
                 >
-                  {type}
+                  <X size={15} />
                 </button>
-              ))}
+              </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => onRemove(date)}
-              className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-              title="Remove date"
+            <span
+              className={`mt-1.5 inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold ${tone.badge}`}
             >
-              <X size={15} />
-            </button>
+              {info.label}
+            </span>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };
@@ -557,8 +585,8 @@ const MyLeave = () => {
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [leaveType, setLeaveType] = useState("");
-  const [paidDates, setPaidDates] = useState({});
-  const [unpaidDates, setUnpaidDates] = useState({});
+  const [isUnpaidLeave, setIsUnpaidLeave] = useState(false);
+  const [selectedDates, setSelectedDates] = useState({}); // { "YYYY-MM-DD": "Full Day" | "Half Day" }
   const [reason, setReason] = useState("");
 
   // =====================================================
@@ -831,37 +859,95 @@ const MyLeave = () => {
     return set;
   }, [requests]);
 
-  const paidDays = roundDays(sumSelected(paidDates));
-  const unpaidDays = roundDays(sumSelected(unpaidDates));
-  const totalDays = roundDays(paidDays + unpaidDays);
+  const sortedSelectedDates = useMemo(
+    () => Object.keys(selectedDates).sort(),
+    [selectedDates]
+  );
+
+  // Calendar is usable only after a leave type is picked
+  // OR "Add Non-Paid Leaves" is ticked
+  const calendarEnabled = Boolean(leaveType) || isUnpaidLeave;
+
+  // -----------------------------------------------------
+  // Allocation (same logic as the backend):
+  // dates are processed in ascending order, the balance of the
+  // chosen leave type is consumed first, the rest is unpaid.
+  //   green  = fully paid
+  //   yellow = part paid / part unpaid
+  //   red    = fully unpaid
+  // -----------------------------------------------------
+  const { allocation, paidDays, unpaidDays, totalDays } = useMemo(() => {
+    const result = {};
+    let remaining = leaveType ? availableBalance : 0;
+    let paid = 0;
+    let unpaid = 0;
+
+    sortedSelectedDates.forEach((date) => {
+      const dayValue = selectedDates[date] === HALF ? 0.5 : 1;
+      const paidPart = roundDays(Math.min(dayValue, remaining));
+      const unpaidPart = roundDays(dayValue - paidPart);
+
+      remaining = roundDays(remaining - paidPart);
+      paid += paidPart;
+      unpaid += unpaidPart;
+
+      if (unpaidPart === 0) {
+        result[date] = {
+          tone: "green",
+          label: `Paid · ${formatDays(paidPart)} day`,
+        };
+      } else if (paidPart === 0) {
+        result[date] = {
+          tone: "red",
+          label: `Unpaid · ${formatDays(unpaidPart)} day`,
+        };
+      } else {
+        result[date] = {
+          tone: "yellow",
+          label: `${formatDays(paidPart)} Paid + ${formatDays(
+            unpaidPart
+          )} Unpaid`,
+        };
+      }
+    });
+
+    return {
+      allocation: result,
+      paidDays: roundDays(paid),
+      unpaidDays: roundDays(unpaid),
+      totalDays: roundDays(paid + unpaid),
+    };
+  }, [sortedSelectedDates, selectedDates, leaveType, availableBalance]);
 
   // Red validation message (null = everything fine)
   const balanceError = useMemo(() => {
-    if (!leaveType) return null;
+    if (totalDays === 0) return null;
 
-    if (paidDays > availableBalance) {
-      const shortfall = roundDays(paidDays - availableBalance);
-
-      return availableBalance > 0
-        ? `You selected ${formatDays(paidDays)} paid day(s) but only ${formatDays(
-            availableBalance
-          )} ${leaveType} day(s) are available. Reduce Leave Days (Paid) by ${formatDays(
-            shortfall
-          )} day(s) and add them in Unpaid Leave Days (same date as a Half Day, or any other date).`
-        : `You have no ${leaveType} balance. Remove the paid dates and select the days in Unpaid Leave Days instead.`;
+    // No leave type and no unpaid tick
+    if (!leaveType && !isUnpaidLeave) {
+      return 'Please select a leave type, or tick "Add Non-Paid Leaves" to apply for unpaid leave.';
     }
 
-    if (unpaidDays > 0 && paidDays < availableBalance) {
-      return `You still have ${formatDays(
-        roundDays(availableBalance - paidDays)
-      )} ${leaveType} day(s) available. Use your full balance in Leave Days (Paid) before applying Unpaid Leave.`;
+    // Unpaid days exist but the person has not ticked the box
+    if (unpaidDays > 0 && !isUnpaidLeave) {
+      return availableBalance > 0
+        ? `You selected ${formatDays(totalDays)} day(s) but only ${formatDays(
+            availableBalance
+          )} ${leaveType} day(s) are available. Reduce the selected days by ${formatDays(
+            unpaidDays
+          )} day(s), or tick "Add Non-Paid Leaves" to take the remaining ${formatDays(
+            unpaidDays
+          )} day(s) as unpaid leave.`
+        : `You do not have enough ${leaveType} balance. Tick "Add Non-Paid Leaves" to apply these ${formatDays(
+            unpaidDays
+          )} day(s) as unpaid leave, or remove the selected dates.`;
     }
 
     return null;
-  }, [leaveType, paidDays, unpaidDays, availableBalance]);
+  }, [totalDays, unpaidDays, leaveType, isUnpaidLeave, availableBalance]);
 
   const canSubmit =
-    Boolean(leaveType) &&
+    calendarEnabled &&
     totalDays > 0 &&
     !balanceError &&
     Boolean(reason.trim()) &&
@@ -874,8 +960,8 @@ const MyLeave = () => {
 
   const resetApplyForm = () => {
     setLeaveType("");
-    setPaidDates({});
-    setUnpaidDates({});
+    setIsUnpaidLeave(false);
+    setSelectedDates({});
     setReason("");
   };
 
@@ -891,9 +977,8 @@ const MyLeave = () => {
     resetApplyForm();
   };
 
-  // A date can be in both calendars only if both are Half Day
-  const togglePaidDate = (date) => {
-    setPaidDates((prev) => {
+  const toggleDate = (date) => {
+    setSelectedDates((prev) => {
       if (prev[date]) {
         const { [date]: removed, ...rest } = prev;
         return rest;
@@ -902,77 +987,24 @@ const MyLeave = () => {
     });
   };
 
-  const toggleUnpaidDate = (date) => {
-    setUnpaidDates((prev) => {
-      if (prev[date]) {
-        const { [date]: removed, ...rest } = prev;
-        return rest;
-      }
-      return { ...prev, [date]: FULL };
-    });
-  };
+  const changeDateType = (date, type) =>
+    setSelectedDates((prev) => ({ ...prev, [date]: type }));
 
-  const changePaidType = (date, type) => {
-    if (type === FULL && unpaidDates[date]) {
-      toast.error(
-        "This date is also selected in Unpaid Leave. Make both Half Day or remove one."
-      );
-      return;
-    }
-    setPaidDates((prev) => ({ ...prev, [date]: type }));
-  };
-
-  const changeUnpaidType = (date, type) => {
-    if (type === FULL && paidDates[date]) {
-      toast.error(
-        "This date is also selected in Paid Leave. Make both Half Day or remove one."
-      );
-      return;
-    }
-    setUnpaidDates((prev) => ({ ...prev, [date]: type }));
-  };
-
-  const removePaidDate = (date) =>
-    setPaidDates((prev) => {
+  const removeDate = (date) =>
+    setSelectedDates((prev) => {
       const { [date]: removed, ...rest } = prev;
       return rest;
     });
 
-  const removeUnpaidDate = (date) =>
-    setUnpaidDates((prev) => {
-      const { [date]: removed, ...rest } = prev;
-      return rest;
-    });
+  const isDateDisabled = (date) => bookedDates.has(date);
 
-  // Paid calendar: block dates taken as Full Day in unpaid, or already booked
-  const isPaidDateDisabled = (date) =>
-    bookedDates.has(date) || unpaidDates[date] === FULL;
-
-  const isUnpaidDateDisabled = (date) =>
-    bookedDates.has(date) || paidDates[date] === FULL;
-
-  // When a date is picked in the other calendar with a Full Day, switch to Half
-  const handlePaidToggle = (date) => {
-    if (!paidDates[date] && unpaidDates[date] === HALF) {
-      setPaidDates((prev) => ({ ...prev, [date]: HALF }));
-      return;
-    }
-    togglePaidDate(date);
-  };
-
-  const handleUnpaidToggle = (date) => {
-    if (!unpaidDates[date] && paidDates[date] === HALF) {
-      setUnpaidDates((prev) => ({ ...prev, [date]: HALF }));
-      return;
-    }
-    toggleUnpaidDate(date);
-  };
+  const getDateTone = (date) => allocation[date]?.tone || "green";
 
   // =====================================================
   // SUBMIT LEAVE
-  // Backend payload: { leaveType, leaveDates, reason }
-  // Paid + unpaid dates are merged. Backend deducts the
-  // available balance first and treats the rest as unpaid.
+  // Backend payload: { leaveType?, isUnpaidLeave, leaveDates, reason }
+  // The backend deducts the available balance first and treats
+  // the remaining days as unpaid.
   // =====================================================
 
   const handleSubmitLeave = async (e) => {
@@ -980,30 +1012,23 @@ const MyLeave = () => {
 
     if (!canSubmit) return;
 
-    const merged = {};
+    const leaveDates = sortedSelectedDates.map((date) => ({
+      date,
+      dayType: selectedDates[date],
+    }));
 
-    [paidDates, unpaidDates].forEach((source) => {
-      Object.entries(source).forEach(([date, dayType]) => {
-        merged[date] =
-          (merged[date] || 0) + (dayType === HALF ? 0.5 : 1);
-      });
-    });
+    const payload = {
+      isUnpaidLeave,
+      leaveDates,
+      reason: reason.trim(),
+    };
 
-    const leaveDates = Object.entries(merged)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, days]) => ({
-        date,
-        dayType: days >= 1 ? FULL : HALF,
-      }));
+    if (leaveType) payload.leaveType = leaveType;
 
     try {
       setSubmitting(true);
 
-      const { data } = await api.post("/leaves", {
-        leaveType,
-        leaveDates,
-        reason: reason.trim(),
-      });
+      const { data } = await api.post("/leaves", payload);
 
       if (data.success) {
         toast.success(
@@ -1857,31 +1882,52 @@ const MyLeave = () => {
                 onSubmit={handleSubmitLeave}
                 className="flex-1 space-y-5 overflow-y-auto p-5"
               >
-                {/* LEAVE TYPE */}
+                {/* LEAVE TYPE + ADD NON-PAID LEAVES */}
 
                 <div>
                   <label
                     htmlFor="leaveType"
                     className="mb-2 block text-sm font-semibold text-slate-700"
                   >
-                    Leave Type <span className="text-rose-500">*</span>
+                    Leave Type
                   </label>
 
-                  <select
-                    id="leaveType"
-                    value={leaveType}
-                    onChange={(e) => setLeaveType(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  >
-                    <option value="">Select leave type</option>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+                    <select
+                      id="leaveType"
+                      value={leaveType}
+                      onChange={(e) => setLeaveType(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:flex-1"
+                    >
+                      <option value="">Select leave type</option>
 
-                    {PAID_LEAVE_TYPES.map((item) => (
-                      <option key={item.leaveType} value={item.leaveType}>
-                        {item.leaveType} (Available:{" "}
-                        {toNumber(balance[item.field]).toFixed(1)} days)
-                      </option>
-                    ))}
-                  </select>
+                      {PAID_LEAVE_TYPES.map((item) => (
+                        <option key={item.leaveType} value={item.leaveType}>
+                          {item.leaveType} (Available:{" "}
+                          {toNumber(balance[item.field]).toFixed(1)} days)
+                        </option>
+                      ))}
+                    </select>
+
+                    <label
+                      htmlFor="isUnpaidLeave"
+                      className={`flex cursor-pointer items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm font-semibold transition sm:flex-1 ${
+                        isUnpaidLeave
+                          ? "border-red-300 bg-red-50 text-red-700"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span>Add Non-Paid Leaves</span>
+
+                      <input
+                        id="isUnpaidLeave"
+                        type="checkbox"
+                        checked={isUnpaidLeave}
+                        onChange={(e) => setIsUnpaidLeave(e.target.checked)}
+                        className="h-5 w-5 cursor-pointer accent-red-500"
+                      />
+                    </label>
+                  </div>
 
                   {leaveType && (
                     <p className="mt-1.5 text-xs text-slate-500">
@@ -1893,72 +1939,74 @@ const MyLeave = () => {
                   )}
                 </div>
 
-                {/* PAID + UNPAID CALENDARS */}
+                {/* CALENDAR + SELECTED DATES */}
 
                 <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                  {/* PAID */}
+                  {/* LEFT: CALENDAR */}
 
-                  <section className="rounded-xl border border-emerald-200 bg-emerald-50/30 p-3">
+                  <section className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
                     <div className="mb-3 flex items-center justify-between gap-2">
                       <h3 className="text-sm font-semibold text-slate-800">
-                        Leave Days (Paid)
+                        Leave Days
                       </h3>
 
-                      <span className="rounded-lg bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                        {formatDays(paidDays)} day(s)
+                      <span className="rounded-lg bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                        {formatDays(totalDays)} day(s)
                       </span>
                     </div>
 
-                    <MultiDateCalendar
-                      selected={paidDates}
-                      onToggle={handlePaidToggle}
-                      isDateDisabled={isPaidDateDisabled}
-                      accent="emerald"
-                      disabled={!leaveType}
+                    <LeaveCalendar
+                      selected={selectedDates}
+                      onToggle={toggleDate}
+                      isDateDisabled={isDateDisabled}
+                      getTone={getDateTone}
+                      disabled={!calendarEnabled}
                       today={today}
                     />
 
-                    {!leaveType && (
+                    {!calendarEnabled && (
                       <p className="mt-2 text-xs text-slate-500">
-                        Select a leave type to choose paid dates.
+                        Select a leave type or tick "Add Non-Paid Leaves" to
+                        choose dates.
                       </p>
                     )}
-
-                    <SelectedDateList
-                      selected={paidDates}
-                      onChangeType={changePaidType}
-                      onRemove={removePaidDate}
-                      accent="emerald"
-                    />
                   </section>
 
-                  {/* UNPAID */}
+                  {/* RIGHT: SELECTED DATES */}
 
-                  <section className="rounded-xl border border-amber-200 bg-amber-50/30 p-3">
+                  <section className="flex max-h-[420px] flex-col rounded-xl border border-slate-200 bg-slate-50/50 p-3">
                     <div className="mb-3 flex items-center justify-between gap-2">
                       <h3 className="text-sm font-semibold text-slate-800">
-                        Unpaid Leave Days
+                        Selected Dates
                       </h3>
 
-                      <span className="rounded-lg bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
-                        {formatDays(unpaidDays)} day(s)
-                      </span>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                        <span className="inline-flex items-center gap-1">
+                          <span className={`h-2.5 w-2.5 rounded-full ${TONE.green.dot}`} />
+                          Paid
+                        </span>
+
+                        <span className="inline-flex items-center gap-1">
+                          <span className={`h-2.5 w-2.5 rounded-full ${TONE.yellow.dot}`} />
+                          Part paid
+                        </span>
+
+                        <span className="inline-flex items-center gap-1">
+                          <span className={`h-2.5 w-2.5 rounded-full ${TONE.red.dot}`} />
+                          Unpaid
+                        </span>
+                      </div>
                     </div>
 
-                    <MultiDateCalendar
-                      selected={unpaidDates}
-                      onToggle={handleUnpaidToggle}
-                      isDateDisabled={isUnpaidDateDisabled}
-                      accent="amber"
-                      today={today}
-                    />
-
-                    <SelectedDateList
-                      selected={unpaidDates}
-                      onChangeType={changeUnpaidType}
-                      onRemove={removeUnpaidDate}
-                      accent="amber"
-                    />
+                    <div className="flex-1 overflow-y-auto pr-1">
+                      <SelectedDateList
+                        dates={sortedSelectedDates}
+                        selected={selectedDates}
+                        allocation={allocation}
+                        onChangeType={changeDateType}
+                        onRemove={removeDate}
+                      />
+                    </div>
                   </section>
                 </div>
 
@@ -1984,7 +2032,7 @@ const MyLeave = () => {
 
                     <div>
                       <p className="text-xs text-slate-500">Unpaid</p>
-                      <p className="mt-1 text-lg font-bold text-amber-600">
+                      <p className="mt-1 text-lg font-bold text-red-600">
                         {formatDays(unpaidDays)}
                       </p>
                     </div>

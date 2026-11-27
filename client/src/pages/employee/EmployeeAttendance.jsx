@@ -1629,6 +1629,7 @@ const handleCheckIn = async () => {
 
     return getDateKeysBetween(startDate, endDate)
       .filter((dateKey) => dateKey <= today)
+      .reverse()
       .map((dateKey) => {
         const attendance = attendanceByDate.get(dateKey) || null;
         const sunday = isSunday(dateKey);

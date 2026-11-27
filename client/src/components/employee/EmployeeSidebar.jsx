@@ -45,13 +45,33 @@ const EmployeeSidebar = ({ open, employee, onLogout }) => {
   const navigate = useNavigate();
 
   const [hasChildRoles, setHasChildRoles] = useState(null);
-  const [hasTimesheetApprovalAccess, setHasTimesheetApprovalAccess] =
-    useState(false);
-
+  const [hasTimesheetApprovalAccess, setHasTimesheetApprovalAccess] = useState(false);
+  const [hasPendingLeaveApprovals, setHasPendingLeaveApprovals] = useState(false);
   // Which dropdown groups are expanded (multiple can be open together)
   const [expandedGroups, setExpandedGroups] = useState({});
 
   const employeeId = employee?._id || routeEmployeeId;
+  const profilePic = employee?.profilePic;
+
+const profilePicUrl = profilePic
+  ? profilePic.startsWith("http")
+    ? profilePic
+    : `${(api.defaults.baseURL || "").replace(/\/api\/?$/, "")}${
+        profilePic.startsWith("/")
+          ? profilePic
+          : `/uploads/${profilePic}`
+      }`
+  : "";
+
+const employeeInitials = employee?.name
+  ? employee.name
+      .split(" ")
+      .filter(Boolean)
+      .map((word) => word[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase()
+  : "EM";
   const basePath = `/employee/${employeeId}`;
 
   // Employee role
@@ -82,65 +102,70 @@ const EmployeeSidebar = ({ open, employee, onLogout }) => {
   // CHECK TIMESHEET APPROVAL ACCESS
   // =========================================
 
-  useEffect(() => {
-    let isMounted = true;
+useEffect(() => {
+  let isMounted = true;
 
-    const checkTimesheetApprovalAccess = async () => {
-      if (!employeeId || !open) return;
+  const checkTimesheetApprovalAccess = async () => {
+    if (!employeeId || !open) return;
 
-      try {
-        const { data } = await api.get("/timesheets/approval");
+    try {
+      const { data } = await api.get("/timesheets/approval");
 
-        if (isMounted) {
-          setHasTimesheetApprovalAccess(Boolean(data?.hasApprovalAccess));
-        }
-      } catch (error) {
-        console.error("Failed to check timesheet approval access:", error);
-
-        if (isMounted) {
-          setHasTimesheetApprovalAccess(false);
-        }
+      if (isMounted) {
+        setHasTimesheetApprovalAccess(
+          Boolean(data?.hasApprovalAccess && data?.count > 0)
+        );
       }
-    };
+    } catch (error) {
+      console.error("Failed to check timesheet approval access:", error);
 
-    checkTimesheetApprovalAccess();
+      if (isMounted) {
+        setHasTimesheetApprovalAccess(false);
+      }
+    }
+  };
 
-    return () => {
-      isMounted = false;
-    };
-  }, [employeeId, open]);
+  checkTimesheetApprovalAccess();
+
+  return () => {
+    isMounted = false;
+  };
+}, [employeeId, open]);
 
   // =========================================
   // CHECK LEAVE APPROVAL ACCESS
   // =========================================
 
-  useEffect(() => {
-    let isMounted = true;
+useEffect(() => {
+  let isMounted = true;
 
-    const checkChildRoles = async () => {
-      if (!employeeId || !open) return;
+  const checkLeaveApprovalAccess = async () => {
+    if (!employeeId || !open) return;
 
-      try {
-        const { data } = await api.get("/role-hierarchy/my-child-roles");
+    try {
+      const { data } = await api.get("/leaves/pending");
 
-        if (isMounted) {
-          setHasChildRoles(Boolean(data.hasChildRoles));
-        }
-      } catch (error) {
-        console.error("Failed to check child roles:", error);
-
-        if (isMounted) {
-          setHasChildRoles(null);
-        }
+      if (isMounted) {
+        setHasPendingLeaveApprovals(
+          Array.isArray(data?.requests) &&
+          data.requests.length > 0
+        );
       }
-    };
+    } catch (error) {
+      console.error("Failed to check leave approval access:", error);
 
-    checkChildRoles();
+      if (isMounted) {
+        setHasPendingLeaveApprovals(false);
+      }
+    }
+  };
 
-    return () => {
-      isMounted = false;
-    };
-  }, [employeeId, open]);
+  checkLeaveApprovalAccess();
+
+  return () => {
+    isMounted = false;
+  };
+}, [employeeId, open]);
 
   if (!open) return null;
 
@@ -279,15 +304,15 @@ const EmployeeSidebar = ({ open, employee, onLogout }) => {
         //   end: true,
         // },
         // Leave Approvals
-        ...(hasChildRoles === true || isHR
-          ? [
-              {
-                label: "Leave Approvals",
-                path: `${basePath}/leave-approvals`,
-                icon: CheckCircle2,
-              },
-            ]
-          : []),
+...(hasPendingLeaveApprovals
+  ? [
+      {
+        label: "Leave Approvals",
+        path: `${basePath}/leave-approvals`,
+        icon: CheckCircle2,
+      },
+    ]
+  : []),
       ],
     },
 
@@ -328,25 +353,33 @@ const EmployeeSidebar = ({ open, employee, onLogout }) => {
 
   return (
     <aside className="sticky top-16 z-40 flex h-[calc(100vh-64px)] w-64 shrink-0 flex-col self-start overflow-y-auto overflow-x-hidden bg-[#0b1f3a] p-4 [scrollbar-color:#64748b_transparent] [scrollbar-width:thin]">
-      {/* Workspace Header */}
-      <div className="mb-5 px-1">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-300 text-[#0b1f3a]">
-            <BriefcaseBusiness size={22} aria-hidden="true" />
-          </div>
+{/* Workspace Header */}
+<div className="mb-5 px-1">
+  <div className="flex items-center gap-3">
+    <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-teal-300 text-[#0b1f3a]">
+      {profilePicUrl ? (
+        <img
+          src={profilePicUrl}
+          alt={employee?.name || "Employee"}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <span className="text-sm font-bold">
+          {employeeInitials}
+        </span>
+      )}
+    </div>
 
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-bold text-white">
-              Employee Workspace
-            </h2>
-
-            <p className="text-xs text-slate-300">Personal Dashboard</p>
-          </div>
-        </div>
-      </div>
+    <div className="min-w-0">
+      <h2 className="truncate text-base font-bold text-white">
+        {employee?.name || "Employee"}
+      </h2>
+    </div>
+  </div>
+</div>
 
       <div className="mb-2 border-t border-white/15 px-3 pt-4 text-xs font-semibold text-slate-300">
-        Workspace
+        Employee Workspace
       </div>
 
       {/* Main menu */}
@@ -480,67 +513,6 @@ const EmployeeSidebar = ({ open, employee, onLogout }) => {
 
       {/* Employee Summary + Logout (bottom) */}
       <div className="mt-auto space-y-3 pt-6">
-        <div className="rounded-xl border border-white/15 bg-white/5 p-3">
-          <div className="mb-3 flex items-center gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-300 text-[#0b1f3a]">
-              <User size={17} aria-hidden="true" />
-            </div>
-
-            <div>
-              <h3 className="text-sm font-semibold text-white">
-                Employee Summary
-              </h3>
-
-              <p className="text-xs text-slate-300">Your work information</p>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {/* Department */}
-            <div className="flex items-start gap-2.5">
-              <Building2
-                size={16}
-                aria-hidden="true"
-                className="mt-0.5 shrink-0 text-slate-300"
-              />
-
-              <div className="min-w-0">
-                <p className="text-xs text-slate-300">Department</p>
-
-                <p className="break-words text-sm font-medium text-white">
-                  {departmentName}
-                </p>
-              </div>
-            </div>
-
-            {/* Role */}
-            <div className="flex items-start gap-2.5">
-              <BriefcaseBusiness
-                size={16}
-                aria-hidden="true"
-                className="mt-0.5 shrink-0 text-slate-300"
-              />
-
-              <div className="min-w-0">
-                <p className="text-xs text-slate-300">Role</p>
-
-                <p className="break-words text-sm font-medium text-white">
-                  {roleName || "Not assigned"}
-                </p>
-              </div>
-            </div>
-
-            {/* Company */}
-            <div className="border-t border-white/15 pt-2.5">
-              <p className="text-xs text-slate-300">Company</p>
-
-              <p className="mt-0.5 break-words text-sm font-medium text-white">
-                {companyName}
-              </p>
-            </div>
-          </div>
-        </div>
-
         {/* Logout */}
         <button
           type="button"

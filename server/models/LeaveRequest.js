@@ -33,7 +33,11 @@ const leaveRequestSchema = new mongoose.Schema(
         "Paid Leave",
         "Comp-Off",
       ],
-      required: true,
+    },
+    
+    isUnpaidLeave: {
+      type: Boolean,
+      default: false,
     },
 
     // =================================================

@@ -268,6 +268,37 @@ export const selectCompletedInlineRows = (
       item.taskStatus === "Completed" ||
       item.status === "Completed"
   );
+  // =====================================
+// SELECT IN-PROGRESS TASKS
+// =====================================
+
+export const selectInProgressTimesheetData = (
+  state,
+  scopeKey
+) => {
+  const drafts = selectTimesheetDrafts(state, scopeKey);
+  const inlineRows = selectInlineRows(state, scopeKey);
+
+  return [
+    ...drafts
+      .filter((item) => item.taskStatus === "In Progress")
+      .map((item) => ({
+        ...item,
+        source: "draft",
+      })),
+
+    ...inlineRows
+      .filter(
+        (item) =>
+          item.taskStatus === "In Progress" ||
+          item.status === "In Progress"
+      )
+      .map((item) => ({
+        ...item,
+        source: "inline",
+      })),
+  ];
+};
 
 // =====================================
 // COMBINED COMPLETED SELECTOR

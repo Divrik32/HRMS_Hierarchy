@@ -1675,6 +1675,7 @@ export const getTimesheetProjects = async (req, res) => {
       $or: [
         { employeeAccess: employeeId },
         { projectName: /^Personal$/i },
+        { projectName: /^Idle$/i },
       ],
     })
       .populate("companyId", "companyName")
