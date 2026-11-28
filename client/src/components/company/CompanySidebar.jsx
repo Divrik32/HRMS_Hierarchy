@@ -43,10 +43,14 @@ const MOBILE_QUERY = "(max-width: 1023px)";
 // Builds a full URL for a logo stored as a filename, path or absolute URL
 const buildLogoUrl = (logo) => {
   if (!logo || typeof logo !== "string") return "";
-  if (logo.startsWith("http") || logo.startsWith("data:")) return logo;
+
+  if (logo.startsWith("http") || logo.startsWith("data:")) {
+    return logo;
+  }
 
   const origin = (api.defaults.baseURL || "").replace(/\/api\/?$/, "");
-  return `${origin}${logo.startsWith("/") ? logo : `/uploads/${logo}`}`;
+
+  return `${origin}/uploads/companies/${logo.replace(/^\/+/, "")}`;
 };
 
 // onLogout: pass your real logout handler from the parent.
