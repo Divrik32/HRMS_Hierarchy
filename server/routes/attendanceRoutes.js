@@ -3,12 +3,15 @@ import express from "express";
 import {
   checkIn,
   checkOut,
+  deleteAttendanceRequest,
+  getAllAttendanceRequests,
   getAttendanceByDate,
   getAttendanceByDateRange,
   getAttendanceByMonth,
   getLast18DaysWorkingReport,
   getMyAttendance,
   requestForHRAttendance,
+  updateAttendanceRequestStatus,
   updateEmployeeAttendanceTime,
 } from "../controllers/attendanceController.js";
 
@@ -41,6 +44,24 @@ router.post(
   "/request-hr",
   employeeAuth,
   requestForHRAttendance
+);
+
+router.patch(
+  "/attendance-request/:requestId/status",
+  employeeAuth,
+  updateAttendanceRequestStatus
+);
+
+router.get(
+  "/attendance-requests",
+  employeeAuth,
+  getAllAttendanceRequests
+);
+
+router.delete(
+  "/attendance-request/:requestId",
+  employeeAuth,
+  deleteAttendanceRequest
 );
 
 // =========================================

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import api from "../../api/axios";
 import { toast } from "react-toastify";
-
+import {LoaderCircle, Trash2} from "lucide-react";
 /* ---------- Employee Profile API ---------- */
 
 const API_BASE_URL = api.defaults.baseURL.replace(/\/+$/, "");
@@ -1574,19 +1574,414 @@ const Timesheet = () => {
   );
 };
 
+/* ---------- HR Attendance Requests ---------- */
+
+const AttendanceRequests = () => {
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [updatingId, setUpdatingId] = useState(null);
+  const [isHR, setIsHR] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+
+  const fetchRequests = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const profileRes = await api.get("/employees/profile/me");
+
+      const profileData =
+        profileRes.data?.employee ||
+        profileRes.data?.user ||
+        profileRes.data;
+
+      const roleName = (
+        profileData?.roleId?.roleName ||
+        profileData?.roleName ||
+        profileData?.role?.roleName ||
+        profileData?.role?.name ||
+        ""
+      )
+        .toString()
+        .trim()
+        .toLowerCase();
+
+      const hasHRAccess =
+        roleName === "hr" || roleName === "head recruiter";
+
+      setIsHR(hasHRAccess);
+
+      if (!hasHRAccess) {
+        setRequests([]);
+        return;
+      }
+
+      const response = await api.get(
+        "/attendance/attendance-requests"
+      );
+
+      setRequests(response.data?.requests || []);
+    } catch (err) {
+      const message =
+        err.response?.data?.message ||
+        "Failed to load attendance requests.";
+
+      setError(message);
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRequests();
+  }, []);
+
+  const handleStatusChange = async (request) => {
+    if (updatingId) return;
+
+    const newStatus =
+      request.status === "Done" ? "Pending" : "Done";
+
+    try {
+      setUpdatingId(request._id);
+
+      const response = await api.patch(
+        `/attendance/attendance-request/${request._id}/status`,
+        {
+          status: newStatus,
+        }
+      );
+
+      const updatedStatus =
+        response.data?.attendanceRequest?.status || newStatus;
+
+      setRequests((prevRequests) =>
+        prevRequests.map((item) =>
+          item._id === request._id
+            ? { ...item, status: updatedStatus }
+            : item
+        )
+      );
+
+      toast.success(
+        updatedStatus === "Done"
+          ? "Attendance request marked as done."
+          : "Attendance request marked as pending."
+      );
+    } catch (err) {
+      toast.error(
+        err.response?.data?.message ||
+          "Failed to update attendance request."
+      );
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const formatAttendanceDate = (date) => {
+    if (!date) return "N/A";
+
+    return new Date(date).toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    });
+  };
+  const handleDeleteRequest = async (requestId) => {
+  if (deletingId) return;
+
+  if (!window.confirm("Are you sure you want to delete this attendance request?")) {
+    return;
+  }
+
+  try {
+    setDeletingId(requestId);
+
+    const response = await api.delete(
+      `/attendance/attendance-request/${requestId}`
+    );
+
+    if (!response.data.success) {
+      throw new Error(
+        response.data.message || "Failed to delete attendance request."
+      );
+    }
+
+    setRequests((prevRequests) =>
+      prevRequests.filter((item) => item._id !== requestId)
+    );
+
+    toast.success("Attendance request deleted successfully.");
+  } catch (err) {
+    toast.error(
+      err.response?.data?.message ||
+        err.message ||
+        "Failed to delete attendance request."
+    );
+  } finally {
+    setDeletingId(null);
+  }
+};
+
+  if (!isHR && !loading) return null;
+
+  return (
+    <>
+      {/* Dashboard Button */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setIsOpen(true)}
+          disabled={loading || !isHR}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#348aaf] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#28799d] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <span>📋</span>
+          {loading
+            ? "Loading Attendance Requests..."
+            : "Check Attendance Requests"}
+
+          {!loading && (
+            <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs">
+              {requests.length}
+            </span>
+          )}
+        </button>
+
+        {error && (
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <p className="text-xs text-rose-600">{error}</p>
+            <button
+              type="button"
+              onClick={fetchRequests}
+              className="text-xs font-semibold text-blue-600 hover:underline"
+            >
+              Try Again
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Attendance Requests Popup */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-3 sm:p-5"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsOpen(false);
+            }
+          }}
+        >
+          <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white dark:bg-gray-900 shadow-2xl">
+
+            {/* Popup Header */}
+            <div className="flex shrink-0 items-center justify-between border-b border-gray-200 dark:border-gray-700 px-4 py-4 sm:px-6">
+              <div>
+                <h2 className="text-base font-bold text-gray-900 dark:text-white sm:text-lg">
+                  Attendance Requests
+                </h2>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Review employee attendance requests and update their status.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 text-xl text-gray-600 dark:text-gray-300 transition hover:bg-gray-200 dark:hover:bg-gray-700"
+                aria-label="Close popup"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Popup Content */}
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
+
+              {loading ? (
+                <div className="py-12 text-center text-sm text-gray-500">
+                  Loading attendance requests...
+                </div>
+              ) : error ? (
+                <div className="rounded-xl bg-red-50 dark:bg-red-900/20 p-4 text-sm text-red-600">
+                  {error}
+                  <button
+                    type="button"
+                    onClick={fetchRequests}
+                    className="ml-3 font-semibold underline"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              ) : requests.length === 0 ? (
+                <div className="py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                  No attendance requests found.
+                </div>
+              ) : (
+                <div className="min-w-[750px]">
+
+                  {requests.map((request) => {
+                    const employee = request.employeeId || {};
+                    const isDone = request.status === "Done";
+
+                    const profilePic = employee.profilePic
+                      ? employee.profilePic.startsWith("http")
+                        ? employee.profilePic
+                        : `${API_BASE_URL.replace(/\/api\/?$/, "")}${
+                            employee.profilePic.startsWith("/")
+                              ? employee.profilePic
+                              : `/${employee.profilePic}`
+                          }`
+                      : null;
+
+                    const initials = (employee.name || "NA")
+                      .trim()
+                      .split(/\s+/)
+                      .map((word) => word[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase();
+
+                    return (
+                      <div
+                        key={request._id}
+                        className="flex items-center gap-5 w-full min-h-[76px] px-3 py-3 border-b border-gray-200 dark:border-gray-700"
+                      >
+                        {/* Profile Picture */}
+                        <div className="w-11 h-11 shrink-0 rounded-full overflow-hidden bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
+                          {profilePic ? (
+                            <img
+                              src={profilePic}
+                              alt={employee.name || "Employee"}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+                              {initials}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Employee Name + ID */}
+                        <div className="w-[180px] shrink-0 min-w-0">
+                          <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">
+                            {employee.name || "N/A"}
+                          </p>
+
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                            {employee.employeeId || employee.empId || "N/A"}
+                          </p>
+                        </div>
+
+                        {/* Attendance Date */}
+                        <div className="w-[170px] shrink-0">
+                          <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                            {formatAttendanceDate(request.attendanceDate)}
+                          </p>
+                        </div>
+
+                        {/* Employee Comment */}
+                        <div className="flex-1 min-w-[180px]">
+                          <p className="text-sm text-gray-700 dark:text-gray-300 break-words">
+                            {request.request || "—"}
+                          </p>
+                        </div>
+
+{/* Status Toggle with Text */}
+<div className="w-[100px] shrink-0 flex justify-center">
+  <button
+    type="button"
+    role="switch"
+    aria-checked={isDone}
+    aria-label={`Mark as ${isDone ? "Pending" : "Done"}`}
+    disabled={updatingId === request._id}
+    onClick={() => handleStatusChange(request)}
+    className={`relative inline-flex h-7 w-[90px] items-center rounded-full px-2 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+      isDone
+        ? "bg-green-500"
+        : "bg-gray-400 dark:bg-gray-600"
+    }`}
+  >
+    <span
+      className={`absolute text-[11px] font-semibold text-white ${
+        isDone ? "left-2" : "right-2"
+      }`}
+    >
+      {updatingId === request._id
+        ? "Updating..."
+        : isDone
+        ? "Done"
+        : "Pending"}
+    </span>
+
+    <span
+      className={`absolute h-5 w-5 rounded-full bg-white shadow transition-all duration-200 ${
+        isDone ? "right-1" : "left-1"
+      }`}
+    />
+  </button>
+</div>
+
+{/* Delete Button */}
+<div className="w-10 shrink-0 flex justify-center">
+  <button
+    type="button"
+    onClick={() => handleDeleteRequest(request._id)}
+    disabled={deletingId === request._id}
+    title="Delete Attendance Request"
+    className="flex h-9 w-9 items-center justify-center rounded-lg text-red-500 transition hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/20 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    {deletingId === request._id ? (
+      <LoaderCircle size={18} className="animate-spin" />
+    ) : (
+      <Trash2 size={18} />
+    )}
+  </button>
+</div>
+                      </div>
+                    );
+                  })}
+
+                </div>
+              )}
+            </div>
+
+            {/* Popup Footer */}
+            <div className="flex shrink-0 justify-end border-t border-gray-200 dark:border-gray-700 px-4 py-3 sm:px-6">
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="rounded-lg bg-gray-100 dark:bg-gray-800 px-5 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 transition hover:bg-gray-200 dark:hover:bg-gray-700"
+              >
+                Close
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+
 
 /* ---------- Page ---------- */
 const EmployeeDashboard = () => {
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 min-w-0">
       <Header />
 
-      <div className="grid lg:grid-cols-[1.45fr_1fr] gap-5">
+      <AttendanceRequests />
+
+      <div className="grid min-w-0 gap-5 lg:grid-cols-[1.45fr_1fr]">
         <Progress />
         <Calendar />
       </div>
 
-      <div className="grid lg:grid-cols-[1fr_1.6fr] gap-5">
+      <div className="grid min-w-0 gap-5 lg:grid-cols-[1fr_1.6fr]">
         <UnderEight />
         <Timesheet />
       </div>

@@ -1,33 +1,52 @@
 import { useCallback, useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
+  Menu,
   LayoutDashboard,
   Building2,
   UserCircle,
   ChevronDown,
   LogOut,
   ShieldCheck,
+  X,
 } from "lucide-react";
 import api from "../../api/axios";
 
 // =========================================
-// COLOR TOKENS (WCAG AA contrast on navy)
-// Rail bg      #0b1f3a
-// Sub-menu bg  #10294d
-// Main text    slate-100 / white      (~15:1)
-// Muted text   slate-300              (~10:1)
-// Accent       teal-300 on navy       (~10:1)
-// Error/inactive red-300              (~7:1)
+// COLOR TOKENS (high contrast)
+// Rail bg       #0e4a68  (deep teal-blue)
+// Text / icons  #ffffff  (~9:1 on rail)
+// Active pill   white bg + #0b3a52 text (~11:1)
+// Hover         white/15 overlay
+// Error text    red-200
 // =========================================
 
+const RAIL_BG = "bg-[#0e4a68]";
+
 const focusRing =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1f3a]";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#0e4a68]";
 
 // Below this width the sidebar is a drawer (Tailwind `lg` = 1024px)
 const MOBILE_QUERY = "(max-width: 1023px)";
 
+// Builds a full URL for a picture stored as a filename, path or absolute URL
+const buildImageUrl = (value) => {
+  if (!value || typeof value !== "string") return "";
+  if (value.startsWith("http") || value.startsWith("data:")) return value;
+
+  const origin = (api.defaults.baseURL || "").replace(/\/api\/?$/, "");
+  return `${origin}${value.startsWith("/") ? value : `/uploads/${value}`}`;
+};
+
 // onLogout: pass your real logout handler from the parent.
-const Sidebar = ({ open, setSidebarOpen, setSelectedCompany, onLogout }) => {
+// superAdmin: the profile object loaded by SuperAdminLayout.
+const Sidebar = ({
+  open,
+  superAdmin,
+  setSidebarOpen,
+  setSelectedCompany,
+  onLogout,
+}) => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
@@ -37,6 +56,28 @@ const Sidebar = ({ open, setSidebarOpen, setSelectedCompany, onLogout }) => {
 
   // Company Directory dropdown: null = follow route, true/false = user toggled
   const [directoryToggled, setDirectoryToggled] = useState(null);
+
+  // If the picture fails to load, fall back to initials / icon
+  const [picFailed, setPicFailed] = useState(false);
+
+  // Super admin picture + name
+  // (change the field names here if your model uses different ones)
+  const adminName = superAdmin?.name || superAdmin?.fullName || "Super Admin";
+  const picUrl = buildImageUrl(
+    superAdmin?.profilePic || superAdmin?.avatar || superAdmin?.photo
+  );
+
+  const adminInitials = adminName
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  useEffect(() => {
+    setPicFailed(false);
+  }, [picUrl]);
 
   // =========================================
   // MOBILE DRAWER: lock page scroll + Esc to close
@@ -124,11 +165,11 @@ const Sidebar = ({ open, setSidebarOpen, setSelectedCompany, onLogout }) => {
   };
 
   const railItemBase =
-    "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors";
+    "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors";
 
-  const activeStyle =
-    "bg-teal-300/15 text-teal-200 ring-1 ring-inset ring-teal-300/40";
-  const idleStyle = "text-slate-100 hover:bg-white/10 hover:text-white";
+  // "!" forces the colour so global CSS (a, button resets) can't override it
+  const activeStyle = "!bg-white !text-[#0b3a52] shadow-sm";
+  const idleStyle = "!text-white hover:!bg-white/15";
 
   const directLinks = {
     dashboard: {
@@ -166,7 +207,7 @@ const Sidebar = ({ open, setSidebarOpen, setSelectedCompany, onLogout }) => {
               size={20}
               aria-hidden="true"
               className={`shrink-0 ${
-                isActive ? "text-teal-300" : "text-slate-300"
+                isActive ? "text-[#0b5f85]" : "text-white"
               }`}
             />
             <span className="min-w-0 flex-1 break-words">{link.label}</span>
@@ -185,27 +226,26 @@ const Sidebar = ({ open, setSidebarOpen, setSelectedCompany, onLogout }) => {
 
   return (
     <>
-      {/* Backdrop (mobile / tablet only), starts below the 64px navbar.
-          Tap to close the drawer. */}
+      {/* Backdrop (mobile / tablet only). Tap to close the drawer. */}
       <div
         aria-hidden="true"
         onClick={() => setSidebarOpen?.(false)}
         className={[
-          "fixed inset-x-0 bottom-0 top-16 z-30 bg-slate-900/50 lg:hidden",
+          "fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-[1px] lg:hidden",
           "transition-opacity duration-300 motion-reduce:transition-none",
           open ? "opacity-100" : "pointer-events-none opacity-0",
         ].join(" ")}
       />
 
       {/* Wrapper:
-          - below lg : fixed drawer under the navbar, slides over the content
+          - below lg : fixed off-canvas drawer, slides over the content
           - lg+      : sticky column; its width animates 0 <-> 16rem */}
       <div
         aria-hidden={!open}
         className={[
-          "fixed left-0 top-16 z-40 h-[calc(100dvh-4rem)] w-[85vw] max-w-72 overflow-hidden",
+          "fixed inset-y-0 left-0 z-50 h-dvh w-[85vw] max-w-72 overflow-hidden",
           "transition-[transform,width,visibility] duration-300 ease-in-out motion-reduce:transition-none",
-          "lg:sticky lg:h-[calc(100vh-64px)] lg:max-w-none lg:shrink-0 lg:self-start",
+          "lg:sticky lg:top-0 lg:z-40 lg:h-screen lg:max-w-none lg:shrink-0 lg:self-start",
           open
             ? "visible translate-x-0 lg:w-64"
             : "invisible -translate-x-full lg:w-0 lg:translate-x-0",
@@ -213,34 +253,62 @@ const Sidebar = ({ open, setSidebarOpen, setSelectedCompany, onLogout }) => {
       >
         <aside
           className={[
-            "flex h-full w-full flex-col overflow-y-auto overflow-x-hidden overscroll-contain bg-[#0b1f3a] lg:w-64",
+            `flex h-full w-full flex-col overflow-y-auto overflow-x-hidden overscroll-contain rounded-r-2xl lg:w-64 ${RAIL_BG}`,
             "p-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-4 sm:pb-[max(1rem,env(safe-area-inset-bottom))]",
-            "[scrollbar-color:#64748b_transparent] [scrollbar-width:thin]",
+            "[scrollbar-color:rgba(255,255,255,0.4)_transparent] [scrollbar-width:thin]",
             "transition-transform duration-300 ease-in-out will-change-transform motion-reduce:transition-none",
             open ? "lg:translate-x-0" : "lg:-translate-x-full",
           ].join(" ")}
         >
           {/* Header */}
           <div className="mb-4 px-1 sm:mb-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-300 text-[#0b1f3a]">
-                <ShieldCheck size={22} aria-hidden="true" />
+            <div className="flex min-w-0 items-center gap-2">
+              {/* Profile Picture */}
+              <NavLink
+                to="/super-admin/dashboard"
+                title="Go to Dashboard"
+                className={`flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white text-[#0b3a52] ring-2 ring-white/60 ${focusRing}`}
+              >
+                {picUrl && !picFailed ? (
+                  <img
+                    src={picUrl}
+                    alt={adminName}
+                    onError={() => setPicFailed(true)}
+                    className="h-full w-full rounded-full object-cover"
+                  />
+                ) : adminInitials ? (
+                  <span className="text-sm font-bold">{adminInitials}</span>
+                ) : (
+                  <ShieldCheck size={22} aria-hidden="true" />
+                )}
+              </NavLink>
+
+              {/* Name */}
+              <div className="min-w-0 flex-1">
+                <NavLink
+                  to="/super-admin/dashboard"
+                  title="Go to Dashboard"
+                  className="block truncate text-base font-bold !text-white hover:underline"
+                >
+                  {adminName}
+                </NavLink>
               </div>
 
-              <div className="min-w-0">
-                <h2 className="truncate text-base font-bold text-white">
-                  Super Admin
-                </h2>
-
-                <p className="truncate text-xs text-slate-300">
-                  Company Administration
-                </p>
-              </div>
+              {/* Close button: X on mobile/tablet, hamburger on desktop */}
+              <button
+                type="button"
+                onClick={() => setSidebarOpen?.(false)}
+                aria-label="Close sidebar"
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white transition hover:bg-white/15 lg:h-9 lg:w-9 ${focusRing}`}
+              >
+                <X size={22} className="lg:hidden" />
+                <Menu size={23} className="hidden lg:block" />
+              </button>
             </div>
           </div>
 
-          <div className="mb-2 border-t border-white/15 px-3 pt-4 text-xs font-semibold text-slate-300">
-            Menu
+          <div className="mb-2 border-t border-white/25 px-3 pt-4 text-xs font-semibold tracking-wide text-white/80">
+            Super Admin Workspace
           </div>
 
           {/* Main menu */}
@@ -261,7 +329,7 @@ const Sidebar = ({ open, setSidebarOpen, setSelectedCompany, onLogout }) => {
                   directoryOwnsRoute
                     ? activeStyle
                     : isDirectoryOpen
-                    ? "bg-white/10 text-white"
+                    ? "!bg-white/15 !text-white"
                     : idleStyle,
                 ].join(" ")}
               >
@@ -269,13 +337,20 @@ const Sidebar = ({ open, setSidebarOpen, setSelectedCompany, onLogout }) => {
                   size={20}
                   aria-hidden="true"
                   className={`shrink-0 ${
-                    directoryOwnsRoute ? "text-teal-300" : "text-slate-300"
+                    directoryOwnsRoute ? "text-[#0b5f85]" : "text-white"
                   }`}
                 />
                 <span className="min-w-0 flex-1 break-words">
                   Company Directory
                 </span>
-                <span className="shrink-0 rounded-full bg-white/15 px-2 py-0.5 text-xs font-semibold text-white">
+                <span
+                  className={[
+                    "shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold",
+                    directoryOwnsRoute
+                      ? "bg-[#0e4a68]/10 text-[#0b3a52]"
+                      : "bg-white/20 text-white",
+                  ].join(" ")}
+                >
                   {companies.length}
                 </span>
                 <ChevronDown
@@ -284,7 +359,7 @@ const Sidebar = ({ open, setSidebarOpen, setSelectedCompany, onLogout }) => {
                   className={[
                     "shrink-0 transition-transform duration-200",
                     isDirectoryOpen ? "rotate-180" : "rotate-0",
-                    isDirectoryOpen ? "text-white" : "text-slate-300",
+                    directoryOwnsRoute ? "text-[#0b3a52]" : "text-white",
                   ].join(" ")}
                 />
               </button>
@@ -293,28 +368,28 @@ const Sidebar = ({ open, setSidebarOpen, setSelectedCompany, onLogout }) => {
               {isDirectoryOpen && (
                 <div
                   id="submenu-company-directory"
-                  className="ml-4 mt-1 border-l border-white/15 pl-3 sm:ml-5"
+                  className="ml-4 mt-1 border-l border-white/30 pl-3 sm:ml-5"
                 >
-                  <h3 className="px-3 pb-1 pt-1 text-xs font-semibold text-slate-300">
+                  <h3 className="px-3 pb-1 pt-1 text-xs font-semibold text-white/80">
                     Registered companies
                   </h3>
 
                   {loadingCompanies && companies.length === 0 && (
-                    <p className="px-3 py-2 text-sm text-slate-300">
+                    <p className="px-3 py-2 text-sm text-white/90">
                       Loading companies...
                     </p>
                   )}
 
                   {!loadingCompanies && companyError && (
                     <div className="px-3 py-2">
-                      <p className="break-words text-sm text-red-300">
+                      <p className="break-words text-sm text-red-200">
                         {companyError}
                       </p>
 
                       <button
                         type="button"
                         onClick={fetchCompanies}
-                        className={`mt-2 rounded py-1 text-sm font-medium text-teal-300 underline hover:text-teal-200 ${focusRing}`}
+                        className={`mt-2 rounded py-1 text-sm font-semibold !text-white underline hover:no-underline ${focusRing}`}
                       >
                         Try again
                       </button>
@@ -324,13 +399,13 @@ const Sidebar = ({ open, setSidebarOpen, setSelectedCompany, onLogout }) => {
                   {!loadingCompanies &&
                     !companyError &&
                     companies.length === 0 && (
-                      <p className="px-3 py-2 text-sm text-slate-300">
+                      <p className="px-3 py-2 text-sm text-white/90">
                         No companies registered yet.
                       </p>
                     )}
 
                   {/* Long lists scroll inside the dropdown instead of stretching the sidebar */}
-                  <ul className="max-h-[40dvh] space-y-1 overflow-y-auto overscroll-contain [scrollbar-color:#64748b_transparent] [scrollbar-width:thin] sm:max-h-72">
+                  <ul className="max-h-[40dvh] space-y-1 overflow-y-auto overscroll-contain [scrollbar-color:rgba(255,255,255,0.4)_transparent] [scrollbar-width:thin] sm:max-h-72">
                     {companies.map((company) => {
                       const isActiveCompany =
                         pathname === `/super-admin/company/${company._id}` ||
@@ -353,7 +428,13 @@ const Sidebar = ({ open, setSidebarOpen, setSelectedCompany, onLogout }) => {
                           >
                             {company.companyName}
                             {company.status === "inactive" && (
-                              <span className="block text-xs font-normal text-red-300">
+                              <span
+                                className={`block text-xs font-normal ${
+                                  isActiveCompany
+                                    ? "text-red-700"
+                                    : "text-red-200"
+                                }`}
+                              >
                                 Inactive
                               </span>
                             )}
@@ -368,7 +449,7 @@ const Sidebar = ({ open, setSidebarOpen, setSelectedCompany, onLogout }) => {
                       type="button"
                       onClick={fetchCompanies}
                       disabled={loadingCompanies}
-                      className={`mt-1 rounded px-3 py-2 text-sm font-medium text-teal-300 underline hover:text-teal-200 disabled:opacity-60 ${focusRing}`}
+                      className={`mt-1 rounded px-3 py-2 text-sm font-semibold !text-white underline hover:no-underline disabled:opacity-60 ${focusRing}`}
                     >
                       {loadingCompanies ? "Refreshing..." : "Refresh list"}
                     </button>
@@ -386,7 +467,7 @@ const Sidebar = ({ open, setSidebarOpen, setSelectedCompany, onLogout }) => {
               type="button"
               onClick={handleLogout}
               className={[
-                "flex w-full items-center justify-between rounded-lg border border-white/20 px-3 py-2.5 text-sm font-semibold text-slate-100 transition-colors hover:bg-red-400/15 hover:text-red-200",
+                "flex w-full items-center justify-between rounded-lg border border-white/60 bg-white/10 px-3 py-2.5 text-sm font-semibold !text-white transition-colors hover:border-white hover:!bg-white hover:!text-red-700",
                 focusRing,
               ].join(" ")}
             >

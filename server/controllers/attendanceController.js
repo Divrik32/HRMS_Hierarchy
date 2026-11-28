@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Attendance from "../models/Attendance.js";
 import Employee from "../models/Employee.js";
+import AttendanceRequest from "../models/AttendanceRequest.js";
 
 
 const getCompanyId = (req) => {
@@ -1216,7 +1217,11 @@ export const requestForHRAttendance = async (req, res) => {
 
     let attendanceDate = todayDate;
 
-    if (requestedDate !== undefined && requestedDate !== null && requestedDate !== "") {
+    if (
+      requestedDate !== undefined &&
+      requestedDate !== null &&
+      requestedDate !== ""
+    ) {
       if (!isValidDateKey(requestedDate)) {
         return res.status(400).json({
           success: false,
@@ -1250,8 +1255,7 @@ export const requestForHRAttendance = async (req, res) => {
     }
 
     // Create attendance if it doesn't exist for that date.
-    // Otherwise, update the existing attendance.
-    // Previous requests will remain unchanged.
+    // Also push the request comment into Attendance model.
     const attendance = await Attendance.findOneAndUpdate(
       {
         employeeId: employee._id,
@@ -1276,10 +1280,19 @@ export const requestForHRAttendance = async (req, res) => {
       }
     );
 
+    // Create a separate document for every HR attendance request.
+    const attendanceRequest = await AttendanceRequest.create({
+      employeeId: attendance.employeeId,
+      companyId: attendance.companyId,
+      attendanceDate: attendance.attendanceDate,
+      request: comment,
+    });
+
     return res.status(200).json({
       success: true,
       message: "Attendance request sent to HR successfully.",
       attendance,
+      attendanceRequest,
     });
 
   } catch (error) {
@@ -1289,6 +1302,159 @@ export const requestForHRAttendance = async (req, res) => {
       success: false,
       message:
         error.message || "Failed to send HR attendance request.",
+    });
+  }
+};
+
+export const updateAttendanceRequestStatus = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { status } = req.body;
+
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid company information is required.",
+      });
+    }
+
+    // Validate request ID
+    if (!mongoose.Types.ObjectId.isValid(requestId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid attendance request ID.",
+      });
+    }
+
+    // Validate status
+    if (!["Pending", "Done"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Status must be either Pending or Done.",
+      });
+    }
+
+    // Find and update attendance request
+    const attendanceRequest = await AttendanceRequest.findOneAndUpdate(
+      {
+        _id: requestId,
+        companyId,
+      },
+      {
+        $set: { status },
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    if (!attendanceRequest) {
+      return res.status(404).json({
+        success: false,
+        message: "Attendance request not found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Attendance request status updated to ${status} successfully.`,
+      attendanceRequest,
+    });
+
+  } catch (error) {
+    console.error("Update Attendance Request Status Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message || "Failed to update attendance request status.",
+    });
+  }
+};
+
+export const getAllAttendanceRequests = async (req, res) => {
+  try {
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid company information is required.",
+      });
+    }
+
+    const requests = await AttendanceRequest.find({
+      companyId,
+    })
+      .populate("employeeId", "name empId profilePic")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      totalRequests: requests.length,
+      requests,
+    });
+
+  } catch (error) {
+    console.error("Get All Attendance Requests Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message || "Failed to fetch attendance requests.",
+    });
+  }
+};
+
+
+export const deleteAttendanceRequest = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const companyId = getCompanyId(req);
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid company information is required.",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(requestId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid attendance request ID.",
+      });
+    }
+
+    const attendanceRequest =
+      await AttendanceRequest.findOneAndDelete({
+        _id: requestId,
+        companyId,
+      });
+
+    if (!attendanceRequest) {
+      return res.status(404).json({
+        success: false,
+        message: "Attendance request not found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Attendance request deleted successfully.",
+      attendanceRequest,
+    });
+
+  } catch (error) {
+    console.error("Delete Attendance Request Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message || "Failed to delete attendance request.",
     });
   }
 };

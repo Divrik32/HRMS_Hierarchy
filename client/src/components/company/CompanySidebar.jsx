@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
+  Menu,
   LayoutDashboard,
   Users,
   Building,
@@ -14,20 +15,22 @@ import {
   ChevronDown,
   LogOut,
   BriefcaseBusiness,
+  X,
 } from "lucide-react";
 import api from "../../api/axios";
 
 // =========================================
-// COLOR TOKENS (WCAG AA contrast on navy)
-// Rail bg      #0b1f3a
-// Sub-menu bg  #10294d
-// Main text    slate-100 / white      (~15:1)
-// Muted text   slate-300              (~10:1)
-// Accent       teal-300 on navy       (~10:1)
+// COLOR TOKENS (high contrast)
+// Rail bg       #0e4a68  (deep teal-blue)
+// Text / icons  #ffffff  (~9:1 on rail)
+// Active pill   white bg + #0b3a52 text (~11:1)
+// Hover         white/15 overlay
 // =========================================
 
+const RAIL_BG = "bg-[#0e4a68]";
+
 const focusRing =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1f3a]";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#0e4a68]";
 
 const isPathActive = (item, pathname) =>
   item.end
@@ -37,8 +40,18 @@ const isPathActive = (item, pathname) =>
 // Below this width the sidebar is a drawer (Tailwind `lg` = 1024px)
 const MOBILE_QUERY = "(max-width: 1023px)";
 
+// Builds a full URL for a logo stored as a filename, path or absolute URL
+const buildLogoUrl = (logo) => {
+  if (!logo || typeof logo !== "string") return "";
+  if (logo.startsWith("http") || logo.startsWith("data:")) return logo;
+
+  const origin = (api.defaults.baseURL || "").replace(/\/api\/?$/, "");
+  return `${origin}${logo.startsWith("/") ? logo : `/uploads/${logo}`}`;
+};
+
 // onLogout: pass your real logout handler from the parent.
-const CompanySidebar = ({ open, setSidebarOpen, onLogout }) => {
+// company: the company object loaded by CompanyLayout.
+const CompanySidebar = ({ open, company, setSidebarOpen, onLogout }) => {
   const { companyId } = useParams();
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -53,6 +66,18 @@ const CompanySidebar = ({ open, setSidebarOpen, onLogout }) => {
 
   // Which dropdown groups are expanded (multiple can be open together)
   const [expandedGroups, setExpandedGroups] = useState({});
+
+  // If the logo image fails to load, fall back to the icon
+  const [logoFailed, setLogoFailed] = useState(false);
+
+  // Company logo + name
+  // (change the field names here if your company model uses different ones)
+  const companyName = company?.name || company?.companyName || "Company";
+  const logoUrl = buildLogoUrl(company?.logo || company?.logoUrl);
+
+  useEffect(() => {
+    setLogoFailed(false);
+  }, [logoUrl]);
 
   // =========================================
   // MOBILE DRAWER: lock page scroll + Esc to close
@@ -229,11 +254,11 @@ const CompanySidebar = ({ open, setSidebarOpen, onLogout }) => {
   ];
 
   const railItemBase =
-    "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors";
+    "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors";
 
-  const activeStyle =
-    "bg-teal-300/15 text-teal-200 ring-1 ring-inset ring-teal-300/40";
-  const idleStyle = "text-slate-100 hover:bg-white/10 hover:text-white";
+  // "!" forces the colour so global CSS (a, button resets) can't override it
+  const activeStyle = "!bg-white !text-[#0b3a52] shadow-sm";
+  const idleStyle = "!text-white hover:!bg-white/15";
 
   const overviewRows = [
     { label: "Employees", value: overview.employees },
@@ -243,27 +268,26 @@ const CompanySidebar = ({ open, setSidebarOpen, onLogout }) => {
 
   return (
     <>
-      {/* Backdrop (mobile / tablet only), starts below the 64px navbar.
-          Tap to close the drawer. */}
+      {/* Backdrop (mobile / tablet only). Tap to close the drawer. */}
       <div
         aria-hidden="true"
         onClick={() => setSidebarOpen?.(false)}
         className={[
-          "fixed inset-x-0 bottom-0 top-16 z-30 bg-slate-900/50 lg:hidden",
+          "fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-[1px] lg:hidden",
           "transition-opacity duration-300 motion-reduce:transition-none",
           open ? "opacity-100" : "pointer-events-none opacity-0",
         ].join(" ")}
       />
 
       {/* Wrapper:
-          - below lg : fixed drawer under the navbar, slides over the content
+          - below lg : fixed off-canvas drawer, slides over the content
           - lg+      : sticky column; its width animates 0 <-> 16rem */}
       <div
         aria-hidden={!open}
         className={[
-          "fixed left-0 top-16 z-40 h-[calc(100dvh-4rem)] w-[85vw] max-w-72 overflow-hidden",
+          "fixed inset-y-0 left-0 z-50 h-dvh w-[85vw] max-w-72 overflow-hidden",
           "transition-[transform,width,visibility] duration-300 ease-in-out motion-reduce:transition-none",
-          "lg:sticky lg:h-[calc(100vh-64px)] lg:max-w-none lg:shrink-0 lg:self-start",
+          "lg:sticky lg:top-0 lg:z-40 lg:h-screen lg:max-w-none lg:shrink-0 lg:self-start",
           open
             ? "visible translate-x-0 lg:w-64"
             : "invisible -translate-x-full lg:w-0 lg:translate-x-0",
@@ -271,33 +295,59 @@ const CompanySidebar = ({ open, setSidebarOpen, onLogout }) => {
       >
         <aside
           className={[
-            "flex h-full w-full flex-col overflow-y-auto overflow-x-hidden overscroll-contain bg-[#0b1f3a] lg:w-64",
+            `flex h-full w-full flex-col overflow-y-auto overflow-x-hidden overscroll-contain rounded-r-2xl lg:w-64 ${RAIL_BG}`,
             "p-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-4 sm:pb-[max(1rem,env(safe-area-inset-bottom))]",
-            "[scrollbar-color:#64748b_transparent] [scrollbar-width:thin]",
+            "[scrollbar-color:rgba(255,255,255,0.4)_transparent] [scrollbar-width:thin]",
             "transition-transform duration-300 ease-in-out will-change-transform motion-reduce:transition-none",
             open ? "lg:translate-x-0" : "lg:-translate-x-full",
           ].join(" ")}
         >
           {/* Workspace Header */}
           <div className="mb-4 px-1 sm:mb-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-300 text-[#0b1f3a]">
-                <BriefcaseBusiness size={22} aria-hidden="true" />
+            <div className="flex min-w-0 items-center gap-2">
+              {/* Company Logo */}
+              <NavLink
+                to={`${base}/dashboard`}
+                title="Go to Dashboard"
+                className={`flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white text-[#0b3a52] ring-2 ring-white/60 ${focusRing}`}
+              >
+                {logoUrl && !logoFailed ? (
+                  <img
+                    src={logoUrl}
+                    alt={companyName}
+                    onError={() => setLogoFailed(true)}
+                    className="h-full w-full rounded-full object-contain p-0.5"
+                  />
+                ) : (
+                  <BriefcaseBusiness size={22} aria-hidden="true" />
+                )}
+              </NavLink>
+
+              {/* Company Name */}
+              <div className="min-w-0 flex-1">
+                <NavLink
+                  to={`${base}/dashboard`}
+                  title={companyName}
+                  className="block truncate text-base font-bold !text-white hover:underline"
+                >
+                  {companyName}
+                </NavLink>
               </div>
 
-              <div className="min-w-0">
-                <h2 className="truncate text-base font-bold text-white">
-                  Workspace
-                </h2>
-
-                <p className="truncate text-xs text-slate-300">
-                  Company Management
-                </p>
-              </div>
+              {/* Close button: X on mobile/tablet, hamburger on desktop */}
+              <button
+                type="button"
+                onClick={() => setSidebarOpen?.(false)}
+                aria-label="Close sidebar"
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white transition hover:bg-white/15 lg:h-9 lg:w-9 ${focusRing}`}
+              >
+                <X size={22} className="lg:hidden" />
+                <Menu size={23} className="hidden lg:block" />
+              </button>
             </div>
           </div>
 
-          <div className="mb-2 border-t border-white/15 px-3 pt-4 text-xs font-semibold text-slate-300">
+          <div className="mb-2 border-t border-white/25 px-3 pt-4 text-xs font-semibold tracking-wide text-white/80">
             Menu
           </div>
 
@@ -327,7 +377,7 @@ const CompanySidebar = ({ open, setSidebarOpen, onLogout }) => {
                           size={20}
                           aria-hidden="true"
                           className={`shrink-0 ${
-                            isActive ? "text-teal-300" : "text-slate-300"
+                            isActive ? "text-[#0b5f85]" : "text-white"
                           }`}
                         />
                         <span className="min-w-0 flex-1 break-words">
@@ -369,7 +419,7 @@ const CompanySidebar = ({ open, setSidebarOpen, onLogout }) => {
                       ownsRoute
                         ? activeStyle
                         : isExpanded
-                        ? "bg-white/10 text-white"
+                        ? "!bg-white/15 !text-white"
                         : idleStyle,
                     ].join(" ")}
                   >
@@ -377,7 +427,7 @@ const CompanySidebar = ({ open, setSidebarOpen, onLogout }) => {
                       size={20}
                       aria-hidden="true"
                       className={`shrink-0 ${
-                        ownsRoute ? "text-teal-300" : "text-slate-300"
+                        ownsRoute ? "text-[#0b5f85]" : "text-white"
                       }`}
                     />
                     <span className="min-w-0 flex-1 break-words">
@@ -389,7 +439,7 @@ const CompanySidebar = ({ open, setSidebarOpen, onLogout }) => {
                       className={[
                         "shrink-0 transition-transform duration-200",
                         isExpanded ? "rotate-180" : "rotate-0",
-                        isExpanded ? "text-white" : "text-slate-300",
+                        ownsRoute ? "text-[#0b3a52]" : "text-white",
                       ].join(" ")}
                     />
                   </button>
@@ -398,7 +448,7 @@ const CompanySidebar = ({ open, setSidebarOpen, onLogout }) => {
                   {isExpanded && (
                     <div
                       id={`submenu-${item.id}`}
-                      className="ml-4 mt-1 space-y-1 border-l border-white/15 pl-3 sm:ml-5"
+                      className="ml-4 mt-1 space-y-1 border-l border-white/30 pl-3 sm:ml-5"
                     >
                       {item.children.map((child) => {
                         const ChildIcon = child.icon;
@@ -422,9 +472,7 @@ const CompanySidebar = ({ open, setSidebarOpen, onLogout }) => {
                                   size={16}
                                   aria-hidden="true"
                                   className={`shrink-0 ${
-                                    isActive
-                                      ? "text-teal-300"
-                                      : "text-slate-300"
+                                    isActive ? "text-[#0b5f85]" : "text-white"
                                   }`}
                                 />
                                 <span className="min-w-0 break-words">
@@ -444,12 +492,12 @@ const CompanySidebar = ({ open, setSidebarOpen, onLogout }) => {
 
           {/* Quick Overview + Logout (bottom) */}
           <div className="mt-auto space-y-3 pt-6">
-            <div className="rounded-xl border border-white/15 bg-white/5 p-3">
+            <div className="rounded-xl border border-white/30 bg-white/10 p-3">
               <h3 className="text-sm font-semibold text-white">
                 Quick Overview
               </h3>
 
-              <div className="mt-3 space-y-2 text-sm text-slate-300">
+              <div className="mt-3 space-y-2 text-sm text-white/90">
                 {overviewRows.map((row) => (
                   <div
                     key={row.label}
@@ -469,7 +517,7 @@ const CompanySidebar = ({ open, setSidebarOpen, onLogout }) => {
               type="button"
               onClick={handleLogout}
               className={[
-                "flex w-full items-center justify-between rounded-lg border border-white/20 px-3 py-2.5 text-sm font-semibold text-slate-100 transition-colors hover:bg-red-400/15 hover:text-red-200",
+                "flex w-full items-center justify-between rounded-lg border border-white/60 bg-white/10 px-3 py-2.5 text-sm font-semibold !text-white transition-colors hover:border-white hover:!bg-white hover:!text-red-700",
                 focusRing,
               ].join(" ")}
             >
