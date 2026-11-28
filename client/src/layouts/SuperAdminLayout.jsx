@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import Navbar from "../components/SuperAdmin/Navbar";
@@ -6,13 +5,36 @@ import Sidebar from "../components/SuperAdmin/Sidebar";
 
 import api from "../api/axios";
 
+// Tailwind `lg` breakpoint. Below this the sidebar is an overlay drawer,
+// at/above it the sidebar sits beside the content (desktop behaviour).
+const DESKTOP_QUERY = "(min-width: 1024px)";
+
+const isDesktopNow = () =>
+  typeof window === "undefined" ? true : window.matchMedia(DESKTOP_QUERY).matches;
+
 const SuperAdminLayout = () => {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Desktop: open by default. Mobile / tablet: closed by default.
+  const [sidebarOpen, setSidebarOpen] = useState(isDesktopNow);
   const [superAdmin, setSuperAdmin] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
 
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Screen crosses the breakpoint (rotate phone / resize window):
+  // open on desktop, closed on mobile + tablet.
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_QUERY);
+    const onChange = (e) => setSidebarOpen(e.matches);
+
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  // On mobile / tablet, close the drawer after going to another page.
+  useEffect(() => {
+    if (!isDesktopNow()) setSidebarOpen(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,16 +48,16 @@ const SuperAdminLayout = () => {
           setSuperAdmin((prev) => prev || loginProfile);
         }
 
-const response = await api.get("/super-admin/profile");
-const result = response.data;
+        const response = await api.get("/super-admin/profile");
+        const result = response.data;
 
-if (!result.success) {
-  throw new Error(result.message || "Authentication required");
-}
+        if (!result.success) {
+          throw new Error(result.message || "Authentication required");
+        }
 
-if (!cancelled) {
-  setSuperAdmin(result.superAdmin);
-}
+        if (!cancelled) {
+          setSuperAdmin(result.superAdmin);
+        }
       } catch (error) {
         if (!cancelled) {
           // Do not leave a protected dashboard open without authentication.
@@ -60,30 +82,30 @@ if (!cancelled) {
     };
   }, [location.state, navigate]);
 
-const handleLogout = async () => {
-  try {
-    const response = await api.post("/super-admin/logout");
-    const result = response.data;
+  const handleLogout = async () => {
+    try {
+      const response = await api.post("/super-admin/logout");
+      const result = response.data;
 
-    if (!result.success) {
-      throw new Error(result.message || "Logout failed.");
+      if (!result.success) {
+        throw new Error(result.message || "Logout failed.");
+      }
+
+      setSuperAdmin(null);
+      navigate("/login", { replace: true });
+    } catch (error) {
+      window.alert(
+        error.response?.data?.message ||
+          error.message ||
+          "Unable to sign out."
+      );
     }
-
-    setSuperAdmin(null);
-    navigate("/login", { replace: true });
-  } catch (error) {
-    window.alert(
-      error.response?.data?.message ||
-        error.message ||
-        "Unable to sign out."
-    );
-  }
-};
+  };
 
   if (profileLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100">
-        <p className="text-slate-600 font-medium">
+      <div className="flex min-h-dvh items-center justify-center bg-slate-100 p-4">
+        <p className="text-center text-sm font-medium text-slate-600 sm:text-base">
           Loading Super Admin dashboard...
         </p>
       </div>
@@ -95,7 +117,7 @@ const handleLogout = async () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100">
+    <div className="min-h-dvh bg-slate-100">
       <Navbar
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
@@ -106,9 +128,11 @@ const handleLogout = async () => {
       <div className="flex">
         <Sidebar
           open={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+          onLogout={handleLogout}
         />
 
-        <main className="flex-1 min-w-0 p-4 sm:p-6">
+        <main className="min-w-0 flex-1 p-3 sm:p-4 md:p-6">
           <Outlet />
         </main>
       </div>

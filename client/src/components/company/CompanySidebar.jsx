@@ -34,8 +34,11 @@ const isPathActive = (item, pathname) =>
     ? pathname === item.path
     : pathname === item.path || pathname.startsWith(`${item.path}/`);
 
+// Below this width the sidebar is a drawer (Tailwind `lg` = 1024px)
+const MOBILE_QUERY = "(max-width: 1023px)";
+
 // onLogout: pass your real logout handler from the parent.
-const CompanySidebar = ({ open, onLogout }) => {
+const CompanySidebar = ({ open, setSidebarOpen, onLogout }) => {
   const { companyId } = useParams();
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -50,6 +53,32 @@ const CompanySidebar = ({ open, onLogout }) => {
 
   // Which dropdown groups are expanded (multiple can be open together)
   const [expandedGroups, setExpandedGroups] = useState({});
+
+  // =========================================
+  // MOBILE DRAWER: lock page scroll + Esc to close
+  // =========================================
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const mq = window.matchMedia(MOBILE_QUERY);
+    if (!mq.matches) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape" && typeof setSidebarOpen === "function") {
+        setSidebarOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, setSidebarOpen]);
 
   // =========================================
   // COMPANY OVERVIEW
@@ -93,8 +122,6 @@ const CompanySidebar = ({ open, onLogout }) => {
 
     fetchOverview();
   }, [companyId]);
-
-  if (!open) return null;
 
   // =========================================
   // LOGOUT
@@ -215,191 +242,244 @@ const CompanySidebar = ({ open, onLogout }) => {
   ];
 
   return (
-    <aside className="sticky top-16 z-40 flex h-[calc(100vh-64px)] w-64 shrink-0 flex-col self-start overflow-y-auto overflow-x-hidden bg-[#0b1f3a] p-4 [scrollbar-color:#64748b_transparent] [scrollbar-width:thin]">
-      {/* Workspace Header */}
-      <div className="mb-5 px-1">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-300 text-[#0b1f3a]">
-            <BriefcaseBusiness size={22} aria-hidden="true" />
+    <>
+      {/* Backdrop (mobile / tablet only), starts below the 64px navbar.
+          Tap to close the drawer. */}
+      <div
+        aria-hidden="true"
+        onClick={() => setSidebarOpen?.(false)}
+        className={[
+          "fixed inset-x-0 bottom-0 top-16 z-30 bg-slate-900/50 lg:hidden",
+          "transition-opacity duration-300 motion-reduce:transition-none",
+          open ? "opacity-100" : "pointer-events-none opacity-0",
+        ].join(" ")}
+      />
+
+      {/* Wrapper:
+          - below lg : fixed drawer under the navbar, slides over the content
+          - lg+      : sticky column; its width animates 0 <-> 16rem */}
+      <div
+        aria-hidden={!open}
+        className={[
+          "fixed left-0 top-16 z-40 h-[calc(100dvh-4rem)] w-[85vw] max-w-72 overflow-hidden",
+          "transition-[transform,width,visibility] duration-300 ease-in-out motion-reduce:transition-none",
+          "lg:sticky lg:h-[calc(100vh-64px)] lg:max-w-none lg:shrink-0 lg:self-start",
+          open
+            ? "visible translate-x-0 lg:w-64"
+            : "invisible -translate-x-full lg:w-0 lg:translate-x-0",
+        ].join(" ")}
+      >
+        <aside
+          className={[
+            "flex h-full w-full flex-col overflow-y-auto overflow-x-hidden overscroll-contain bg-[#0b1f3a] lg:w-64",
+            "p-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-4 sm:pb-[max(1rem,env(safe-area-inset-bottom))]",
+            "[scrollbar-color:#64748b_transparent] [scrollbar-width:thin]",
+            "transition-transform duration-300 ease-in-out will-change-transform motion-reduce:transition-none",
+            open ? "lg:translate-x-0" : "lg:-translate-x-full",
+          ].join(" ")}
+        >
+          {/* Workspace Header */}
+          <div className="mb-4 px-1 sm:mb-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-300 text-[#0b1f3a]">
+                <BriefcaseBusiness size={22} aria-hidden="true" />
+              </div>
+
+              <div className="min-w-0">
+                <h2 className="truncate text-base font-bold text-white">
+                  Workspace
+                </h2>
+
+                <p className="truncate text-xs text-slate-300">
+                  Company Management
+                </p>
+              </div>
+            </div>
           </div>
 
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-bold text-white">
-              Workspace
-            </h2>
-
-            <p className="text-xs text-slate-300">Company Management</p>
+          <div className="mb-2 border-t border-white/15 px-3 pt-4 text-xs font-semibold text-slate-300">
+            Menu
           </div>
-        </div>
-      </div>
 
-      <div className="mb-2 border-t border-white/15 px-3 pt-4 text-xs font-semibold text-slate-300">
-        Menu
-      </div>
+          {/* Main menu */}
+          <nav aria-label="Main menu" className="space-y-1">
+            {navigation.map((item) => {
+              const Icon = item.icon;
 
-      {/* Main menu */}
-      <nav aria-label="Main menu" className="space-y-1">
-        {navigation.map((item) => {
-          const Icon = item.icon;
+              // ---------- Direct link ----------
+              if (!item.children) {
+                return (
+                  <NavLink
+                    key={item.id}
+                    to={item.path}
+                    end={item.end}
+                    className={({ isActive }) =>
+                      [
+                        railItemBase,
+                        focusRing,
+                        isActive ? activeStyle : idleStyle,
+                      ].join(" ")
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <Icon
+                          size={20}
+                          aria-hidden="true"
+                          className={`shrink-0 ${
+                            isActive ? "text-teal-300" : "text-slate-300"
+                          }`}
+                        />
+                        <span className="min-w-0 flex-1 break-words">
+                          {item.label}
+                        </span>
+                      </>
+                    )}
+                  </NavLink>
+                );
+              }
 
-          // ---------- Direct link ----------
-          if (!item.children) {
-            return (
-              <NavLink
-                key={item.id}
-                to={item.path}
-                end={item.end}
-                className={({ isActive }) =>
-                  [
-                    railItemBase,
-                    focusRing,
-                    isActive ? activeStyle : idleStyle,
-                  ].join(" ")
-                }
-              >
-                {({ isActive }) => (
-                  <>
+              // ---------- Group (click toggles dropdown below) ----------
+              const ownsRoute = item.children.some((child) =>
+                isPathActive(child, pathname)
+              );
+
+              // Open if user toggled it, or if the current route is inside it
+              // (explicit toggle wins once the user has clicked)
+              const isExpanded =
+                expandedGroups[item.id] !== undefined
+                  ? expandedGroups[item.id]
+                  : ownsRoute;
+
+              return (
+                <div key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedGroups((prev) => ({
+                        ...prev,
+                        [item.id]: !isExpanded,
+                      }))
+                    }
+                    aria-expanded={isExpanded}
+                    aria-controls={`submenu-${item.id}`}
+                    className={[
+                      railItemBase,
+                      focusRing,
+                      ownsRoute
+                        ? activeStyle
+                        : isExpanded
+                        ? "bg-white/10 text-white"
+                        : idleStyle,
+                    ].join(" ")}
+                  >
                     <Icon
                       size={20}
                       aria-hidden="true"
-                      className={isActive ? "text-teal-300" : "text-slate-300"}
+                      className={`shrink-0 ${
+                        ownsRoute ? "text-teal-300" : "text-slate-300"
+                      }`}
                     />
-                    <span className="flex-1">{item.label}</span>
-                  </>
-                )}
-              </NavLink>
-            );
-          }
+                    <span className="min-w-0 flex-1 break-words">
+                      {item.label}
+                    </span>
+                    <ChevronDown
+                      size={16}
+                      aria-hidden="true"
+                      className={[
+                        "shrink-0 transition-transform duration-200",
+                        isExpanded ? "rotate-180" : "rotate-0",
+                        isExpanded ? "text-white" : "text-slate-300",
+                      ].join(" ")}
+                    />
+                  </button>
 
-          // ---------- Group (click toggles dropdown below) ----------
-          const ownsRoute = item.children.some((child) =>
-            isPathActive(child, pathname)
-          );
+                  {/* Sub-menu: opens right below the main item */}
+                  {isExpanded && (
+                    <div
+                      id={`submenu-${item.id}`}
+                      className="ml-4 mt-1 space-y-1 border-l border-white/15 pl-3 sm:ml-5"
+                    >
+                      {item.children.map((child) => {
+                        const ChildIcon = child.icon;
 
-          // Open if user toggled it, or if the current route is inside it
-          // (explicit toggle wins once the user has clicked)
-          const isExpanded =
-            expandedGroups[item.id] !== undefined
-              ? expandedGroups[item.id]
-              : ownsRoute;
-
-          return (
-            <div key={item.id}>
-              <button
-                type="button"
-                onClick={() =>
-                  setExpandedGroups((prev) => ({
-                    ...prev,
-                    [item.id]: !isExpanded,
-                  }))
-                }
-                aria-expanded={isExpanded}
-                aria-controls={`submenu-${item.id}`}
-                className={[
-                  railItemBase,
-                  focusRing,
-                  ownsRoute
-                    ? activeStyle
-                    : isExpanded
-                    ? "bg-white/10 text-white"
-                    : idleStyle,
-                ].join(" ")}
-              >
-                <Icon
-                  size={20}
-                  aria-hidden="true"
-                  className={ownsRoute ? "text-teal-300" : "text-slate-300"}
-                />
-                <span className="flex-1">{item.label}</span>
-                <ChevronDown
-                  size={16}
-                  aria-hidden="true"
-                  className={[
-                    "transition-transform duration-200",
-                    isExpanded ? "rotate-180" : "rotate-0",
-                    isExpanded ? "text-white" : "text-slate-300",
-                  ].join(" ")}
-                />
-              </button>
-
-              {/* Sub-menu: opens right below the main item */}
-              {isExpanded && (
-                <div
-                  id={`submenu-${item.id}`}
-                  className="ml-5 mt-1 space-y-1 border-l border-white/15 pl-3"
-                >
-                  {item.children.map((child) => {
-                    const ChildIcon = child.icon;
-
-                    return (
-                      <NavLink
-                        key={child.path}
-                        to={child.path}
-                        end={child.end}
-                        className={({ isActive }) =>
-                          [
-                            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                            focusRing,
-                            isActive ? activeStyle : idleStyle,
-                          ].join(" ")
-                        }
-                      >
-                        {({ isActive }) => (
-                          <>
-                            <ChildIcon
-                              size={16}
-                              aria-hidden="true"
-                              className={
-                                isActive ? "text-teal-300" : "text-slate-300"
-                              }
-                            />
-                            <span>{child.label}</span>
-                          </>
-                        )}
-                      </NavLink>
-                    );
-                  })}
+                        return (
+                          <NavLink
+                            key={child.path}
+                            to={child.path}
+                            end={child.end}
+                            className={({ isActive }) =>
+                              [
+                                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
+                                focusRing,
+                                isActive ? activeStyle : idleStyle,
+                              ].join(" ")
+                            }
+                          >
+                            {({ isActive }) => (
+                              <>
+                                <ChildIcon
+                                  size={16}
+                                  aria-hidden="true"
+                                  className={`shrink-0 ${
+                                    isActive
+                                      ? "text-teal-300"
+                                      : "text-slate-300"
+                                  }`}
+                                />
+                                <span className="min-w-0 break-words">
+                                  {child.label}
+                                </span>
+                              </>
+                            )}
+                          </NavLink>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </nav>
+              );
+            })}
+          </nav>
 
-      {/* Quick Overview + Logout (bottom) */}
-      <div className="mt-auto space-y-3 pt-6">
-        <div className="rounded-xl border border-white/15 bg-white/5 p-3">
-          <h3 className="text-sm font-semibold text-white">Quick Overview</h3>
+          {/* Quick Overview + Logout (bottom) */}
+          <div className="mt-auto space-y-3 pt-6">
+            <div className="rounded-xl border border-white/15 bg-white/5 p-3">
+              <h3 className="text-sm font-semibold text-white">
+                Quick Overview
+              </h3>
 
-          <div className="mt-3 space-y-2 text-sm text-slate-300">
-            {overviewRows.map((row) => (
-              <div
-                key={row.label}
-                className="flex items-center justify-between gap-3"
-              >
-                <span>{row.label}</span>
-                <span className="font-semibold text-white">
-                  {overviewLoading ? "..." : row.value}
-                </span>
+              <div className="mt-3 space-y-2 text-sm text-slate-300">
+                {overviewRows.map((row) => (
+                  <div
+                    key={row.label}
+                    className="flex items-center justify-between gap-3"
+                  >
+                    <span className="min-w-0 truncate">{row.label}</span>
+                    <span className="shrink-0 font-semibold text-white">
+                      {overviewLoading ? "..." : row.value}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
 
-        {/* Logout */}
-        <button
-          type="button"
-          onClick={handleLogout}
-          className={[
-            "flex w-full items-center justify-between rounded-lg border border-white/20 px-3 py-2.5 text-sm font-semibold text-slate-100 transition-colors hover:bg-red-400/15 hover:text-red-200",
-            focusRing,
-          ].join(" ")}
-        >
-          <span>Log out</span>
-          <LogOut size={18} aria-hidden="true" />
-        </button>
+            {/* Logout */}
+            <button
+              type="button"
+              onClick={handleLogout}
+              className={[
+                "flex w-full items-center justify-between rounded-lg border border-white/20 px-3 py-2.5 text-sm font-semibold text-slate-100 transition-colors hover:bg-red-400/15 hover:text-red-200",
+                focusRing,
+              ].join(" ")}
+            >
+              <span>Log out</span>
+              <LogOut size={18} aria-hidden="true" />
+            </button>
+          </div>
+        </aside>
       </div>
-    </aside>
+    </>
   );
 };
 
